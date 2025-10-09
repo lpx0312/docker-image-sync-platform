@@ -212,10 +212,11 @@ func checkStuckTasks(syncHandler *handlers.SyncHandler) {
 		TaskID      string
 		GitHubRunID string
 		CreatedAt   time.Time
+		StartedAt   *time.Time
 	}
 	
 	if err := database.DB.Table("sync_tasks").
-		Select("task_id, github_run_id, created_at").
+		Select("task_id, github_run_id, created_at, started_at").
 		Where("status = ?", "running").
 		Find(&stuckTasks).Error; err != nil {
 		logger.Logger.Error("查询卡住的任务失败", zap.Error(err))
@@ -230,10 +231,24 @@ func checkStuckTasks(syncHandler *handlers.SyncHandler) {
 	logger.Logger.Info("发现卡住的任务", zap.Int("count", len(stuckTasks)))
 	
 	// 检查每个卡住的任务
+	now := time.Now()
+	timeoutDuration := 30 * time.Minute
+	
 	for _, taskInfo := range stuckTasks {
+		// 计算任务运行时间
+		var taskStartTime time.Time
+		if taskInfo.StartedAt != nil {
+			taskStartTime = *taskInfo.StartedAt
+		} else {
+			taskStartTime = taskInfo.CreatedAt
+		}
+		elapsed := now.Sub(taskStartTime)
+		
 		logger.Logger.Info("检查任务状态", 
 			zap.String("task_id", taskInfo.TaskID),
-			zap.String("run_id", taskInfo.GitHubRunID))
+			zap.String("run_id", taskInfo.GitHubRunID),
+			zap.Duration("elapsed", elapsed),
+			zap.Bool("is_timeout", elapsed > timeoutDuration))
 		
 		// 获取完整的任务信息
 		var task models.SyncTask

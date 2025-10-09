@@ -584,6 +584,47 @@ func (h *SyncHandler) CheckAndUpdateTaskStatus(task *models.SyncTask) {
 		return
 	}
 
+	// 检查任务是否超时（30分钟）
+	now := time.Now()
+	var taskStartTime time.Time
+	if task.StartedAt != nil {
+		taskStartTime = *task.StartedAt
+	} else {
+		taskStartTime = task.CreatedAt
+	}
+	
+	timeoutDuration := 30 * time.Minute
+	if now.Sub(taskStartTime) > timeoutDuration {
+		logger.Logger.Warn("任务执行超时，标记为失败", 
+			zap.String("task_id", task.TaskID),
+			zap.String("run_id", task.GitHubRunID),
+			zap.Duration("elapsed", now.Sub(taskStartTime)),
+			zap.Duration("timeout", timeoutDuration))
+		
+		task.Status = models.TaskStatusFailed
+		task.CompletedAt = &now
+		task.ErrorMessage = fmt.Sprintf("任务执行超时（超过%v），自动标记为失败", timeoutDuration)
+		
+		// 更新所有相关镜像记录的状态
+		database.DB.Model(&models.ImageSyncRecord{}).
+			Where("task_id = ?", task.TaskID).
+			Updates(map[string]interface{}{
+				"sync_status": models.SyncStatusFailed,
+				"error_message": fmt.Sprintf("任务执行超时（超过%v），自动标记为失败", timeoutDuration),
+			})
+		
+		// 保存更新到数据库
+		if err := database.DB.Save(task).Error; err != nil {
+			logger.Logger.Error("更新超时任务状态失败", 
+				zap.Error(err), 
+				zap.String("task_id", task.TaskID))
+		} else {
+			logger.Logger.Info("超时任务状态已更新为失败", 
+				zap.String("task_id", task.TaskID))
+		}
+		return
+	}
+
 	// 获取GitHub Action的实际状态
 	runDetails, err := h.githubService.GetWorkflowRunDetails(task.GitHubRunID)
 	if err != nil {
@@ -602,13 +643,13 @@ func (h *SyncHandler) CheckAndUpdateTaskStatus(task *models.SyncTask) {
 
 	// 根据GitHub Action状态更新数据库
 	var needUpdate bool
-	now := time.Now()
+	completedAt := time.Now()
 
 	switch runDetails.Status {
 	case "completed":
 		if runDetails.Conclusion == "success" {
 			task.Status = models.TaskStatusCompleted
-			task.CompletedAt = &now
+			task.CompletedAt = &completedAt
 			needUpdate = true
 			
 			// 更新所有相关镜像记录的状态
@@ -619,7 +660,7 @@ func (h *SyncHandler) CheckAndUpdateTaskStatus(task *models.SyncTask) {
 			logger.Logger.Info("任务同步成功", zap.String("task_id", task.TaskID))
 		} else {
 			task.Status = models.TaskStatusFailed
-			task.CompletedAt = &now
+			task.CompletedAt = &completedAt
 			task.ErrorMessage = fmt.Sprintf("GitHub Action执行失败: %s", runDetails.Conclusion)
 			needUpdate = true
 			
@@ -637,7 +678,7 @@ func (h *SyncHandler) CheckAndUpdateTaskStatus(task *models.SyncTask) {
 		}
 	case "cancelled", "failure", "timed_out":
 		task.Status = models.TaskStatusFailed
-		task.CompletedAt = &now
+		task.CompletedAt = &completedAt
 		task.ErrorMessage = fmt.Sprintf("GitHub Action状态异常: %s", runDetails.Status)
 		needUpdate = true
 		
