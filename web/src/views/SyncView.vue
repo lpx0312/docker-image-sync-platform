@@ -35,16 +35,7 @@
           </div>
         </el-form-item>
 
-        <el-form-item label="目标标签" prop="targetTag">
-          <el-input
-            v-model="syncForm.targetTag"
-            placeholder="例如: nginx:latest 或自定义标签"
-            clearable
-          />
-          <div class="form-tip">
-            留空则使用源镜像的标签，支持自定义标签
-          </div>
-        </el-form-item>
+
 
         <el-form-item label="架构选择" prop="architecture">
           <el-select
@@ -260,7 +251,6 @@ const historyLoading = ref(false)
 // 表单数据
 const syncForm = reactive({
   sourceImage: '',
-  targetTag: '',
   architecture: 'amd64',
   description: ''
 })
@@ -288,15 +278,8 @@ const submitSync = async () => {
   try {
     await syncFormRef.value.validate()
     
-    // 构造镜像字符串
-    let imageString = syncForm.sourceImage
-    if (syncForm.targetTag && syncForm.targetTag !== syncForm.sourceImage) {
-      // 如果目标标签不同于源镜像，则添加目标标签信息
-      imageString = `${syncForm.sourceImage} -> ${syncForm.targetTag}`
-    }
-    
     const syncData = {
-      images: [imageString],
+      images: [syncForm.sourceImage],
       architecture: syncForm.architecture
     }
     
@@ -320,7 +303,6 @@ const resetForm = () => {
   syncFormRef.value.resetFields()
   Object.assign(syncForm, {
     sourceImage: '',
-    targetTag: '',
     architecture: 'amd64',
     description: ''
   })

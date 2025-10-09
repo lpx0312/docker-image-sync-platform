@@ -299,7 +299,7 @@ const imageStore = useImageStore()
 
 // 响应式数据
 const searchText = ref('')
-const statusFilter = ref('')
+const statusFilter = ref('success')
 const architectureFilter = ref('')
 const currentPage = ref(1)
 const pageSize = ref(20)
@@ -375,9 +375,13 @@ const handleArchitectureFilter = () => {
 // 清除筛选
 const clearFilters = () => {
   searchText.value = ''
-  statusFilter.value = ''
+  statusFilter.value = 'success' // 保持默认的成功状态筛选
   architectureFilter.value = ''
-  imageStore.clearFilters()
+  imageStore.updateFilters({ 
+    status: 'success', // 保持默认的成功状态筛选
+    search: '', 
+    architecture: '' 
+  })
   currentPage.value = 1
   imageStore.updatePagination(1, pageSize.value)
   imageStore.loadImages()
@@ -528,6 +532,8 @@ watch([currentPage, pageSize], () => {
 
 // 生命周期
 onMounted(() => {
+  // 设置默认筛选条件为成功状态
+  imageStore.updateFilters({ status: statusFilter.value })
   loadData()
 })
 </script>

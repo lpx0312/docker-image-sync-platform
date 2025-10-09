@@ -19,7 +19,7 @@ export const useImageStore = defineStore('image', () => {
     total: 0
   })
   const filters = ref({
-    status: '',
+    status: 'success', // 默认筛选成功状态
     search: '',
     architecture: ''
   })
@@ -129,7 +129,7 @@ export const useImageStore = defineStore('image', () => {
 
   const clearFilters = () => {
     filters.value = {
-      status: '',
+      status: 'success', // 保持默认的成功状态筛选
       search: '',
       architecture: ''
     }
