@@ -215,18 +215,7 @@
             {{ formatTime(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="120">
-          <template #default="{ row }">
-            <el-button 
-              v-if="row.github_run_url" 
-              type="text" 
-              size="small"
-              @click="openGitHubRun(row.github_run_url)"
-            >
-              查看详情
-            </el-button>
-          </template>
-        </el-table-column>
+
       </el-table>
     </el-card>
   </div>

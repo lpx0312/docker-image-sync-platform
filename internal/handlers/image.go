@@ -28,6 +28,8 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
 	status := c.Query("status")
 	search := c.Query("search")
+	sortBy := c.DefaultQuery("sort_by", "updated_at")
+	sortOrder := c.DefaultQuery("sort_order", "desc")
 
 	if page < 1 {
 		page = 1
@@ -56,9 +58,29 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 	var total int64
 	query.Count(&total)
 
+	// 构建排序字符串
+	orderStr := "updated_at DESC" // 默认排序
+	if sortBy != "" {
+		// 验证排序字段
+		validSortFields := map[string]bool{
+			"original_image": true,
+			"sync_status":    true,
+			"created_at":     true,
+			"updated_at":     true,
+		}
+		
+		if validSortFields[sortBy] {
+			if sortOrder == "asc" {
+				orderStr = fmt.Sprintf("%s ASC", sortBy)
+			} else {
+				orderStr = fmt.Sprintf("%s DESC", sortBy)
+			}
+		}
+	}
+
 	// 查询数据
 	var images []models.ImageSyncRecord
-	if err := query.Order("created_at DESC").
+	if err := query.Order(orderStr).
 		Offset(offset).
 		Limit(pageSize).
 		Find(&images).Error; err != nil {

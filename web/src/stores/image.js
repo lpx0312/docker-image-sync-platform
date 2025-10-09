@@ -22,6 +22,10 @@ export const useImageStore = defineStore('image', () => {
     status: '',
     search: ''
   })
+  const sorting = ref({
+    sortBy: 'updated_at',
+    sortOrder: 'desc'
+  })
 
   // 计算属性
   const hasImages = computed(() => images.value.length > 0)
@@ -51,6 +55,8 @@ export const useImageStore = defineStore('image', () => {
       const queryParams = {
         page: pagination.value.page,
         page_size: pagination.value.pageSize,
+        sort_by: sorting.value.sortBy,
+        sort_order: sorting.value.sortOrder,
         ...filters.value,
         ...params
       }
@@ -128,6 +134,12 @@ export const useImageStore = defineStore('image', () => {
     pagination.value.page = 1
   }
 
+  const updateSorting = (sortBy, sortOrder) => {
+    sorting.value.sortBy = sortBy
+    sorting.value.sortOrder = sortOrder
+    pagination.value.page = 1 // 重置到第一页
+  }
+
   const getImageById = async (id) => {
     try {
       const response = await imageAPI.getImageDetail(id)
@@ -156,6 +168,7 @@ export const useImageStore = defineStore('image', () => {
     loading,
     pagination,
     filters,
+    sorting,
     
     // 计算属性
     hasImages,
@@ -169,6 +182,7 @@ export const useImageStore = defineStore('image', () => {
     updatePagination,
     updateFilters,
     clearFilters,
+    updateSorting,
     getImageById,
     updateImageStatus
   }

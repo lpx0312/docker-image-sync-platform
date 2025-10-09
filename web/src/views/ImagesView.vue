@@ -91,6 +91,7 @@
         v-loading="imageStore.loading"
         empty-text="暂无镜像记录"
         @sort-change="handleSortChange"
+        :default-sort="{ prop: 'updated_at', order: 'descending' }"
       >
         <el-table-column prop="original_image" label="源镜像" min-width="200" sortable="custom">
           <template #default="{ row }">
@@ -102,17 +103,7 @@
         
         <el-table-column prop="acr_image" label="目标镜像" min-width="200">
           <template #default="{ row }">
-            <div class="image-info">
-              <div class="image-name">{{ getTargetImage(row) }}</div>
-              <el-button 
-                v-if="getTargetImage(row) && row.sync_status === 'success'" 
-                type="text" 
-                size="small"
-                @click="copyToClipboard(getTargetImage(row))"
-              >
-                复制
-              </el-button>
-            </div>
+            <div class="image-name">{{ getTargetImage(row) }}</div>
           </template>
         </el-table-column>
         
@@ -139,6 +130,15 @@
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
             <div class="action-buttons">
+              <el-button 
+                v-if="getTargetImage(row) && row.sync_status === 'success'" 
+                type="text" 
+                size="small"
+                @click="copyToClipboard(getTargetImage(row))"
+              >
+                复制
+              </el-button>
+              
               <el-button 
                 type="text" 
                 size="small"
@@ -287,6 +287,8 @@ const detailDialogVisible = ref(false)
 const selectedImage = ref(null)
 const retryingIds = ref([])
 const deletingIds = ref([])
+const sortBy = ref('updated_at')
+const sortOrder = ref('desc')
 const aliyunConfig = ref({
   registry: 'registry.cn-hangzhou.aliyuncs.com',
   namespace: 'docker-sync'
@@ -354,8 +356,22 @@ const clearFilters = () => {
 
 // 排序处理
 const handleSortChange = ({ column, prop, order }) => {
-  // 这里可以实现排序逻辑
-  console.log('排序:', { column, prop, order })
+  if (prop && order) {
+    sortBy.value = prop
+    sortOrder.value = order === 'ascending' ? 'asc' : 'desc'
+  } else {
+    // 清除排序，恢复默认
+    sortBy.value = 'updated_at'
+    sortOrder.value = 'desc'
+  }
+  
+  // 重置到第一页
+  currentPage.value = 1
+  imageStore.updatePagination(1, pageSize.value)
+  
+  // 更新排序参数并重新加载数据
+  imageStore.updateSorting(sortBy.value, sortOrder.value)
+  imageStore.loadImages()
 }
 
 // 分页处理
