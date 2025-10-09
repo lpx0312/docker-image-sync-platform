@@ -259,10 +259,15 @@ const submitSync = async () => {
   try {
     await syncFormRef.value.validate()
     
+    // 构造镜像字符串
+    let imageString = syncForm.sourceImage
+    if (syncForm.targetTag && syncForm.targetTag !== syncForm.sourceImage) {
+      // 如果目标标签不同于源镜像，则添加目标标签信息
+      imageString = `${syncForm.sourceImage} -> ${syncForm.targetTag}`
+    }
+    
     const syncData = {
-      source_image: syncForm.sourceImage,
-      target_tag: syncForm.targetTag || '',
-      description: syncForm.description || ''
+      images: [imageString]
     }
     
     await syncStore.submitSync(syncData)
@@ -295,11 +300,15 @@ const retryCurrentTask = async () => {
   if (!syncStore.currentTask) return
   
   try {
-    // 重新提交相同的任务
+    // 从当前任务的images中获取镜像信息
+    const images = syncStore.currentTask.images || []
+    if (images.length === 0) {
+      ElMessage.error('无法获取任务镜像信息')
+      return
+    }
+    
     const syncData = {
-      source_image: syncStore.currentTask.source_image,
-      target_tag: syncStore.currentTask.target_tag || '',
-      description: syncStore.currentTask.description || ''
+      images: images
     }
     
     await syncStore.submitSync(syncData)
