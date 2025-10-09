@@ -154,7 +154,7 @@ func main() {
 
 	// 创建HTTP服务器
 	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%d", config.AppConfig.Server.Port),
+		Addr:    fmt.Sprintf(":%s", config.AppConfig.Server.Port),
 		Handler: router,
 	}
 
