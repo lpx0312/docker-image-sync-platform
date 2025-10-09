@@ -3,7 +3,9 @@ package services
 import (
 	"bufio"
 	"fmt"
+	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -51,17 +53,25 @@ func (s *GitService) InitRepository() error {
 
 	// 克隆仓库
 	logger.Logger.Info("开始克隆Gitee仓库", zap.String("url", config.AppConfig.Git.Gitee.RepoURL))
-	
-	repo, err := git.PlainClone(s.repoPath, false, &git.CloneOptions{
-		URL: config.AppConfig.Git.Gitee.RepoURL,
-		Auth: &http.BasicAuth{
-			Username: config.AppConfig.Git.Gitee.Username,
-			Password: config.AppConfig.Git.Gitee.Password,
-		},
-	})
 
+	// 构建带有认证信息的URL
+	parsedURL, err := url.Parse(config.AppConfig.Git.Gitee.RepoURL)
 	if err != nil {
+		return fmt.Errorf("解析Gitee仓库URL失败: %w", err)
+	}
+	parsedURL.User = url.UserPassword(config.AppConfig.Git.Gitee.Username, config.AppConfig.Git.Gitee.Password)
+	authURL := parsedURL.String()
+
+	cmd := exec.Command("git", "clone", authURL, s.repoPath)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("克隆仓库失败: %w", err)
+	}
+
+	repo, err := git.PlainOpen(s.repoPath)
+	if err != nil {
+		return fmt.Errorf("打开克隆的仓库失败: %w", err)
 	}
 
 	s.repo = repo
@@ -83,7 +93,7 @@ func (s *GitService) UpdateImagesFile(newImages []string) (string, error) {
 	}
 
 	imagesFilePath := filepath.Join(s.repoPath, "images.txt")
-	
+
 	// 读取现有的images.txt文件
 	existingImages, err := s.readImagesFile(imagesFilePath)
 	if err != nil {
@@ -121,7 +131,7 @@ func (s *GitService) UpdateImagesFile(newImages []string) (string, error) {
 		return "", fmt.Errorf("提交更改失败: %w", err)
 	}
 
-	logger.Logger.Info("images.txt更新成功", 
+	logger.Logger.Info("images.txt更新成功",
 		zap.String("commit_sha", commitSHA),
 		zap.Int("new_images_count", len(newImages)))
 
