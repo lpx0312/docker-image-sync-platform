@@ -45,7 +45,7 @@ export const useSyncStore = defineStore('sync', () => {
     loading.value = true
     try {
       const response = await syncAPI.getSyncHistory(params)
-      syncHistory.value = response.records || []
+      syncHistory.value = response.data || []
       return response
     } finally {
       loading.value = false

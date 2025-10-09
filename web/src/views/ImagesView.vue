@@ -92,24 +92,23 @@
         empty-text="暂无镜像记录"
         @sort-change="handleSortChange"
       >
-        <el-table-column prop="source_image" label="源镜像" min-width="200" sortable="custom">
+        <el-table-column prop="original_image" label="源镜像" min-width="200" sortable="custom">
           <template #default="{ row }">
             <div class="image-info">
-              <div class="image-name">{{ row.source_image }}</div>
-              <div class="image-tag" v-if="row.source_tag">{{ row.source_tag }}</div>
+              <div class="image-name">{{ row.original_image }}:{{ row.tag }}</div>
             </div>
           </template>
         </el-table-column>
         
-        <el-table-column prop="target_image" label="目标镜像" min-width="200">
+        <el-table-column prop="acr_image" label="目标镜像" min-width="200">
           <template #default="{ row }">
             <div class="image-info">
-              <div class="image-name">{{ row.target_image }}</div>
+              <div class="image-name">{{ getTargetImage(row) }}</div>
               <el-button 
-                v-if="row.target_image && row.status === 'success'" 
+                v-if="getTargetImage(row) && row.sync_status === 'success'" 
                 type="text" 
                 size="small"
-                @click="copyToClipboard(row.target_image)"
+                @click="copyToClipboard(getTargetImage(row))"
               >
                 复制
               </el-button>
@@ -117,10 +116,10 @@
           </template>
         </el-table-column>
         
-        <el-table-column prop="status" label="状态" width="100" sortable="custom">
+        <el-table-column prop="sync_status" label="状态" width="100" sortable="custom">
           <template #default="{ row }">
-            <el-tag :type="getStatusType(row.status)">
-              {{ getStatusText(row.status) }}
+            <el-tag :type="getStatusType(row.sync_status)">
+              {{ getStatusText(row.sync_status) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -212,14 +211,14 @@
           {{ selectedImage.id }}
         </el-descriptions-item>
         <el-descriptions-item label="源镜像">
-          {{ selectedImage.source_image }}
+          {{ selectedImage.original_image }}:{{ selectedImage.tag }}
         </el-descriptions-item>
         <el-descriptions-item label="目标镜像">
-          {{ selectedImage.target_image }}
+          {{ getTargetImage(selectedImage) }}
         </el-descriptions-item>
         <el-descriptions-item label="状态">
-          <el-tag :type="getStatusType(selectedImage.status)">
-            {{ getStatusText(selectedImage.status) }}
+          <el-tag :type="getStatusType(selectedImage.sync_status)">
+            {{ getStatusText(selectedImage.sync_status) }}
           </el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="任务ID" v-if="selectedImage.task_id">
@@ -236,8 +235,8 @@
         <el-descriptions-item label="同步说明" v-if="selectedImage.description">
           {{ selectedImage.description }}
         </el-descriptions-item>
-        <el-descriptions-item label="错误信息" v-if="selectedImage.message && selectedImage.status === 'failed'">
-          <el-alert :title="selectedImage.message" type="error" :closable="false" />
+        <el-descriptions-item label="错误信息" v-if="selectedImage.error_message && selectedImage.sync_status === 'failed'">
+          <el-alert :title="selectedImage.error_message" type="error" :closable="false" />
         </el-descriptions-item>
         <el-descriptions-item label="创建时间">
           {{ formatTime(selectedImage.created_at) }}
@@ -251,7 +250,7 @@
         <div class="dialog-footer">
           <el-button @click="detailDialogVisible = false">关闭</el-button>
           <el-button 
-            v-if="selectedImage && selectedImage.status === 'failed'" 
+            v-if="selectedImage && selectedImage.sync_status === 'failed'" 
             type="primary" 
             @click="retrySync(selectedImage)"
           >
@@ -424,8 +423,8 @@ const openGitHubRun = (url) => {
 const getStatusType = (status) => {
   const statusMap = {
     pending: 'info',
-    syncing: 'warning',
-    success: 'success',
+    in_progress: 'warning', // 对应后端的 in_progress
+    completed: 'success',   // 对应后端的 completed
     failed: 'danger'
   }
   return statusMap[status] || 'info'
@@ -434,11 +433,25 @@ const getStatusType = (status) => {
 const getStatusText = (status) => {
   const statusMap = {
     pending: '等待中',
-    syncing: '同步中',
-    success: '成功',
+    in_progress: '同步中', // 对应后端的 in_progress
+    completed: '成功',     // 对应后端的 completed
     failed: '失败'
   }
   return statusMap[status] || '未知'
+}
+
+const getTargetImage = (row) => {
+  // 如果 acr_image 有值，直接返回
+  if (row.acr_image) {
+    return row.acr_image
+  }
+  
+  // 否则生成默认的 ACR 地址
+  if (row.original_image && row.tag) {
+    return `registry.cn-hangzhou.aliyuncs.com/docker-sync/${row.original_image}:${row.tag}`
+  }
+  
+  return ''
 }
 
 const formatTime = (time) => {

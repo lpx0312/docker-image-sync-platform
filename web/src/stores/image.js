@@ -56,7 +56,7 @@ export const useImageStore = defineStore('image', () => {
       }
       
       const response = await imageAPI.getImageList(queryParams)
-      images.value = response.records || []
+      images.value = response.data || []
       pagination.value.total = response.total || 0
       
       return response
