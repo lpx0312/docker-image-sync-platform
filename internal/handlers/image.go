@@ -28,6 +28,7 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
 	status := c.Query("status")
 	search := c.Query("search")
+	architecture := c.Query("architecture")
 	sortBy := c.DefaultQuery("sort_by", "updated_at")
 	sortOrder := c.DefaultQuery("sort_order", "desc")
 
@@ -48,6 +49,17 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 		query = query.Where("sync_status = ?", status)
 	}
 
+	// 架构过滤
+	if architecture != "" {
+		if architecture == "amd64" {
+			// amd64 匹配空值、NULL值和明确的amd64值
+			query = query.Where("(architecture = ? OR architecture IS NULL OR architecture = '')", architecture)
+		} else {
+			// 其他架构需要精确匹配
+			query = query.Where("architecture = ?", architecture)
+		}
+	}
+
 	// 搜索过滤
 	if search != "" {
 		query = query.Where("original_image LIKE ? OR acr_image LIKE ?", 
@@ -65,6 +77,7 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 		validSortFields := map[string]bool{
 			"original_image": true,
 			"sync_status":    true,
+			"architecture":   true,
 			"created_at":     true,
 			"updated_at":     true,
 		}
@@ -269,7 +282,7 @@ func (h *ImageHandler) generateACRImage(originalImage, tag string) string {
 	
 	namespace := namespaceConfig.ConfigValue
 	if namespace == "" {
-		namespace = "docker-sync" // 默认命名空间
+		namespace = "lpx03" // 使用与GitHub Action一致的命名空间
 	}
 
 	// 解析镜像名称

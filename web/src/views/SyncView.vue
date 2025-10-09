@@ -46,6 +46,20 @@
           </div>
         </el-form-item>
 
+        <el-form-item label="架构选择" prop="architecture">
+          <el-select
+            v-model="syncForm.architecture"
+            placeholder="请选择架构"
+            style="width: 100%"
+          >
+            <el-option label="amd64" value="amd64" />
+            <el-option label="arm64" value="arm64" />
+          </el-select>
+          <div class="form-tip">
+            选择镜像的目标架构，默认为amd64
+          </div>
+        </el-form-item>
+
         <el-form-item label="同步说明" prop="description">
           <el-input
             v-model="syncForm.description"
@@ -189,18 +203,28 @@
       >
         <el-table-column prop="source_image" label="源镜像" min-width="200" />
         <el-table-column prop="target_image" label="目标镜像" min-width="200">
-          <template #default="{ row }">
-            <div class="image-info">
-              <div class="image-name">{{ row.target_image }}</div>
+          <template #default="scope">
+            <div class="image-cell">
+              <span class="image-text">{{ scope.row.target_image }}</span>
               <el-button 
-                v-if="row.target_image && row.status === 'completed'" 
                 type="text" 
-                size="small"
-                @click="copyToClipboard(row.target_image)"
+                size="small" 
+                @click="copyToClipboard(scope.row.target_image)"
+                class="copy-btn"
               >
-                复制
+                <el-icon><DocumentCopy /></el-icon>
               </el-button>
             </div>
+          </template>
+        </el-table-column>
+        <el-table-column prop="architecture" label="架构" width="100">
+          <template #default="scope">
+            <el-tag 
+              :type="scope.row.architecture === 'arm64' ? 'warning' : 'primary'"
+              size="small"
+            >
+              {{ scope.row.architecture }}
+            </el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="status" label="状态" width="100">
@@ -224,7 +248,7 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Refresh, Upload, RefreshLeft } from '@element-plus/icons-vue'
+import { Refresh, Upload, RefreshLeft, DocumentCopy } from '@element-plus/icons-vue'
 import { useSyncStore } from '@/stores/sync'
 import dayjs from 'dayjs'
 
@@ -237,6 +261,7 @@ const historyLoading = ref(false)
 const syncForm = reactive({
   sourceImage: '',
   targetTag: '',
+  architecture: 'amd64',
   description: ''
 })
 
@@ -271,7 +296,8 @@ const submitSync = async () => {
     }
     
     const syncData = {
-      images: [imageString]
+      images: [imageString],
+      architecture: syncForm.architecture
     }
     
     await syncStore.submitSync(syncData)
@@ -295,6 +321,7 @@ const resetForm = () => {
   Object.assign(syncForm, {
     sourceImage: '',
     targetTag: '',
+    architecture: 'amd64',
     description: ''
   })
 }

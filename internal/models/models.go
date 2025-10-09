@@ -12,7 +12,7 @@ type ImageSyncRecord struct {
 	OriginalImage string         `json:"original_image" gorm:"type:varchar(500);not null;index"`
 	ACRImage      string         `json:"acr_image" gorm:"type:varchar(500)"`
 	Tag           string         `json:"tag" gorm:"type:varchar(100)"`
-	Architecture  string         `json:"architecture" gorm:"type:varchar(50)"`
+	Architecture  string         `json:"architecture" gorm:"type:varchar(50);default:'amd64'"`
 	SyncStatus    string         `json:"sync_status" gorm:"type:enum('pending','syncing','success','failed');default:'pending';index"`
 	ErrorMessage  string         `json:"error_message" gorm:"type:text"`
 	TaskID        string         `json:"task_id" gorm:"type:varchar(100);index"`
@@ -80,7 +80,8 @@ const (
 
 // ImageRequest 镜像同步请求
 type ImageRequest struct {
-	Images []string `json:"images" binding:"required"`
+	Images       []string `json:"images" binding:"required"`
+	Architecture string   `json:"architecture"`
 }
 
 // SyncResponse 同步响应
@@ -99,6 +100,9 @@ type ImageListResponse struct {
 type TaskStatusResponse struct {
 	TaskID          string     `json:"task_id"`
 	Status          string     `json:"status"`
+	SourceImage     string     `json:"source_image"`
+	TargetImage     string     `json:"target_image"`
+	Architecture    string     `json:"architecture"`
 	GitHubActionURL string     `json:"github_action_url"`
 	StartedAt       *time.Time `json:"started_at"`
 	CompletedAt     *time.Time `json:"completed_at"`

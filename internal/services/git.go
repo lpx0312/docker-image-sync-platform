@@ -89,7 +89,18 @@ func (s *GitService) UpdateImagesFile(newImages []string) (string, error) {
 
 	// 拉取最新代码
 	if err := s.pullLatest(); err != nil {
-		logger.Logger.Warn("拉取最新代码失败", zap.Error(err))
+		logger.Logger.Error("拉取最新代码失败，尝试重新初始化仓库", zap.Error(err))
+		
+		// 如果拉取失败，可能是仓库状态异常，尝试重新初始化
+		if err := s.CleanRepository(); err != nil {
+			logger.Logger.Warn("清理仓库失败", zap.Error(err))
+		}
+		
+		if err := s.InitRepository(); err != nil {
+			return "", fmt.Errorf("重新初始化仓库失败: %w", err)
+		}
+		
+		logger.Logger.Info("仓库重新初始化成功")
 	}
 
 	imagesFilePath := filepath.Join(s.repoPath, "images.txt")
@@ -179,6 +190,7 @@ func (s *GitService) pullLatest() error {
 		return err
 	}
 
+	// 首先尝试正常拉取
 	err = worktree.Pull(&git.PullOptions{
 		Auth: &http.BasicAuth{
 			Username: config.AppConfig.Git.Gitee.Username,
@@ -186,10 +198,56 @@ func (s *GitService) pullLatest() error {
 		},
 	})
 
+	if err == nil || err == git.NoErrAlreadyUpToDate {
+		return nil
+	}
+
+	logger.Logger.Warn("正常拉取失败，尝试强制同步", zap.Error(err))
+
+	// 如果正常拉取失败，尝试强制同步
+	return s.forcePullLatest()
+}
+
+// forcePullLatest 强制拉取最新代码，解决冲突
+func (s *GitService) forcePullLatest() error {
+	// 获取远程仓库的最新提交
+	remote, err := s.repo.Remote("origin")
+	if err != nil {
+		return fmt.Errorf("获取远程仓库失败: %w", err)
+	}
+
+	// 获取远程引用
+	err = remote.Fetch(&git.FetchOptions{
+		Auth: &http.BasicAuth{
+			Username: config.AppConfig.Git.Gitee.Username,
+			Password: config.AppConfig.Git.Gitee.Password,
+		},
+	})
 	if err != nil && err != git.NoErrAlreadyUpToDate {
+		return fmt.Errorf("获取远程引用失败: %w", err)
+	}
+
+	// 获取远程main分支的最新提交
+	remoteRef, err := s.repo.Reference("refs/remotes/origin/main", true)
+	if err != nil {
+		return fmt.Errorf("获取远程main分支失败: %w", err)
+	}
+
+	worktree, err := s.repo.Worktree()
+	if err != nil {
 		return err
 	}
 
+	// 强制重置到远程最新提交
+	err = worktree.Reset(&git.ResetOptions{
+		Commit: remoteRef.Hash(),
+		Mode:   git.HardReset,
+	})
+	if err != nil {
+		return fmt.Errorf("强制重置失败: %w", err)
+	}
+
+	logger.Logger.Info("强制同步成功", zap.String("commit", remoteRef.Hash().String()))
 	return nil
 }
 
@@ -242,20 +300,86 @@ func (s *GitService) commitAndPush(newImages []string) (string, error) {
 		return "", err
 	}
 
-	// 推送到Gitee
-	err = s.repo.Push(&git.PushOptions{
-		Auth: &http.BasicAuth{
-			Username: config.AppConfig.Git.Gitee.Username,
-			Password: config.AppConfig.Git.Gitee.Password,
-		},
-	})
-
+	// 推送到Gitee，如果失败则重试
+	err = s.pushWithRetry(commit.String())
 	if err != nil {
-		return "", fmt.Errorf("推送到Gitee失败: %w", err)
+		return "", err
 	}
 
 	logger.Logger.Info("代码已推送到Gitee", zap.String("commit", commit.String()))
 	return commit.String(), nil
+}
+
+// pushWithRetry 推送代码，如果失败则重试
+func (s *GitService) pushWithRetry(commitSHA string) error {
+	maxRetries := 3
+	
+	for i := 0; i < maxRetries; i++ {
+		// 尝试推送
+		err := s.repo.Push(&git.PushOptions{
+			Auth: &http.BasicAuth{
+				Username: config.AppConfig.Git.Gitee.Username,
+				Password: config.AppConfig.Git.Gitee.Password,
+			},
+		})
+		
+		if err == nil {
+			return nil
+		}
+		
+		logger.Logger.Warn("推送失败，尝试重新同步", 
+			zap.Int("retry", i+1), 
+			zap.Int("max_retries", maxRetries),
+			zap.Error(err))
+		
+		// 如果推送失败，可能是因为远程仓库有新的提交
+		// 尝试重新拉取并合并
+		if err := s.pullLatest(); err != nil {
+			logger.Logger.Error("重新拉取失败", zap.Error(err))
+			continue
+		}
+		
+		// 重新添加文件到暂存区
+		worktree, err := s.repo.Worktree()
+		if err != nil {
+			logger.Logger.Error("获取工作树失败", zap.Error(err))
+			continue
+		}
+		
+		_, err = worktree.Add("images.txt")
+		if err != nil {
+			logger.Logger.Error("添加文件到暂存区失败", zap.Error(err))
+			continue
+		}
+		
+		// 检查是否还有更改需要提交
+		status, err := worktree.Status()
+		if err != nil {
+			logger.Logger.Error("检查状态失败", zap.Error(err))
+			continue
+		}
+		
+		if !status.IsClean() {
+			// 重新提交
+			commitMsg := fmt.Sprintf("Retry commit: %s", commitSHA)
+			_, err = worktree.Commit(commitMsg, &git.CommitOptions{
+				Author: &object.Signature{
+					Name:  config.AppConfig.Git.Gitee.Username,
+					Email: config.AppConfig.Git.Gitee.Email,
+					When:  time.Now(),
+				},
+			})
+			if err != nil {
+				logger.Logger.Error("重新提交失败", zap.Error(err))
+				continue
+			}
+		}
+		
+		// 等待一段时间再重试
+		time.Sleep(time.Duration(i+1) * time.Second)
+	}
+	
+	return fmt.Errorf("推送到Gitee失败，已重试%d次", maxRetries)
 }
 
 // GetRepoStatus 获取仓库状态

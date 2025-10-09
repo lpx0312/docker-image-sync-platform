@@ -20,7 +20,8 @@ export const useImageStore = defineStore('image', () => {
   })
   const filters = ref({
     status: '',
-    search: ''
+    search: '',
+    architecture: ''
   })
   const sorting = ref({
     sortBy: 'updated_at',
@@ -129,7 +130,8 @@ export const useImageStore = defineStore('image', () => {
   const clearFilters = () => {
     filters.value = {
       status: '',
-      search: ''
+      search: '',
+      architecture: ''
     }
     pagination.value.page = 1
   }

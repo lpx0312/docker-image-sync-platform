@@ -66,6 +66,16 @@ func (h *SyncHandler) SubmitSync(c *gin.Context) {
 		// 解析镜像信息
 		originalImage, tag, architecture := parseImageInfo(image)
 		
+		// 如果请求中指定了架构，使用请求中的架构
+		if req.Architecture != "" {
+			architecture = req.Architecture
+		}
+		
+		// 如果架构为空，设置默认值
+		if architecture == "" {
+			architecture = "amd64"
+		}
+		
 		record := &models.ImageSyncRecord{
 			OriginalImage: originalImage,
 			Tag:           tag,
@@ -115,9 +125,39 @@ func (h *SyncHandler) GetSyncStatus(c *gin.Context) {
 		images = []string{}
 	}
 
+	// 获取第一个镜像记录的详细信息
+	var record models.ImageSyncRecord
+	var sourceImage, targetImage, architecture string
+	if err := database.DB.Where("task_id = ?", taskID).First(&record).Error; err == nil {
+		sourceImage = record.OriginalImage
+		if record.Tag != "" {
+			sourceImage = sourceImage + ":" + record.Tag
+		}
+		
+		// 生成目标镜像地址
+		targetImage = record.ACRImage
+		if targetImage == "" {
+			targetImage = h.generateACRImageWithArchitecture(record.OriginalImage, record.Tag, record.Architecture)
+		} else if !strings.Contains(targetImage, ":") {
+			tag := record.Tag
+			if tag == "" {
+				tag = "latest"
+			}
+			targetImage = fmt.Sprintf("%s:%s", targetImage, tag)
+		}
+		
+		architecture = record.Architecture
+		if architecture == "" {
+			architecture = "amd64"
+		}
+	}
+
 	response := models.TaskStatusResponse{
 		TaskID:          task.TaskID,
 		Status:          task.Status,
+		SourceImage:     sourceImage,
+		TargetImage:     targetImage,
+		Architecture:    architecture,
 		GitHubActionURL: task.GitHubActionURL,
 		StartedAt:       task.StartedAt,
 		CompletedAt:     task.CompletedAt,
@@ -133,6 +173,7 @@ type SyncHistoryItem struct {
 	TaskID          string     `json:"task_id"`
 	SourceImage     string     `json:"source_image"`
 	TargetImage     string     `json:"target_image"`
+	Architecture    string     `json:"architecture"`
 	Status          string     `json:"status"`
 	GitHubActionURL string     `json:"github_action_url"`
 	StartedAt       *time.Time `json:"started_at"`
@@ -190,8 +231,8 @@ func (h *SyncHandler) GetSyncHistory(c *gin.Context) {
 		// 目标镜像地址
 		targetImage := record.ACRImage
 		if targetImage == "" {
-			// 如果没有ACR地址，使用generateACRImage生成
-			targetImage = h.generateACRImage(record.OriginalImage, record.Tag)
+			// 如果没有ACR地址，使用generateACRImageWithArchitecture生成
+			targetImage = h.generateACRImageWithArchitecture(record.OriginalImage, record.Tag, record.Architecture)
 		} else if !strings.Contains(targetImage, ":") {
 			// 如果ACR地址没有标签，添加标签
 			tag := record.Tag
@@ -201,10 +242,17 @@ func (h *SyncHandler) GetSyncHistory(c *gin.Context) {
 			targetImage = fmt.Sprintf("%s:%s", targetImage, tag)
 		}
 
+		// 架构信息，如果为空则默认为amd64
+		architecture := record.Architecture
+		if architecture == "" {
+			architecture = "amd64"
+		}
+
 		historyItem := SyncHistoryItem{
 			TaskID:          task.TaskID,
 			SourceImage:     sourceImage,
 			TargetImage:     targetImage,
+			Architecture:    architecture,
 			Status:          task.Status,
 			GitHubActionURL: task.GitHubActionURL,
 			StartedAt:       task.StartedAt,
@@ -245,8 +293,30 @@ func (h *SyncHandler) processSyncTask(taskID string, images []string) {
 		Where("task_id = ?", taskID).
 		Update("sync_status", models.SyncStatusSyncing)
 
+	// 根据架构信息构建正确的镜像字符串
+	var processedImages []string
+	var records []models.ImageSyncRecord
+	if err := database.DB.Where("task_id = ?", taskID).Find(&records).Error; err != nil {
+		h.handleSyncError(taskID, fmt.Sprintf("查询镜像记录失败: %v", err))
+		return
+	}
+
+	for _, record := range records {
+		imageStr := record.OriginalImage
+		if record.Tag != "" {
+			imageStr = imageStr + ":" + record.Tag
+		}
+		
+		// 如果是arm64架构，添加platform参数
+		if record.Architecture == "arm64" {
+			imageStr = "--platform=linux/arm64 " + imageStr
+		}
+		
+		processedImages = append(processedImages, imageStr)
+	}
+
 	// 执行Git操作
-	commitSHA, err := h.gitService.UpdateImagesFile(images)
+	commitSHA, err := h.gitService.UpdateImagesFile(processedImages)
 	if err != nil {
 		h.handleSyncError(taskID, fmt.Sprintf("Git操作失败: %v", err))
 		return
@@ -344,7 +414,7 @@ func (h *SyncHandler) handleSyncSuccess(taskID string) {
 	database.DB.Where("task_id = ?", taskID).Find(&records)
 
 	for _, record := range records {
-		acrImage := h.generateACRImage(record.OriginalImage, record.Tag)
+		acrImage := h.generateACRImageWithArchitecture(record.OriginalImage, record.Tag, record.Architecture)
 		
 		database.DB.Model(&record).Updates(map[string]interface{}{
 			"sync_status": models.SyncStatusSuccess,
@@ -381,6 +451,11 @@ func (h *SyncHandler) handleSyncError(taskID, errorMsg string) {
 
 // generateACRImage 生成阿里云ACR镜像地址
 func (h *SyncHandler) generateACRImage(originalImage, tag string) string {
+	return h.generateACRImageWithArchitecture(originalImage, tag, "")
+}
+
+// generateACRImageWithArchitecture 生成带架构信息的阿里云ACR镜像地址
+func (h *SyncHandler) generateACRImageWithArchitecture(originalImage, tag, architecture string) string {
 	// 从配置中获取阿里云信息
 	var registryConfig models.SystemConfig
 	database.DB.Where("config_key = ?", "aliyun_registry_prefix").First(&registryConfig)
@@ -396,7 +471,7 @@ func (h *SyncHandler) generateACRImage(originalImage, tag string) string {
 	
 	namespace := namespaceConfig.ConfigValue
 	if namespace == "" {
-		namespace = "docker-sync" // 默认命名空间
+		namespace = "lpx03" // 使用与GitHub Action一致的命名空间
 	}
 
 	// 解析镜像名称
@@ -406,11 +481,41 @@ func (h *SyncHandler) generateACRImage(originalImage, tag string) string {
 		imageName = parts[len(parts)-1]
 	}
 	
-	if tag != "" {
-		return fmt.Sprintf("%s/%s/%s:%s", registry, namespace, imageName, tag)
+	// 生成平台前缀，与GitHub Action逻辑一致
+	// GitHub Action逻辑：platform_prefix="${platform//\//_}_"
+	platformPrefix := ""
+	if architecture != "" && architecture != "amd64" {
+		// 将简化的架构名转换为完整的平台字符串
+		var platform string
+		switch architecture {
+		case "arm64":
+			platform = "linux/arm64"
+		case "arm":
+			platform = "linux/arm"
+		case "386":
+			platform = "linux/386"
+		default:
+			// 如果已经是完整格式（如linux/arm64），直接使用
+			if strings.Contains(architecture, "/") {
+				platform = architecture
+			} else {
+				platform = "linux/" + architecture
+			}
+		}
+		// 将 linux/arm64 转换为 linux_arm64_
+		platformPrefix = strings.ReplaceAll(platform, "/", "_") + "_"
 	}
 	
-	return fmt.Sprintf("%s/%s/%s:latest", registry, namespace, imageName)
+	// 构建最终的镜像名称和标签
+	finalTag := tag
+	if finalTag == "" {
+		finalTag = "latest"
+	}
+	
+	// 构建镜像名称：platform_prefix + imageName:tag
+	finalImageName := platformPrefix + imageName
+	
+	return fmt.Sprintf("%s/%s/%s:%s", registry, namespace, finalImageName, finalTag)
 }
 
 // parseImageInfo 解析镜像信息

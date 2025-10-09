@@ -66,7 +66,7 @@
               @input="handleSearch"
             />
           </el-col>
-          <el-col :span="6">
+          <el-col :span="4">
             <el-select
               v-model="statusFilter"
               placeholder="筛选状态"
@@ -77,6 +77,17 @@
               <el-option label="同步中" value="syncing" />
               <el-option label="成功" value="success" />
               <el-option label="失败" value="failed" />
+            </el-select>
+          </el-col>
+          <el-col :span="4">
+            <el-select
+              v-model="architectureFilter"
+              placeholder="筛选架构"
+              clearable
+              @change="handleArchitectureFilter"
+            >
+              <el-option label="amd64" value="amd64" />
+              <el-option label="arm64" value="arm64" />
             </el-select>
           </el-col>
           <el-col :span="4">
@@ -104,6 +115,14 @@
         <el-table-column prop="acr_image" label="目标镜像" min-width="200">
           <template #default="{ row }">
             <div class="image-name">{{ getTargetImage(row) }}</div>
+          </template>
+        </el-table-column>
+        
+        <el-table-column prop="architecture" label="架构" width="80" sortable="custom">
+          <template #default="{ row }">
+            <el-tag :type="row.architecture === 'arm64' ? 'warning' : 'info'" size="small">
+              {{ row.architecture || 'amd64' }}
+            </el-tag>
           </template>
         </el-table-column>
         
@@ -281,6 +300,7 @@ const imageStore = useImageStore()
 // 响应式数据
 const searchText = ref('')
 const statusFilter = ref('')
+const architectureFilter = ref('')
 const currentPage = ref(1)
 const pageSize = ref(20)
 const detailDialogVisible = ref(false)
@@ -344,10 +364,19 @@ const handleStatusFilter = () => {
   imageStore.loadImages()
 }
 
+// 架构筛选
+const handleArchitectureFilter = () => {
+  imageStore.updateFilters({ architecture: architectureFilter.value })
+  currentPage.value = 1
+  imageStore.updatePagination(1, pageSize.value)
+  imageStore.loadImages()
+}
+
 // 清除筛选
 const clearFilters = () => {
   searchText.value = ''
   statusFilter.value = ''
+  architectureFilter.value = ''
   imageStore.clearFilters()
   currentPage.value = 1
   imageStore.updatePagination(1, pageSize.value)
@@ -607,8 +636,9 @@ onMounted(() => {
 
 .action-buttons {
   display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  white-space: nowrap;
 }
 
 .danger-button {
