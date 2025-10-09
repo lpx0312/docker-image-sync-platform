@@ -79,6 +79,11 @@ func initDefaultConfigs() error {
 			Description: "阿里云镜像仓库前缀",
 		},
 		{
+			ConfigKey:   "aliyun_namespace",
+			ConfigValue: config.AppConfig.Aliyun.Namespace,
+			Description: "阿里云镜像仓库命名空间",
+		},
+		{
 			ConfigKey:   "sync_check_interval",
 			ConfigValue: "30",
 			Description: "同步状态检查间隔（秒）",

@@ -287,15 +287,33 @@ const detailDialogVisible = ref(false)
 const selectedImage = ref(null)
 const retryingIds = ref([])
 const deletingIds = ref([])
+const aliyunConfig = ref({
+  registry: 'registry.cn-hangzhou.aliyuncs.com',
+  namespace: 'docker-sync'
+})
 
 // 搜索防抖
 let searchTimer = null
+
+// 加载阿里云配置
+const loadAliyunConfig = async () => {
+  try {
+    const response = await fetch('/api/v1/config/aliyun')
+    if (response.ok) {
+      const config = await response.json()
+      aliyunConfig.value = config
+    }
+  } catch (error) {
+    console.error('获取阿里云配置失败:', error)
+  }
+}
 
 // 加载数据
 const loadData = async () => {
   await Promise.all([
     imageStore.loadImages(),
-    imageStore.loadImageStats()
+    imageStore.loadImageStats(),
+    loadAliyunConfig()
   ])
 }
 
@@ -423,8 +441,8 @@ const openGitHubRun = (url) => {
 const getStatusType = (status) => {
   const statusMap = {
     pending: 'info',
-    in_progress: 'warning', // 对应后端的 in_progress
-    completed: 'success',   // 对应后端的 completed
+    syncing: 'warning',   // 对应后端的 syncing
+    success: 'success',   // 对应后端的 success
     failed: 'danger'
   }
   return statusMap[status] || 'info'
@@ -433,8 +451,8 @@ const getStatusType = (status) => {
 const getStatusText = (status) => {
   const statusMap = {
     pending: '等待中',
-    in_progress: '同步中', // 对应后端的 in_progress
-    completed: '成功',     // 对应后端的 completed
+    syncing: '同步中',   // 对应后端的 syncing
+    success: '成功',     // 对应后端的 success
     failed: '失败'
   }
   return statusMap[status] || '未知'
@@ -446,9 +464,9 @@ const getTargetImage = (row) => {
     return row.acr_image
   }
   
-  // 否则生成默认的 ACR 地址
+  // 否则生成默认的 ACR 地址，使用动态配置
   if (row.original_image && row.tag) {
-    return `registry.cn-hangzhou.aliyuncs.com/docker-sync/${row.original_image}:${row.tag}`
+    return `${aliyunConfig.value.registry}/${aliyunConfig.value.namespace}/${row.original_image}:${row.tag}`
   }
   
   return ''

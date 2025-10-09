@@ -128,6 +128,19 @@ func (h *SyncHandler) GetSyncStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+// SyncHistoryItem 同步历史项
+type SyncHistoryItem struct {
+	TaskID          string     `json:"task_id"`
+	SourceImage     string     `json:"source_image"`
+	TargetImage     string     `json:"target_image"`
+	Status          string     `json:"status"`
+	GitHubActionURL string     `json:"github_action_url"`
+	StartedAt       *time.Time `json:"started_at"`
+	CompletedAt     *time.Time `json:"completed_at"`
+	ErrorMessage    string     `json:"error_message"`
+	CreatedAt       time.Time  `json:"created_at"`
+}
+
 // GetSyncHistory 获取同步历史
 func (h *SyncHandler) GetSyncHistory(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
@@ -158,9 +171,44 @@ func (h *SyncHandler) GetSyncHistory(c *gin.Context) {
 		return
 	}
 
+	// 构建历史项列表
+	var historyItems []SyncHistoryItem
+	for _, task := range tasks {
+		// 获取该任务的第一个镜像记录作为代表
+		var record models.ImageSyncRecord
+		database.DB.Where("task_id = ?", task.TaskID).First(&record)
+
+		// 构建源镜像地址
+		sourceImage := record.OriginalImage
+		if record.Tag != "" && record.Tag != "latest" {
+			sourceImage = fmt.Sprintf("%s:%s", record.OriginalImage, record.Tag)
+		}
+
+		// 目标镜像地址
+		targetImage := record.ACRImage
+		if targetImage == "" {
+			// 如果没有ACR地址，使用generateACRImage生成
+			targetImage = h.generateACRImage(record.OriginalImage, record.Tag)
+		}
+
+		historyItem := SyncHistoryItem{
+			TaskID:          task.TaskID,
+			SourceImage:     sourceImage,
+			TargetImage:     targetImage,
+			Status:          task.Status,
+			GitHubActionURL: task.GitHubActionURL,
+			StartedAt:       task.StartedAt,
+			CompletedAt:     task.CompletedAt,
+			ErrorMessage:    task.ErrorMessage,
+			CreatedAt:       task.CreatedAt,
+		}
+
+		historyItems = append(historyItems, historyItem)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"total": total,
-		"data":  tasks,
+		"data":  historyItems,
 		"page":  page,
 		"page_size": pageSize,
 	})
@@ -332,15 +380,21 @@ func (h *SyncHandler) generateACRImage(originalImage, tag string) string {
 		registry = "registry.cn-hangzhou.aliyuncs.com"
 	}
 
+	// 从配置中获取阿里云命名空间
+	var namespaceConfig models.SystemConfig
+	database.DB.Where("config_key = ?", "aliyun_namespace").First(&namespaceConfig)
+	
+	namespace := namespaceConfig.ConfigValue
+	if namespace == "" {
+		namespace = "docker-sync" // 默认命名空间
+	}
+
 	// 解析镜像名称
 	imageName := originalImage
 	if strings.Contains(imageName, "/") {
 		parts := strings.Split(imageName, "/")
 		imageName = parts[len(parts)-1]
 	}
-
-	// 处理命名空间冲突
-	namespace := "docker-sync" // 默认命名空间
 	
 	if tag != "" && tag != "latest" {
 		return fmt.Sprintf("%s/%s/%s:%s", registry, namespace, imageName, tag)

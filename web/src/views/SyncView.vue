@@ -251,49 +251,8 @@ const syncRules = {
 
 // 最近历史记录
 const recentHistory = computed(() => {
-  return syncStore.syncHistory.slice(0, 5).map(item => {
-    // 源镜像就是 images_json 中的原始镜像名
-    const source_image = item.images_json || ''
-    
-    // 目标镜像需要根据配置生成 ACR 地址
-    // 这里我们先使用一个简化的逻辑，实际应该调用后端API获取
-    const generateACRImage = (originalImage) => {
-      if (!originalImage) return ''
-      
-      // 解析镜像名称和标签
-      let imageName = originalImage
-      let tag = 'latest'
-      
-      if (originalImage.includes(':')) {
-        const parts = originalImage.split(':')
-        imageName = parts[0]
-        tag = parts[1]
-      }
-      
-      // 提取镜像名（去掉命名空间）
-      if (imageName.includes('/')) {
-        const parts = imageName.split('/')
-        imageName = parts[parts.length - 1]
-      }
-      
-      // 生成 ACR 地址
-      const registry = 'registry.cn-hangzhou.aliyuncs.com'
-      const namespace = 'docker-sync'
-      
-      if (tag && tag !== 'latest') {
-        return `${registry}/${namespace}/${imageName}:${tag}`
-      }
-      return `${registry}/${namespace}/${imageName}`
-    }
-    
-    const target_image = generateACRImage(source_image)
-    
-    return {
-      ...item,
-      source_image,
-      target_image
-    }
-  })
+  // 后端已经返回了完整的数据，包括source_image和target_image，直接使用即可
+  return syncStore.syncHistory.slice(0, 5)
 })
 
 // 提交同步
@@ -428,8 +387,8 @@ const loadRecentHistory = async () => {
 const getStatusType = (status) => {
   const statusMap = {
     pending: 'info',
-    in_progress: 'warning', // 对应后端的 in_progress
-    completed: 'success',   // 对应后端的 completed
+    running: 'warning',   // 对应后端的 running
+    completed: 'success', // 对应后端的 completed
     failed: 'danger'
   }
   return statusMap[status] || 'info'
@@ -438,8 +397,8 @@ const getStatusType = (status) => {
 const getStatusText = (status) => {
   const statusMap = {
     pending: '等待中',
-    in_progress: '同步中', // 对应后端的 in_progress
-    completed: '成功',     // 对应后端的 completed
+    running: '同步中',   // 对应后端的 running
+    completed: '成功',   // 对应后端的 completed
     failed: '失败'
   }
   return statusMap[status] || '未知'

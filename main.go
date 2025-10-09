@@ -53,6 +53,7 @@ func main() {
 	// 初始化处理器
 	syncHandler := handlers.NewSyncHandler(gitService, githubService)
 	imageHandler := handlers.NewImageHandler()
+	configHandler := handlers.NewConfigHandler()
 
 	// 设置Gin模式
 	if config.AppConfig.Server.Mode == "release" {
@@ -145,6 +146,12 @@ func main() {
 
 				c.JSON(http.StatusOK, rateLimit)
 			})
+		}
+
+		// 配置相关
+		config := api.Group("/config")
+		{
+			config.GET("/aliyun", configHandler.GetAliyunConfig)
 		}
 
 		// 健康检查
