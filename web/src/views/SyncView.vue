@@ -188,7 +188,21 @@
         empty-text="暂无同步记录"
       >
         <el-table-column prop="source_image" label="源镜像" min-width="200" />
-        <el-table-column prop="target_image" label="目标镜像" min-width="200" />
+        <el-table-column prop="target_image" label="目标镜像" min-width="200">
+          <template #default="{ row }">
+            <div class="image-info">
+              <div class="image-name">{{ row.target_image }}</div>
+              <el-button 
+                v-if="row.target_image && row.status === 'success'" 
+                type="text" 
+                size="small"
+                @click="copyToClipboard(row.target_image)"
+              >
+                复制
+              </el-button>
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column prop="status" label="状态" width="100">
           <template #default="{ row }">
             <el-tag :type="getStatusType(row.status)">
@@ -434,6 +448,16 @@ const formatTime = (time) => {
   return dayjs(time).format('YYYY-MM-DD HH:mm:ss')
 }
 
+// 复制到剪贴板
+const copyToClipboard = async (text) => {
+  try {
+    await navigator.clipboard.writeText(text)
+    ElMessage.success('已复制到剪贴板')
+  } catch (error) {
+    ElMessage.error('复制失败')
+  }
+}
+
 const openGitHubRun = (url) => {
   window.open(url, '_blank')
 }
@@ -492,6 +516,17 @@ onUnmounted(() => {
   margin-top: 8px;
   color: #606266;
   font-size: 14px;
+}
+
+.image-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.image-name {
+  flex: 1;
+  word-break: break-all;
 }
 
 .task-actions {

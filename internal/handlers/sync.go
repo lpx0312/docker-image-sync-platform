@@ -180,8 +180,11 @@ func (h *SyncHandler) GetSyncHistory(c *gin.Context) {
 
 		// 构建源镜像地址
 		sourceImage := record.OriginalImage
-		if record.Tag != "" && record.Tag != "latest" {
+		if record.Tag != "" {
 			sourceImage = fmt.Sprintf("%s:%s", record.OriginalImage, record.Tag)
+		} else {
+			// 如果没有标签，默认添加latest
+			sourceImage = fmt.Sprintf("%s:latest", record.OriginalImage)
 		}
 
 		// 目标镜像地址
@@ -189,6 +192,13 @@ func (h *SyncHandler) GetSyncHistory(c *gin.Context) {
 		if targetImage == "" {
 			// 如果没有ACR地址，使用generateACRImage生成
 			targetImage = h.generateACRImage(record.OriginalImage, record.Tag)
+		} else if !strings.Contains(targetImage, ":") {
+			// 如果ACR地址没有标签，添加标签
+			tag := record.Tag
+			if tag == "" {
+				tag = "latest"
+			}
+			targetImage = fmt.Sprintf("%s:%s", targetImage, tag)
 		}
 
 		historyItem := SyncHistoryItem{
@@ -396,11 +406,11 @@ func (h *SyncHandler) generateACRImage(originalImage, tag string) string {
 		imageName = parts[len(parts)-1]
 	}
 	
-	if tag != "" && tag != "latest" {
+	if tag != "" {
 		return fmt.Sprintf("%s/%s/%s:%s", registry, namespace, imageName, tag)
 	}
 	
-	return fmt.Sprintf("%s/%s/%s", registry, namespace, imageName)
+	return fmt.Sprintf("%s/%s/%s:latest", registry, namespace, imageName)
 }
 
 // parseImageInfo 解析镜像信息

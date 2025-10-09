@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"docker-image-sync-platform/internal/database"
 	"docker-image-sync-platform/internal/logger"
@@ -63,6 +65,24 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 		logger.Logger.Error("查询镜像列表失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询镜像列表失败"})
 		return
+	}
+
+	// 处理镜像数据，确保目标镜像地址包含完整标签
+	for i := range images {
+		if images[i].SyncStatus == models.SyncStatusSuccess {
+			// 对于成功的镜像，确保ACR地址包含完整标签
+			if images[i].ACRImage == "" {
+				// 如果没有ACR地址，生成完整的ACR地址
+				images[i].ACRImage = h.generateACRImage(images[i].OriginalImage, images[i].Tag)
+			} else if !strings.Contains(images[i].ACRImage, ":") {
+				// 如果ACR地址没有标签，添加标签
+				tag := images[i].Tag
+				if tag == "" {
+					tag = "latest"
+				}
+				images[i].ACRImage = fmt.Sprintf("%s:%s", images[i].ACRImage, tag)
+			}
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -193,4 +213,38 @@ func (h *ImageHandler) RetrySync(c *gin.Context) {
 		zap.String("image", image.OriginalImage))
 
 	c.JSON(http.StatusOK, gin.H{"message": "镜像已重置为待同步状态"})
+}
+
+// generateACRImage 生成阿里云ACR镜像地址
+func (h *ImageHandler) generateACRImage(originalImage, tag string) string {
+	// 从配置中获取阿里云信息
+	var registryConfig models.SystemConfig
+	database.DB.Where("config_key = ?", "aliyun_registry_prefix").First(&registryConfig)
+	
+	registry := registryConfig.ConfigValue
+	if registry == "" {
+		registry = "registry.cn-hangzhou.aliyuncs.com"
+	}
+
+	// 从配置中获取阿里云命名空间
+	var namespaceConfig models.SystemConfig
+	database.DB.Where("config_key = ?", "aliyun_namespace").First(&namespaceConfig)
+	
+	namespace := namespaceConfig.ConfigValue
+	if namespace == "" {
+		namespace = "docker-sync" // 默认命名空间
+	}
+
+	// 解析镜像名称
+	imageName := originalImage
+	if strings.Contains(imageName, "/") {
+		parts := strings.Split(imageName, "/")
+		imageName = parts[len(parts)-1]
+	}
+	
+	if tag != "" {
+		return fmt.Sprintf("%s/%s/%s:%s", registry, namespace, imageName, tag)
+	}
+	
+	return fmt.Sprintf("%s/%s/%s:latest", registry, namespace, imageName)
 }
