@@ -88,7 +88,9 @@ func main() {
 		{
 			// 同步操作使用更严格的限流
 			sync.POST("/submit", middleware.SyncRateLimit(), syncHandler.SubmitSync)
+			sync.POST("/batch", middleware.SyncRateLimit(), syncHandler.SubmitBatchSync)
 			sync.GET("/status/:taskId", syncHandler.GetSyncStatus)
+			sync.GET("/batch/status/:taskId", syncHandler.GetBatchSyncStatus)
 			sync.GET("/history", syncHandler.GetSyncHistory)
 		}
 

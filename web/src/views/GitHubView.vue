@@ -452,8 +452,13 @@ const getRateLimitStatus = () => {
 
 // 生命周期
 onMounted(() => {
-  loadWorkflowRuns()
-  checkRateLimit()
+  console.log('GitHubView mounted')
+  loadWorkflowRuns().catch(error => {
+    console.error('GitHubView loadWorkflowRuns error:', error)
+  })
+  checkRateLimit().catch(error => {
+    console.error('GitHubView checkRateLimit error:', error)
+  })
 })
 </script>
 

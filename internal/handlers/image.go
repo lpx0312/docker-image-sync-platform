@@ -108,7 +108,7 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 			// 对于成功的镜像，确保ACR地址包含完整标签
 			if images[i].ACRImage == "" {
 				// 如果没有ACR地址，生成完整的ACR地址
-				images[i].ACRImage = h.generateACRImage(images[i].OriginalImage, images[i].Tag)
+				images[i].ACRImage = h.generateACRImageWithArchitecture(images[i].OriginalImage, images[i].Tag, images[i].Architecture)
 			} else if !strings.Contains(images[i].ACRImage, ":") {
 				// 如果ACR地址没有标签，添加标签
 				tag := images[i].Tag
@@ -148,7 +148,7 @@ func (h *ImageHandler) GetImage(c *gin.Context) {
     if image.SyncStatus == models.SyncStatusSuccess {
         if image.ACRImage == "" {
             // 如果没有ACR地址，生成完整的ACR地址
-            image.ACRImage = h.generateACRImage(image.OriginalImage, image.Tag)
+            image.ACRImage = h.generateACRImageWithArchitecture(image.OriginalImage, image.Tag, image.Architecture)
         } else if !strings.Contains(image.ACRImage, ":") {
             // 如果ACR地址没有标签，添加标签
             tag := image.Tag
@@ -267,6 +267,11 @@ func (h *ImageHandler) RetrySync(c *gin.Context) {
 
 // generateACRImage 生成阿里云ACR镜像地址
 func (h *ImageHandler) generateACRImage(originalImage, tag string) string {
+	return h.generateACRImageWithArchitecture(originalImage, tag, "")
+}
+
+// generateACRImageWithArchitecture 生成带架构信息的阿里云ACR镜像地址
+func (h *ImageHandler) generateACRImageWithArchitecture(originalImage, tag, architecture string) string {
 	// 从配置中获取阿里云信息
 	var registryConfig models.SystemConfig
 	database.DB.Where("config_key = ?", "aliyun_registry_prefix").First(&registryConfig)
@@ -292,9 +297,38 @@ func (h *ImageHandler) generateACRImage(originalImage, tag string) string {
 		imageName = parts[len(parts)-1]
 	}
 	
-	if tag != "" {
-		return fmt.Sprintf("%s/%s/%s:%s", registry, namespace, imageName, tag)
+	// 生成架构后缀，将架构信息添加到tag后面
+	architectureSuffix := ""
+	if architecture != "" && architecture != "amd64" {
+		// 将简化的架构名转换为完整的平台字符串
+		var platform string
+		switch architecture {
+		case "arm64":
+			platform = "linux/arm64"
+		case "arm":
+			platform = "linux/arm"
+		case "386":
+			platform = "linux/386"
+		default:
+			// 如果已经是完整格式（如linux/arm64），直接使用
+			if strings.Contains(architecture, "/") {
+				platform = architecture
+			} else {
+				platform = "linux/" + architecture
+			}
+		}
+		// 将 linux/arm64 转换为 -linux-arm64
+		architectureSuffix = "-" + strings.ReplaceAll(platform, "/", "-")
 	}
 	
-	return fmt.Sprintf("%s/%s/%s:latest", registry, namespace, imageName)
+	// 构建最终的镜像名称和标签
+	finalTag := tag
+	if finalTag == "" {
+		finalTag = "latest"
+	}
+	
+	// 构建标签：tag + architectureSuffix
+	finalTagWithArch := finalTag + architectureSuffix
+	
+	return fmt.Sprintf("%s/%s/%s:%s", registry, namespace, imageName, finalTagWithArch)
 }

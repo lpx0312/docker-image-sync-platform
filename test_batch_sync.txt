@@ -1,0 +1,5 @@
+nginx:latest
+redis:alpine
+mysql:8.0
+postgres:13
+node:18-alpine

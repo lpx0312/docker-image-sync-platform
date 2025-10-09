@@ -16,68 +16,28 @@
         </div>
       </template>
 
-      <!-- 同步表单 -->
-      <el-form 
-        ref="syncFormRef" 
-        :model="syncForm" 
-        :rules="syncRules" 
-        label-width="120px"
-        :disabled="syncStore.hasCurrentTask && syncStore.taskStatus !== 'failed'"
-      >
-        <el-form-item label="源镜像地址" prop="sourceImage">
-          <el-input
-            v-model="syncForm.sourceImage"
-            placeholder="例如: nginx:latest 或 docker.io/library/nginx:latest"
-            clearable
+      <!-- 同步模式选择 -->
+      <el-tabs v-model="activeTab" class="sync-tabs">
+        <el-tab-pane label="单个同步" name="single">
+          <!-- 单个同步表单 -->
+          <SingleSyncForm @success="handleSingleSyncSuccess" />
+        </el-tab-pane>
+        <el-tab-pane label="批量同步" name="batch">
+          <!-- 批量同步表单 -->
+          <BatchSyncForm @success="handleBatchSyncSuccess" />
+        </el-tab-pane>
+        <el-tab-pane 
+          v-if="currentBatchTask" 
+          label="批量状态" 
+          name="batch-status"
+        >
+          <!-- 批量同步状态 -->
+          <BatchSyncStatus 
+            :task-id="currentBatchTask.task_id" 
+            @clear="handleBatchTaskClear"
           />
-          <div class="form-tip">
-            支持Docker Hub、Quay.io等公共镜像仓库的镜像
-          </div>
-        </el-form-item>
-
-
-
-        <el-form-item label="架构选择" prop="architecture">
-          <el-select
-            v-model="syncForm.architecture"
-            placeholder="请选择架构"
-            style="width: 100%"
-          >
-            <el-option label="amd64" value="amd64" />
-            <el-option label="arm64" value="arm64" />
-          </el-select>
-          <div class="form-tip">
-            选择镜像的目标架构，默认为amd64
-          </div>
-        </el-form-item>
-
-        <el-form-item label="同步说明" prop="description">
-          <el-input
-            v-model="syncForm.description"
-            type="textarea"
-            :rows="3"
-            placeholder="可选：描述此次同步的目的或说明"
-            maxlength="500"
-            show-word-limit
-          />
-        </el-form-item>
-
-        <el-form-item>
-          <el-button 
-            type="primary" 
-            @click="submitSync" 
-            :loading="syncStore.loading"
-            :disabled="syncStore.hasCurrentTask && syncStore.taskStatus !== 'failed'"
-          >
-            <el-icon><Upload /></el-icon>
-            开始同步
-          </el-button>
-          <el-button @click="resetForm">
-            <el-icon><RefreshLeft /></el-icon>
-            重置
-          </el-button>
-        </el-form-item>
-      </el-form>
+        </el-tab-pane>
+      </el-tabs>
     </el-card>
 
     <!-- 当前任务状态 -->
@@ -237,34 +197,55 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Refresh, Upload, RefreshLeft, DocumentCopy } from '@element-plus/icons-vue'
+import { 
+  Refresh, 
+  Clock, 
+  Check, 
+  Close, 
+  Warning,
+  Link,
+  DocumentCopy
+} from '@element-plus/icons-vue'
 import { useSyncStore } from '@/stores/sync'
+import SingleSyncForm from '@/components/SingleSyncForm.vue'
+import BatchSyncForm from '@/components/BatchSyncForm.vue'
+import BatchSyncStatus from '@/components/BatchSyncStatus.vue'
 import dayjs from 'dayjs'
 
+// 状态管理
 const syncStore = useSyncStore()
-const syncFormRef = ref()
+
+// 响应式数据
 const refreshing = ref(false)
 const historyLoading = ref(false)
+const activeTab = ref('single')
 
-// 表单数据
-const syncForm = reactive({
-  sourceImage: '',
-  architecture: 'amd64',
-  description: ''
-})
+// 当前批量任务
+const currentBatchTask = ref(null)
 
-// 表单验证规则
-const syncRules = {
-  sourceImage: [
-    { required: true, message: '请输入源镜像地址', trigger: 'blur' },
-    { 
-      pattern: /^[a-zA-Z0-9._/-]+:[a-zA-Z0-9._-]+$/, 
-      message: '请输入有效的镜像地址格式', 
-      trigger: 'blur' 
-    }
-  ]
+// 处理单个同步成功
+const handleSingleSyncSuccess = (task) => {
+  // 确保currentTask已经设置（通常在submitSync中已经设置）
+  if (task && !syncStore.currentTask) {
+    syncStore.currentTask = task
+  }
+  startStatusPolling()
+  loadRecentHistory()
+}
+
+// 处理批量同步成功
+const handleBatchSyncSuccess = (task) => {
+  currentBatchTask.value = task
+  activeTab.value = 'batch-status'
+  loadRecentHistory()
+}
+
+// 处理批量任务清除
+const handleBatchTaskClear = () => {
+  currentBatchTask.value = null
+  activeTab.value = 'batch'
 }
 
 // 最近历史记录
@@ -273,40 +254,7 @@ const recentHistory = computed(() => {
   return syncStore.syncHistory.slice(0, 5)
 })
 
-// 提交同步
-const submitSync = async () => {
-  try {
-    await syncFormRef.value.validate()
-    
-    const syncData = {
-      images: [syncForm.sourceImage],
-      architecture: syncForm.architecture
-    }
-    
-    await syncStore.submitSync(syncData)
-    ElMessage.success('同步任务已提交')
-    
-    // 开始轮询状态
-    startStatusPolling()
-    
-  } catch (error) {
-    if (error.errors) {
-      // 表单验证错误
-      return
-    }
-    ElMessage.error('提交同步任务失败')
-  }
-}
 
-// 重置表单
-const resetForm = () => {
-  syncFormRef.value.resetFields()
-  Object.assign(syncForm, {
-    sourceImage: '',
-    architecture: 'amd64',
-    description: ''
-  })
-}
 
 // 重试当前任务
 const retryCurrentTask = async () => {
@@ -385,9 +333,12 @@ const refreshStatus = async () => {
 
 // 加载最近历史
 const loadRecentHistory = async () => {
+  console.log('Loading recent history...')
   historyLoading.value = true
   try {
-    await syncStore.loadSyncHistory({ page: 1, page_size: 5 })
+    const result = await syncStore.loadSyncHistory({ page: 1, page_size: 5 })
+    console.log('Recent history loaded:', result)
+    console.log('Sync history data:', syncStore.syncHistory)
   } catch (error) {
     console.error('加载历史记录失败:', error)
   } finally {
@@ -471,7 +422,6 @@ onMounted(() => {
 })
 
 // 组件卸载时清理定时器
-import { onUnmounted } from 'vue'
 onUnmounted(() => {
   stopStatusPolling()
 })

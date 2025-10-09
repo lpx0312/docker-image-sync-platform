@@ -47,7 +47,14 @@ const route = useRoute()
 const activeIndex = computed(() => route.path)
 
 const handleSelect = (key) => {
-  router.push(key)
+  console.log('Navigation triggered:', key)
+  console.log('Current route:', route.path)
+  try {
+    router.push(key)
+    console.log('Navigation successful')
+  } catch (error) {
+    console.error('Navigation error:', error)
+  }
 }
 </script>
 

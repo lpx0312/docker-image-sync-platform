@@ -532,9 +532,12 @@ watch([currentPage, pageSize], () => {
 
 // 生命周期
 onMounted(() => {
+  console.log('ImagesView mounted')
   // 设置默认筛选条件为成功状态
   imageStore.updateFilters({ status: statusFilter.value })
-  loadData()
+  loadData().catch(error => {
+    console.error('ImagesView loadData error:', error)
+  })
 })
 </script>
 

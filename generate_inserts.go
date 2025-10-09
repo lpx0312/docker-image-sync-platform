@@ -41,6 +41,11 @@ func parseImageInfo(imageStr string) (image, tag, architecture string) {
 
 // generateACRImage 生成阿里云ACR镜像地址
 func generateACRImage(originalImage, tag string) string {
+	return generateACRImageWithArchitecture(originalImage, tag, "")
+}
+
+// generateACRImageWithArchitecture 生成带架构信息的阿里云ACR镜像地址
+func generateACRImageWithArchitecture(originalImage, tag, architecture string) string {
 	registry := "registry.cn-hangzhou.aliyuncs.com"
 	namespace := "lpx03" // 根据示例使用 lpx03
 
@@ -51,7 +56,40 @@ func generateACRImage(originalImage, tag string) string {
 		imageName = parts[len(parts)-1]
 	}
 	
-	return fmt.Sprintf("%s/%s/%s", registry, namespace, imageName)
+	// 生成架构后缀，将架构信息添加到tag后面
+	architectureSuffix := ""
+	if architecture != "" && architecture != "amd64" {
+		// 将简化的架构名转换为完整的平台字符串
+		var platform string
+		switch architecture {
+		case "arm64":
+			platform = "linux/arm64"
+		case "arm":
+			platform = "linux/arm"
+		case "386":
+			platform = "linux/386"
+		default:
+			// 如果已经是完整格式（如linux/arm64），直接使用
+			if strings.Contains(architecture, "/") {
+				platform = architecture
+			} else {
+				platform = "linux/" + architecture
+			}
+		}
+		// 将 linux/arm64 转换为 -linux-arm64
+		architectureSuffix = "-" + strings.ReplaceAll(platform, "/", "-")
+	}
+	
+	// 构建最终的镜像名称和标签
+	finalTag := tag
+	if finalTag == "" {
+		finalTag = "latest"
+	}
+	
+	// 构建标签：tag + architectureSuffix
+	finalTagWithArch := finalTag + architectureSuffix
+	
+	return fmt.Sprintf("%s/%s/%s:%s", registry, namespace, imageName, finalTagWithArch)
 }
 
 func main() {
@@ -88,7 +126,7 @@ func main() {
 		originalImage, tag, architecture := parseImageInfo(line)
 		
 		// 生成 ACR 地址
-		acrImage := generateACRImage(originalImage, tag)
+		acrImage := generateACRImageWithArchitecture(originalImage, tag, architecture)
 		
 		// 生成 UUID
 		taskID := uuid.New().String()

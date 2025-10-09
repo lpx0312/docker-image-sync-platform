@@ -37,8 +37,14 @@ export const syncAPI = {
   // 提交同步任务
   submitSync: (data) => api.post('/sync/submit', data),
   
+  // 提交批量同步任务
+  submitBatchSync: (data) => api.post('/sync/batch', data),
+  
   // 获取同步状态
   getSyncStatus: (taskId) => api.get(`/sync/status/${taskId}`),
+  
+  // 获取批量同步状态
+  getBatchSyncStatus: (taskId) => api.get(`/sync/batch/status/${taskId}`),
   
   // 获取同步历史
   getSyncHistory: (params) => api.get('/sync/history', { params })
