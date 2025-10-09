@@ -119,6 +119,11 @@ func (h *SyncHandler) GetSyncStatus(c *gin.Context) {
 		return
 	}
 
+	// 如果任务状态为running且有GitHub Run ID，检查实际状态
+	if task.Status == models.TaskStatusRunning && task.GitHubRunID != "" {
+		h.CheckAndUpdateTaskStatus(&task)
+	}
+
 	// 获取镜像列表
 	images := strings.Split(task.ImagesJSON, "\n")
 	if len(images) == 1 && images[0] == "" {
@@ -545,4 +550,120 @@ func parseImageInfo(imageStr string) (image, tag, architecture string) {
 	}
 
 	return strings.TrimSpace(image), strings.TrimSpace(tag), strings.TrimSpace(architecture)
+}
+
+// CheckAndUpdateTaskStatus 检查并更新任务状态
+func (h *SyncHandler) CheckAndUpdateTaskStatus(task *models.SyncTask) {
+	if task.GitHubRunID == "" {
+		// 如果没有GitHub Run ID但状态是running，说明任务启动失败
+		logger.Logger.Warn("发现没有GitHub Run ID的running任务，标记为失败", 
+			zap.String("task_id", task.TaskID))
+		
+		now := time.Now()
+		task.Status = models.TaskStatusFailed
+		task.CompletedAt = &now
+		task.ErrorMessage = "任务启动失败，未获取到GitHub Action Run ID"
+		
+		// 更新所有相关镜像记录的状态
+		database.DB.Model(&models.ImageSyncRecord{}).
+			Where("task_id = ?", task.TaskID).
+			Updates(map[string]interface{}{
+				"sync_status": models.SyncStatusFailed,
+				"error_message": "任务启动失败，未获取到GitHub Action Run ID",
+			})
+		
+		// 保存更新到数据库
+		if err := database.DB.Save(task).Error; err != nil {
+			logger.Logger.Error("更新任务状态失败", 
+				zap.Error(err), 
+				zap.String("task_id", task.TaskID))
+		} else {
+			logger.Logger.Info("任务状态已更新为失败", 
+				zap.String("task_id", task.TaskID))
+		}
+		return
+	}
+
+	// 获取GitHub Action的实际状态
+	runDetails, err := h.githubService.GetWorkflowRunDetails(task.GitHubRunID)
+	if err != nil {
+		logger.Logger.Error("获取GitHub Action状态失败", 
+			zap.Error(err), 
+			zap.String("task_id", task.TaskID),
+			zap.String("run_id", task.GitHubRunID))
+		return
+	}
+
+	logger.Logger.Info("检查GitHub Action状态", 
+		zap.String("task_id", task.TaskID),
+		zap.String("run_id", task.GitHubRunID),
+		zap.String("status", runDetails.Status),
+		zap.String("conclusion", runDetails.Conclusion))
+
+	// 根据GitHub Action状态更新数据库
+	var needUpdate bool
+	now := time.Now()
+
+	switch runDetails.Status {
+	case "completed":
+		if runDetails.Conclusion == "success" {
+			task.Status = models.TaskStatusCompleted
+			task.CompletedAt = &now
+			needUpdate = true
+			
+			// 更新所有相关镜像记录的状态
+			database.DB.Model(&models.ImageSyncRecord{}).
+				Where("task_id = ?", task.TaskID).
+				Update("sync_status", models.SyncStatusSuccess)
+				
+			logger.Logger.Info("任务同步成功", zap.String("task_id", task.TaskID))
+		} else {
+			task.Status = models.TaskStatusFailed
+			task.CompletedAt = &now
+			task.ErrorMessage = fmt.Sprintf("GitHub Action执行失败: %s", runDetails.Conclusion)
+			needUpdate = true
+			
+			// 更新所有相关镜像记录的状态
+			database.DB.Model(&models.ImageSyncRecord{}).
+				Where("task_id = ?", task.TaskID).
+				Updates(map[string]interface{}{
+					"sync_status": models.SyncStatusFailed,
+					"error_message": fmt.Sprintf("GitHub Action执行失败: %s", runDetails.Conclusion),
+				})
+				
+			logger.Logger.Error("任务同步失败", 
+				zap.String("task_id", task.TaskID),
+				zap.String("conclusion", runDetails.Conclusion))
+		}
+	case "cancelled", "failure", "timed_out":
+		task.Status = models.TaskStatusFailed
+		task.CompletedAt = &now
+		task.ErrorMessage = fmt.Sprintf("GitHub Action状态异常: %s", runDetails.Status)
+		needUpdate = true
+		
+		// 更新所有相关镜像记录的状态
+		database.DB.Model(&models.ImageSyncRecord{}).
+			Where("task_id = ?", task.TaskID).
+			Updates(map[string]interface{}{
+				"sync_status": models.SyncStatusFailed,
+				"error_message": fmt.Sprintf("GitHub Action状态异常: %s", runDetails.Status),
+			})
+			
+		logger.Logger.Error("任务状态异常", 
+			zap.String("task_id", task.TaskID),
+			zap.String("status", runDetails.Status))
+	}
+
+	// 保存更新到数据库
+	if needUpdate {
+		if err := database.DB.Save(task).Error; err != nil {
+			logger.Logger.Error("更新任务状态失败", 
+				zap.Error(err), 
+				zap.String("task_id", task.TaskID))
+		} else {
+			logger.Logger.Info("任务状态已更新", 
+				zap.String("task_id", task.TaskID),
+				zap.String("new_status", task.Status))
+		}
+	}
 }

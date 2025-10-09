@@ -16,6 +16,7 @@ import (
 	"docker-image-sync-platform/internal/handlers"
 	"docker-image-sync-platform/internal/logger"
 	"docker-image-sync-platform/internal/middleware"
+	"docker-image-sync-platform/internal/models"
 	"docker-image-sync-platform/internal/services"
 
 	"github.com/gin-gonic/gin"
@@ -54,6 +55,9 @@ func main() {
 	syncHandler := handlers.NewSyncHandler(gitService, githubService)
 	imageHandler := handlers.NewImageHandler()
 	configHandler := handlers.NewConfigHandler()
+
+	// 启动时检查并修复卡住的任务状态
+	go checkStuckTasks(syncHandler)
 
 	// 设置Gin模式
 	if config.AppConfig.Server.Mode == "release" {
@@ -197,4 +201,55 @@ func main() {
 	}
 
 	logger.Logger.Info("服务器已关闭")
+}
+
+// checkStuckTasks 检查并修复卡住的任务状态
+func checkStuckTasks(syncHandler *handlers.SyncHandler) {
+	logger.Logger.Info("开始检查卡住的任务状态...")
+	
+	// 查找所有状态为running的任务
+	var stuckTasks []struct {
+		TaskID      string
+		GitHubRunID string
+		CreatedAt   time.Time
+	}
+	
+	if err := database.DB.Table("sync_tasks").
+		Select("task_id, github_run_id, created_at").
+		Where("status = ?", "running").
+		Find(&stuckTasks).Error; err != nil {
+		logger.Logger.Error("查询卡住的任务失败", zap.Error(err))
+		return
+	}
+	
+	if len(stuckTasks) == 0 {
+		logger.Logger.Info("没有发现卡住的任务")
+		return
+	}
+	
+	logger.Logger.Info("发现卡住的任务", zap.Int("count", len(stuckTasks)))
+	
+	// 检查每个卡住的任务
+	for _, taskInfo := range stuckTasks {
+		logger.Logger.Info("检查任务状态", 
+			zap.String("task_id", taskInfo.TaskID),
+			zap.String("run_id", taskInfo.GitHubRunID))
+		
+		// 获取完整的任务信息
+		var task models.SyncTask
+		if err := database.DB.Where("task_id = ?", taskInfo.TaskID).First(&task).Error; err != nil {
+			logger.Logger.Error("获取任务详情失败", 
+				zap.Error(err), 
+				zap.String("task_id", taskInfo.TaskID))
+			continue
+		}
+		
+		// 使用syncHandler的方法检查和更新状态
+		syncHandler.CheckAndUpdateTaskStatus(&task)
+		
+		// 添加延迟避免API限制
+		time.Sleep(1 * time.Second)
+	}
+	
+	logger.Logger.Info("任务状态检查完成")
 }
