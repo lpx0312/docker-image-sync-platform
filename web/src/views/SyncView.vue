@@ -193,7 +193,7 @@
             <div class="image-info">
               <div class="image-name">{{ row.target_image }}</div>
               <el-button 
-                v-if="row.target_image && row.status === 'success'" 
+                v-if="row.target_image && row.status === 'completed'" 
                 type="text" 
                 size="small"
                 @click="copyToClipboard(row.target_image)"

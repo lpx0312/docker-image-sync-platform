@@ -95,21 +95,36 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 
 // GetImage 获取镜像详情
 func (h *ImageHandler) GetImage(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的镜像ID"})
-		return
-	}
+    idStr := c.Param("id")
+    id, err := strconv.ParseUint(idStr, 10, 32)
+    if err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "无效的镜像ID"})
+        return
+    }
 
-	var image models.ImageSyncRecord
-	if err := database.DB.First(&image, uint(id)).Error; err != nil {
-		logger.Logger.Error("查询镜像详情失败", zap.Error(err), zap.Uint64("id", id))
-		c.JSON(http.StatusNotFound, gin.H{"error": "镜像不存在"})
-		return
-	}
+    var image models.ImageSyncRecord
+    if err := database.DB.First(&image, uint(id)).Error; err != nil {
+        logger.Logger.Error("查询镜像详情失败", zap.Error(err), zap.Uint64("id", id))
+        c.JSON(http.StatusNotFound, gin.H{"error": "镜像不存在"})
+        return
+    }
 
-	c.JSON(http.StatusOK, image)
+    // 确保目标镜像地址包含完整标签（详情页）
+    if image.SyncStatus == models.SyncStatusSuccess {
+        if image.ACRImage == "" {
+            // 如果没有ACR地址，生成完整的ACR地址
+            image.ACRImage = h.generateACRImage(image.OriginalImage, image.Tag)
+        } else if !strings.Contains(image.ACRImage, ":") {
+            // 如果ACR地址没有标签，添加标签
+            tag := image.Tag
+            if tag == "" {
+                tag = "latest"
+            }
+            image.ACRImage = fmt.Sprintf("%s:%s", image.ACRImage, tag)
+        }
+    }
+
+    c.JSON(http.StatusOK, image)
 }
 
 // DeleteImage 删除镜像记录
