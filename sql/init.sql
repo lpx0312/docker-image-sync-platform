@@ -17,10 +17,12 @@ CREATE TABLE IF NOT EXISTS image_sync_records (
     task_id VARCHAR(100) COMMENT '关联的任务ID',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    deleted_at TIMESTAMP NULL COMMENT '删除时间',
     INDEX idx_original_image (original_image),
     INDEX idx_sync_status (sync_status),
     INDEX idx_task_id (task_id),
-    INDEX idx_created_at (created_at)
+    INDEX idx_created_at (created_at),
+    INDEX idx_deleted_at (deleted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='镜像同步记录表';
 
 -- 同步任务表
@@ -37,9 +39,11 @@ CREATE TABLE IF NOT EXISTS sync_tasks (
     error_message TEXT COMMENT '错误信息',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    deleted_at TIMESTAMP NULL COMMENT '删除时间',
     INDEX idx_task_id (task_id),
     INDEX idx_status (status),
-    INDEX idx_created_at (created_at)
+    INDEX idx_created_at (created_at),
+    INDEX idx_deleted_at (deleted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='同步任务表';
 
 -- 系统配置表
@@ -50,7 +54,9 @@ CREATE TABLE IF NOT EXISTS system_configs (
     description VARCHAR(500) COMMENT '配置描述',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    INDEX idx_config_key (config_key)
+    deleted_at TIMESTAMP NULL COMMENT '删除时间',
+    INDEX idx_config_key (config_key),
+    INDEX idx_deleted_at (deleted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='系统配置表';
 
 -- 插入默认配置

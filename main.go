@@ -41,6 +41,11 @@ func main() {
 	}
 	defer database.CloseDatabase()
 
+	// 自动迁移数据库表
+	if err := database.AutoMigrate(); err != nil {
+		logger.Logger.Fatal("数据库表迁移失败", zap.Error(err))
+	}
+
 	// 初始化服务
 	gitService := services.NewGitService()
 	githubService := services.NewGitHubService()
