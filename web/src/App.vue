@@ -1,0 +1,123 @@
+<template>
+  <div id="app">
+    <el-container class="layout-container">
+      <!-- 顶部导航 -->
+      <el-header class="header">
+        <div class="header-content">
+          <div class="logo">
+            <el-icon><Box /></el-icon>
+            <span>Docker镜像同步平台</span>
+          </div>
+          <el-menu
+            :default-active="activeIndex"
+            class="header-menu"
+            mode="horizontal"
+            @select="handleSelect"
+          >
+            <el-menu-item index="/sync">镜像同步</el-menu-item>
+            <el-menu-item index="/images">镜像列表</el-menu-item>
+            <el-menu-item index="/github">GitHub Actions</el-menu-item>
+          </el-menu>
+        </div>
+      </el-header>
+
+      <!-- 主要内容区域 -->
+      <el-main class="main-content">
+        <router-view />
+      </el-main>
+
+      <!-- 底部 -->
+      <el-footer class="footer">
+        <div class="footer-content">
+          <span>© 2024 Docker镜像同步平台 - 基于Vue 3 + Go开发</span>
+        </div>
+      </el-footer>
+    </el-container>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+import { Box } from '@element-plus/icons-vue'
+
+const router = useRouter()
+const route = useRoute()
+
+const activeIndex = computed(() => route.path)
+
+const handleSelect = (key) => {
+  router.push(key)
+}
+</script>
+
+<style scoped>
+.layout-container {
+  min-height: 100vh;
+}
+
+.header {
+  background-color: #fff;
+  border-bottom: 1px solid #e4e7ed;
+  padding: 0;
+}
+
+.header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  font-size: 20px;
+  font-weight: bold;
+  color: #409eff;
+}
+
+.logo .el-icon {
+  margin-right: 8px;
+  font-size: 24px;
+}
+
+.header-menu {
+  border-bottom: none;
+}
+
+.main-content {
+  background-color: #f5f7fa;
+  min-height: calc(100vh - 120px);
+  padding: 20px;
+}
+
+.footer {
+  background-color: #fff;
+  border-top: 1px solid #e4e7ed;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.footer-content {
+  color: #909399;
+  font-size: 14px;
+}
+</style>
+
+<style>
+body {
+  margin: 0;
+  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', '微软雅黑', Arial, sans-serif;
+}
+
+#app {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+</style>
