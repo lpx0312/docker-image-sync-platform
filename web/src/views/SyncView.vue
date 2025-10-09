@@ -26,17 +26,6 @@
           <!-- 批量同步表单 -->
           <BatchSyncForm @success="handleBatchSyncSuccess" />
         </el-tab-pane>
-        <el-tab-pane 
-          v-if="currentBatchTask" 
-          label="批量状态" 
-          name="batch-status"
-        >
-          <!-- 批量同步状态 -->
-          <BatchSyncStatus 
-            :task-id="currentBatchTask.task_id" 
-            @clear="handleBatchTaskClear"
-          />
-        </el-tab-pane>
       </el-tabs>
     </el-card>
 
@@ -152,45 +141,55 @@
         v-loading="historyLoading"
         empty-text="暂无同步记录"
       >
-        <el-table-column prop="source_image" label="源镜像" min-width="200" />
-        <el-table-column prop="target_image" label="目标镜像" min-width="200">
-          <template #default="scope">
-            <div class="image-cell">
-              <span class="image-text">{{ scope.row.target_image }}</span>
-              <el-button 
-                type="text" 
-                size="small" 
-                @click="copyToClipboard(scope.row.target_image)"
-                class="copy-btn"
-              >
-                <el-icon><DocumentCopy /></el-icon>
-              </el-button>
+        <el-table-column prop="source_image" label="镜像" min-width="250">
+          <template #default="{ row }">
+            <div class="image-info">
+              <div class="source-image">{{ row.source_image }}</div>
+              <div class="target-image" v-if="row.target_image">
+                <el-tag size="small" type="success">{{ row.target_image }}</el-tag>
+              </div>
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="architecture" label="架构" width="100">
-          <template #default="scope">
-            <el-tag 
-              :type="scope.row.architecture === 'arm64' ? 'warning' : 'primary'"
-              size="small"
-            >
-              {{ scope.row.architecture }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="status" label="状态" width="100">
+        <el-table-column prop="status" label="状态" width="120">
           <template #default="{ row }">
-            <el-tag :type="getStatusType(row.status)">
-              {{ getStatusText(row.status) }}
-            </el-tag>
+            <div class="status-cell">
+              <el-icon 
+                v-if="row.status === 'syncing' || row.status === 'pending'" 
+                class="loading-icon"
+              >
+                <Loading />
+              </el-icon>
+              <el-tag :type="getStatusType(row.status)">
+                {{ getStatusText(row.status) }}
+              </el-tag>
+            </div>
           </template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="180">
+        <el-table-column prop="created_at" label="同步时间" width="160">
           <template #default="{ row }">
             {{ formatTime(row.created_at) }}
           </template>
         </el-table-column>
-
+        <el-table-column label="操作" width="120">
+          <template #default="{ row }">
+            <el-button 
+              type="text" 
+              size="small"
+              @click="viewSyncDetails(row)"
+            >
+              详情
+            </el-button>
+            <el-button 
+              v-if="row.target_image && row.status === 'success'"
+              type="text" 
+              size="small" 
+              @click="copyToClipboard(row.target_image)"
+            >
+              复制
+            </el-button>
+          </template>
+        </el-table-column>
       </el-table>
     </el-card>
   </div>
@@ -198,6 +197,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { 
   Refresh, 
@@ -206,13 +206,16 @@ import {
   Close, 
   Warning,
   Link,
-  DocumentCopy
+  DocumentCopy,
+  Loading
 } from '@element-plus/icons-vue'
 import { useSyncStore } from '@/stores/sync'
 import SingleSyncForm from '@/components/SingleSyncForm.vue'
 import BatchSyncForm from '@/components/BatchSyncForm.vue'
-import BatchSyncStatus from '@/components/BatchSyncStatus.vue'
 import dayjs from 'dayjs'
+
+// 路由
+const router = useRouter()
 
 // 状态管理
 const syncStore = useSyncStore()
@@ -221,9 +224,6 @@ const syncStore = useSyncStore()
 const refreshing = ref(false)
 const historyLoading = ref(false)
 const activeTab = ref('single')
-
-// 当前批量任务
-const currentBatchTask = ref(null)
 
 // 处理单个同步成功
 const handleSingleSyncSuccess = (task) => {
@@ -237,15 +237,7 @@ const handleSingleSyncSuccess = (task) => {
 
 // 处理批量同步成功
 const handleBatchSyncSuccess = (task) => {
-  currentBatchTask.value = task
-  activeTab.value = 'batch-status'
   loadRecentHistory()
-}
-
-// 处理批量任务清除
-const handleBatchTaskClear = () => {
-  currentBatchTask.value = null
-  activeTab.value = 'batch'
 }
 
 // 最近历史记录
@@ -407,6 +399,18 @@ const copyToClipboard = async (text) => {
   }
 }
 
+// 查看同步详情
+const viewSyncDetails = (row) => {
+  // 跳转到镜像列表页面并高亮显示该记录
+  router.push({
+    path: '/images',
+    query: {
+      search: row.source_image,
+      highlight: row.id
+    }
+  })
+}
+
 const openGitHubRun = (url) => {
   window.open(url, '_blank')
 }
@@ -468,8 +472,18 @@ onUnmounted(() => {
 
 .image-info {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.source-image {
+  font-weight: 500;
+  color: #303133;
+  word-break: break-all;
+}
+
+.target-image {
+  margin-top: 4px;
 }
 
 .image-name {

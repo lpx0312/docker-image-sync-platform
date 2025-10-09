@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"docker-image-sync-platform/internal/database"
@@ -58,7 +57,6 @@ func (h *SyncHandler) SubmitBatchSync(c *gin.Context) {
 	task := &models.SyncTask{
 		TaskID:        taskID,
 		Status:        models.TaskStatusPending,
-		Description:   req.Description,
 		MaxConcurrent: req.MaxConcurrent,
 		TotalImages:   len(req.Images),
 		AutoRetry:     req.AutoRetry,
@@ -927,29 +925,135 @@ func (h *SyncHandler) processBatchSyncTask(taskID string) {
 		return
 	}
 
-	// 使用信号量控制并发数
-	semaphore := make(chan struct{}, task.MaxConcurrent)
-	var wg sync.WaitGroup
-	
-	// 处理每个镜像
+	// 构建要添加到images.txt的镜像列表
+	var processedImages []string
 	for _, record := range records {
-		wg.Add(1)
-		go func(rec models.ImageSyncRecord) {
-			defer wg.Done()
-			
-			// 获取信号量
-			semaphore <- struct{}{}
-			defer func() { <-semaphore }()
-			
-			h.processSingleImage(taskID, rec)
-		}(record)
+		imageStr := record.OriginalImage
+		if record.Tag != "" {
+			imageStr = imageStr + ":" + record.Tag
+		}
+		
+		// 如果是arm64架构，添加platform参数
+		if record.Architecture == "arm64" {
+			imageStr = "--platform=linux/arm64 " + imageStr
+		}
+		
+		processedImages = append(processedImages, imageStr)
 	}
 
-	// 等待所有镜像处理完成
-	wg.Wait()
+	// 执行Git操作
+	commitSHA, err := h.gitService.UpdateImagesFile(processedImages)
+	if err != nil {
+		h.handleBatchSyncError(taskID, fmt.Sprintf("Git操作失败: %v", err))
+		return
+	}
 
-	// 更新任务最终状态
-	h.updateBatchTaskFinalStatus(taskID)
+	// 更新提交SHA
+	database.DB.Model(&models.SyncTask{}).
+		Where("task_id = ?", taskID).
+		Update("commit_sha", commitSHA)
+
+	// 更新所有镜像记录状态为同步中，并设置ACR镜像地址
+	for _, record := range records {
+		acrImage := h.generateACRImageWithArchitecture(record.OriginalImage, record.Tag, record.Architecture)
+		database.DB.Model(&models.ImageSyncRecord{}).
+			Where("id = ?", record.ID).
+			Updates(map[string]interface{}{
+				"sync_status": models.SyncStatusSyncing,
+				"started_at":  &now,
+				"acr_image":   acrImage,
+			})
+	}
+
+	// 等待GitHub同步并监控Actions
+	go h.monitorBatchGitHubActions(taskID, commitSHA)
+
+	logger.Logger.Info("批量同步任务Git操作完成", 
+		zap.String("task_id", taskID),
+		zap.String("commit_sha", commitSHA))
+}
+
+// monitorBatchGitHubActions 监控批量同步的GitHub Actions
+func (h *SyncHandler) monitorBatchGitHubActions(taskID, commitSHA string) {
+	logger.Logger.Info("开始监控批量同步GitHub Actions", 
+		zap.String("task_id", taskID),
+		zap.String("commit_sha", commitSHA))
+
+	// 等待一段时间让GitHub同步
+	time.Sleep(30 * time.Second)
+
+	// 查询GitHub Actions状态
+	runID, actionURL, err := h.githubService.GetWorkflowRun(commitSHA)
+	if err != nil {
+		h.handleBatchSyncError(taskID, fmt.Sprintf("查询GitHub Actions失败: %v", err))
+		return
+	}
+
+	// 更新GitHub Action信息
+	database.DB.Model(&models.SyncTask{}).
+		Where("task_id = ?", taskID).
+		Updates(map[string]interface{}{
+			"github_run_id":     runID,
+			"github_action_url": actionURL,
+		})
+
+	// 持续监控Actions状态
+	for i := 0; i < 60; i++ { // 最多监控30分钟
+		time.Sleep(30 * time.Second)
+
+		status, err := h.githubService.GetWorkflowRunStatus(runID)
+		if err != nil {
+			logger.Logger.Error("查询Actions状态失败", zap.Error(err))
+			continue
+		}
+
+		if status == "completed" {
+			// Actions完成，检查结果
+			conclusion, err := h.githubService.GetWorkflowRunConclusion(runID)
+			if err != nil {
+				h.handleBatchSyncError(taskID, fmt.Sprintf("获取Actions结果失败: %v", err))
+				return
+			}
+
+			if conclusion == "success" {
+				h.handleBatchSyncSuccess(taskID)
+			} else {
+				h.handleBatchSyncError(taskID, fmt.Sprintf("GitHub Actions执行失败: %s", conclusion))
+			}
+			return
+		}
+
+		if status == "cancelled" || status == "failure" {
+			h.handleBatchSyncError(taskID, fmt.Sprintf("GitHub Actions执行失败: %s", status))
+			return
+		}
+	}
+
+	// 超时处理
+	h.handleBatchSyncError(taskID, "GitHub Actions监控超时")
+}
+
+// handleBatchSyncSuccess 处理批量同步成功
+func (h *SyncHandler) handleBatchSyncSuccess(taskID string) {
+	logger.Logger.Info("批量同步任务成功完成", zap.String("task_id", taskID))
+
+	now := time.Now()
+	
+	// 更新任务状态
+	database.DB.Model(&models.SyncTask{}).
+		Where("task_id = ?", taskID).
+		Updates(map[string]interface{}{
+			"status":       models.TaskStatusCompleted,
+			"completed_at": &now,
+		})
+
+	// 更新所有镜像记录状态为成功
+	database.DB.Model(&models.ImageSyncRecord{}).
+		Where("task_id = ? AND sync_status = ?", taskID, models.SyncStatusSyncing).
+		Updates(map[string]interface{}{
+			"sync_status":  models.SyncStatusSuccess,
+			"completed_at": &now,
+		})
 }
 
 // processSingleImage 处理单个镜像同步

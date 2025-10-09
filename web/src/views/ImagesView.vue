@@ -128,9 +128,17 @@
         
         <el-table-column prop="sync_status" label="状态" width="100" sortable="custom">
           <template #default="{ row }">
-            <el-tag :type="getStatusType(row.sync_status)">
-              {{ getStatusText(row.sync_status) }}
-            </el-tag>
+            <div class="status-cell">
+              <el-icon 
+                v-if="row.sync_status === 'syncing' || row.sync_status === 'pending'" 
+                class="loading-icon"
+              >
+                <Loading />
+              </el-icon>
+              <el-tag :type="getStatusType(row.sync_status)">
+                {{ getStatusText(row.sync_status) }}
+              </el-tag>
+            </div>
           </template>
         </el-table-column>
         
@@ -288,9 +296,9 @@ import {
   Box, 
   CircleCheck, 
   CircleClose, 
-  Loading, 
+  Loading,
   Refresh, 
-  Search 
+  Search
 } from '@element-plus/icons-vue'
 import { useImageStore } from '@/stores/image'
 import dayjs from 'dayjs'
@@ -664,5 +672,21 @@ onMounted(() => {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.status-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.loading-icon {
+  animation: spin 1s linear infinite;
+  color: #409eff;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 </style>

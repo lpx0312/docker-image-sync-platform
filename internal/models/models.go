@@ -108,7 +108,6 @@ type ImageRequest struct {
 type BatchSyncRequest struct {
 	Images        []ImageSyncItem `json:"images" binding:"required"`
 	MaxConcurrent int             `json:"max_concurrent" binding:"min=1,max=10"`
-	Description   string          `json:"description"`
 	AutoRetry     bool            `json:"auto_retry"`
 	RetryCount    int             `json:"retry_count" binding:"min=0,max=3"`
 }

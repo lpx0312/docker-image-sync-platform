@@ -6,15 +6,6 @@
       :rules="batchRules" 
       label-width="120px"
     >
-      <el-form-item label="任务描述" prop="description">
-        <el-input
-          v-model="batchForm.description"
-          placeholder="请输入批量同步任务的描述"
-          maxlength="200"
-          show-word-limit
-        />
-      </el-form-item>
-
       <el-form-item label="镜像列表" prop="images">
         <div class="image-input-section">
           <!-- 输入方式选择 -->
@@ -29,7 +20,7 @@
               v-model="imageInput"
               type="textarea"
               :rows="8"
-              placeholder="请输入镜像列表，每行一个镜像，格式如下：&#10;nginx:latest&#10;redis:6.2&#10;mysql:8.0&#10;ubuntu:20.04"
+              :placeholder="getInputPlaceholder()"
               @input="parseImageInput"
             />
             <div class="input-tips">
@@ -66,19 +57,47 @@
           <!-- 镜像列表预览 -->
           <div v-if="parsedImages.length > 0" class="image-preview">
             <div class="preview-header">
-              <span>解析到的镜像列表 ({{ parsedImages.length }} 个)</span>
-              <el-button size="small" text @click="clearImages">清空</el-button>
+              <span>镜像预览 ({{ getImageCount() }} 个镜像任务)</span>
+              <el-button size="small" @click="clearImages">清空</el-button>
             </div>
             <div class="image-list">
-              <el-tag
+              <div
                 v-for="(image, index) in parsedImages"
                 :key="index"
-                closable
-                @close="removeImage(index)"
-                class="image-tag"
+                class="image-item"
               >
-                {{ image }}
-              </el-tag>
+                <div class="image-info">
+                  <el-tag class="image-tag">{{ image }}</el-tag>
+                  <div class="architecture-info">
+                    <el-tag 
+                      v-if="batchForm.architectureMode === 'amd64'" 
+                      type="info" 
+                      size="small"
+                    >
+                      AMD64
+                    </el-tag>
+                    <el-tag 
+                      v-else-if="batchForm.architectureMode === 'arm64'" 
+                      type="warning" 
+                      size="small"
+                    >
+                      ARM64
+                    </el-tag>
+                    <template v-else>
+                      <el-tag type="info" size="small">AMD64</el-tag>
+                      <el-tag type="warning" size="small">ARM64</el-tag>
+                    </template>
+                  </div>
+                </div>
+                <el-button 
+                  size="small" 
+                  type="danger" 
+                  text 
+                  @click="removeImage(index)"
+                >
+                  删除
+                </el-button>
+              </div>
             </div>
           </div>
         </div>
@@ -94,6 +113,18 @@
         />
         <div class="form-tip">
           同时处理的镜像数量，建议设置为1-5，避免过高导致资源占用
+        </div>
+      </el-form-item>
+
+      <el-form-item label="架构选择" prop="architectureMode">
+        <el-radio-group v-model="batchForm.architectureMode">
+          <el-radio value="amd64">仅 AMD64</el-radio>
+          <el-radio value="arm64">仅 ARM64</el-radio>
+          <el-radio value="both">同时同步两种架构</el-radio>
+          <el-radio value="custom">自定义混合架构</el-radio>
+        </el-radio-group>
+        <div class="form-tip">
+          选择要同步的镜像架构。自定义混合架构模式下，可在镜像列表中使用 --platform=linux/arm64 指定特定镜像的架构
         </div>
       </el-form-item>
 
@@ -155,8 +186,8 @@ const inputMode = ref('manual')
 
 // 表单数据
 const batchForm = reactive({
-  description: '',
   maxConcurrent: 3,
+  architectureMode: 'amd64',
   autoRetry: true,
   maxRetries: 2
 })
@@ -168,9 +199,6 @@ const loading = ref(false)
 
 // 表单验证规则
 const batchRules = {
-  description: [
-    { required: true, message: '请输入任务描述', trigger: 'blur' }
-  ],
   maxConcurrent: [
     { required: true, message: '请设置并发数量', trigger: 'blur' },
     { type: 'number', min: 1, max: 10, message: '并发数量必须在1-10之间', trigger: 'blur' }
@@ -180,6 +208,23 @@ const batchRules = {
   ]
 }
 
+// 获取输入框占位符文本
+const getInputPlaceholder = () => {
+  if (batchForm.architectureMode === 'custom') {
+    return `请输入镜像列表，每行一个镜像，格式如下：
+nginx:1.28.0
+--platform=linux/arm64 nginx:1.28.0
+redis:7.0
+--platform=linux/arm64 mysql:8.0`
+  } else {
+    return `请输入镜像列表，每行一个镜像，格式如下：
+nginx:latest
+redis:6.2
+mysql:8.0
+ubuntu:20.04`
+  }
+}
+
 // 解析镜像输入
 const parseImageInput = () => {
   const lines = imageInput.value.split('\n')
@@ -187,9 +232,25 @@ const parseImageInput = () => {
   
   for (const line of lines) {
     const trimmed = line.trim()
-    if (trimmed && isValidImageFormat(trimmed)) {
-      if (!images.includes(trimmed)) {
-        images.push(trimmed)
+    if (trimmed) {
+      let imageStr = trimmed
+      
+      // 处理 --platform 参数
+      if (trimmed.startsWith('--platform=')) {
+        const parts = trimmed.split(' ')
+        if (parts.length >= 2) {
+          // 提取镜像名称（去掉 --platform 参数）
+          imageStr = parts.slice(1).join(' ')
+        } else {
+          continue // 跳过无效的 --platform 行
+        }
+      }
+      
+      if (isValidImageFormat(imageStr)) {
+        // 存储原始行（包含 --platform 信息）
+        if (!images.some(img => img === trimmed || img === imageStr)) {
+          images.push(trimmed)
+        }
       }
     }
   }
@@ -272,6 +333,14 @@ const clearImages = () => {
   }
 }
 
+// 计算镜像任务数量
+const getImageCount = () => {
+  if (batchForm.architectureMode === 'both') {
+    return parsedImages.value.length * 2
+  }
+  return parsedImages.value.length
+}
+
 // 提交批量同步
 const submitBatchSync = async () => {
   try {
@@ -286,19 +355,57 @@ const submitBatchSync = async () => {
     
     // 构建批量同步请求
     const batchData = {
-      description: batchForm.description,
-      images: parsedImages.value.map(image => {
+      images: parsedImages.value.flatMap(image => {
+        // 处理自定义混合架构模式
+        if (batchForm.architectureMode === 'custom') {
+          let sourceImage = image
+          let architecture = 'amd64' // 默认架构
+          
+          // 检查是否包含 --platform 参数
+          if (image.startsWith('--platform=')) {
+            const parts = image.split(' ')
+            if (parts.length >= 2) {
+              const platformPart = parts[0]
+              sourceImage = parts.slice(1).join(' ')
+              
+              // 提取架构信息
+              if (platformPart.includes('linux/arm64')) {
+                architecture = 'arm64'
+              } else if (platformPart.includes('linux/amd64')) {
+                architecture = 'amd64'
+              }
+            }
+          }
+          
+          const [imageName, tag] = sourceImage.split(':')
+          return [{
+            source_image: imageName,
+            target_tag: tag || 'latest',
+            architecture: architecture,
+            priority: 1
+          }]
+        }
+        
+        // 处理其他架构模式
         const [imageName, tag] = image.split(':')
-        return {
-          image: imageName,
-          tag: tag || 'latest',
-          architecture: 'amd64', // 默认架构
-          priority: 1,
-          max_retries: batchForm.autoRetry ? batchForm.maxRetries : 0
+        const baseImage = {
+          source_image: imageName,
+          target_tag: tag || 'latest',
+          priority: 1
+        }
+        
+        if (batchForm.architectureMode === 'both') {
+          return [
+            { ...baseImage, architecture: 'amd64' },
+            { ...baseImage, architecture: 'arm64' }
+          ]
+        } else {
+          return [{ ...baseImage, architecture: batchForm.architectureMode }]
         }
       }),
       max_concurrent: batchForm.maxConcurrent,
-      auto_retry: batchForm.autoRetry
+      auto_retry: batchForm.autoRetry,
+      retry_count: batchForm.autoRetry ? batchForm.maxRetries : 0
     }
     
     const response = await syncAPI.submitBatchSync(batchData)
@@ -326,8 +433,8 @@ const submitBatchSync = async () => {
 const resetForm = () => {
   batchFormRef.value?.resetFields()
   Object.assign(batchForm, {
-    description: '',
     maxConcurrent: 3,
+    architectureMode: 'amd64',
     autoRetry: true,
     maxRetries: 2
   })
@@ -378,12 +485,35 @@ const resetForm = () => {
 
 .image-list {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.image-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border: 1px solid #e4e7ed;
+  border-radius: 6px;
+  background-color: #fafafa;
+}
+
+.image-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
 }
 
 .image-tag {
   margin: 0;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+}
+
+.architecture-info {
+  display: flex;
+  gap: 4px;
 }
 
 .form-tip {
