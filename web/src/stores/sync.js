@@ -41,6 +41,19 @@ export const useSyncStore = defineStore('sync', () => {
     }
   }
 
+  const getBatchSyncStatus = async (taskId) => {
+    try {
+      const response = await syncAPI.getBatchSyncStatus(taskId)
+      if (currentTask.value && currentTask.value.task_id === taskId) {
+        currentTask.value = { ...currentTask.value, ...response }
+      }
+      return response
+    } catch (error) {
+      console.error('获取批量同步状态失败:', error)
+      throw error
+    }
+  }
+
   const loadSyncHistory = async (params = {}) => {
     loading.value = true
     try {
@@ -87,6 +100,7 @@ export const useSyncStore = defineStore('sync', () => {
     // 动作
     submitSync,
     getSyncStatus,
+    getBatchSyncStatus,
     loadSyncHistory,
     clearCurrentTask,
     updateTaskStatus

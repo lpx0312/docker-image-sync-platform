@@ -14,6 +14,7 @@ type Config struct {
 	Git      GitConfig      `mapstructure:"git"`
 	Aliyun   AliyunConfig   `mapstructure:"aliyun"`
 	Log      LogConfig      `mapstructure:"log"`
+	Sync     SyncConfig     `mapstructure:"sync"`
 }
 
 // ServerConfig 服务器配置
@@ -73,6 +74,11 @@ type LogConfig struct {
 	MaxAge     int    `mapstructure:"max_age"`
 }
 
+// SyncConfig 同步配置
+type SyncConfig struct {
+	TimeoutMinutes int `mapstructure:"timeout_minutes"`
+}
+
 var AppConfig *Config
 
 // LoadConfig 加载配置文件
@@ -114,6 +120,8 @@ func setDefaults() {
 	viper.SetDefault("log.max_size", 100)
 	viper.SetDefault("log.max_backups", 3)
 	viper.SetDefault("log.max_age", 28)
+	
+	viper.SetDefault("sync.timeout_minutes", 30)
 }
 
 // GetDSN 获取数据库连接字符串

@@ -5,7 +5,6 @@
       :model="syncForm" 
       :rules="syncRules" 
       label-width="120px"
-      :disabled="syncStore.hasCurrentTask && syncStore.taskStatus !== 'failed'"
     >
       <el-form-item label="源镜像地址" prop="sourceImage">
         <el-input
@@ -48,7 +47,6 @@
           type="primary" 
           @click="submitSync" 
           :loading="syncStore.loading"
-          :disabled="syncStore.hasCurrentTask && syncStore.taskStatus !== 'failed'"
         >
           <el-icon><Upload /></el-icon>
           开始同步

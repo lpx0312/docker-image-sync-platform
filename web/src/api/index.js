@@ -43,6 +43,9 @@ export const syncAPI = {
   // 获取同步状态
   getSyncStatus: (taskId) => api.get(`/sync/status/${taskId}`),
   
+  // 获取批量同步状态
+  getBatchSyncStatus: (taskId) => api.get(`/sync/batch/status/${taskId}`),
+  
   // 获取同步历史
   getSyncHistory: (params) => api.get('/sync/history', { params })
 }

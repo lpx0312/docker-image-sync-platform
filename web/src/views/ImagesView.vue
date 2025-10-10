@@ -290,7 +290,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed, watch } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { 
   Box, 
@@ -538,6 +538,38 @@ watch([currentPage, pageSize], () => {
   imageStore.updatePagination(currentPage.value, pageSize.value)
 })
 
+// 状态轮询
+let statusPollingTimer = null
+
+const startStatusPolling = () => {
+  // 每5秒轮询一次状态
+  statusPollingTimer = setInterval(async () => {
+    // 只有在有同步中的镜像时才轮询
+    const hasSyncingImages = imageStore.images.some(img => 
+      img.sync_status === 'pending' || img.sync_status === 'syncing'
+    )
+    
+    if (hasSyncingImages) {
+      console.log('检测到同步中的镜像，自动刷新状态')
+      try {
+        await Promise.all([
+          imageStore.loadImageStats(),
+          imageStore.loadImages()
+        ])
+      } catch (error) {
+        console.error('轮询更新失败:', error)
+      }
+    }
+  }, 5000)
+}
+
+const stopStatusPolling = () => {
+  if (statusPollingTimer) {
+    clearInterval(statusPollingTimer)
+    statusPollingTimer = null
+  }
+}
+
 // 生命周期
 onMounted(() => {
   console.log('ImagesView mounted')
@@ -546,6 +578,14 @@ onMounted(() => {
   loadData().catch(error => {
     console.error('ImagesView loadData error:', error)
   })
+  
+  // 开始状态轮询
+  startStatusPolling()
+})
+
+onUnmounted(() => {
+  // 清理定时器
+  stopStatusPolling()
 })
 </script>
 

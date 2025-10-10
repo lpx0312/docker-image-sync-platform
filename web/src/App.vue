@@ -15,7 +15,6 @@
             @select="handleSelect"
           >
             <el-menu-item index="/sync">镜像同步</el-menu-item>
-            <el-menu-item index="/images">镜像列表</el-menu-item>
             <el-menu-item index="/github">GitHub Actions</el-menu-item>
           </el-menu>
         </div>

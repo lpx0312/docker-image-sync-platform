@@ -13,6 +13,8 @@ type ImageSyncRecord struct {
 	ACRImage      string         `json:"acr_image" gorm:"type:varchar(500)"`
 	Tag           string         `json:"tag" gorm:"type:varchar(100)"`
 	Architecture  string         `json:"architecture" gorm:"type:varchar(50);default:'amd64'"`
+	OriginalInput string         `json:"original_input" gorm:"type:varchar(600)"` // 保存原始输入格式
+	InputOrder    int            `json:"input_order" gorm:"default:0;index"`      // 保存原始输入顺序
 	SyncStatus    string         `json:"sync_status" gorm:"type:enum('pending','syncing','success','failed','retrying','skipped');default:'pending';index"`
 	ErrorMessage  string         `json:"error_message" gorm:"type:text"`
 	TaskID        string         `json:"task_id" gorm:"type:varchar(100);index"`

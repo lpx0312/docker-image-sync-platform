@@ -234,7 +234,7 @@ func checkStuckTasks(syncHandler *handlers.SyncHandler) {
 	
 	// 检查每个卡住的任务
 	now := time.Now()
-	timeoutDuration := 30 * time.Minute
+	timeoutDuration := time.Duration(config.AppConfig.Sync.TimeoutMinutes) * time.Minute
 	
 	for _, taskInfo := range stuckTasks {
 		// 计算任务运行时间

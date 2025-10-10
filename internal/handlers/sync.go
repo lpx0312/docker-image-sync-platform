@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"docker-image-sync-platform/internal/config"
 	"docker-image-sync-platform/internal/database"
 	"docker-image-sync-platform/internal/logger"
 	"docker-image-sync-platform/internal/models"
@@ -81,7 +82,7 @@ func (h *SyncHandler) SubmitBatchSync(c *gin.Context) {
 	}
 
 	// 为每个镜像创建同步记录
-	for _, img := range req.Images {
+	for i, img := range req.Images {
 		originalImage, tag, architecture := parseImageInfo(img.SourceImage)
 		
 		// 使用请求中的标签和架构
@@ -95,10 +96,25 @@ func (h *SyncHandler) SubmitBatchSync(c *gin.Context) {
 			architecture = "amd64"
 		}
 		
+		// 构建原始输入格式
+		var originalInput string
+		imageWithTag := originalImage
+		if tag != "" {
+			imageWithTag = originalImage + ":" + tag
+		}
+		
+		if architecture == "arm64" {
+			originalInput = "--platform=linux/arm64 " + imageWithTag
+		} else {
+			originalInput = imageWithTag
+		}
+		
 		record := &models.ImageSyncRecord{
 			OriginalImage: originalImage,
 			Tag:           tag,
 			Architecture:  architecture,
+			OriginalInput: originalInput,
+			InputOrder:    i, // 保存输入顺序
 			SyncStatus:    models.SyncStatusPending,
 			TaskID:        taskID,
 			Priority:      img.Priority,
@@ -243,12 +259,6 @@ func (h *SyncHandler) GetSyncStatus(c *gin.Context) {
 		targetImage = record.ACRImage
 		if targetImage == "" {
 			targetImage = h.generateACRImageWithArchitecture(record.OriginalImage, record.Tag, record.Architecture)
-		} else if !strings.Contains(targetImage, ":") {
-			tag := record.Tag
-			if tag == "" {
-				tag = "latest"
-			}
-			targetImage = fmt.Sprintf("%s:%s", targetImage, tag)
 		}
 		
 		architecture = record.Architecture
@@ -305,12 +315,6 @@ func (h *SyncHandler) GetBatchSyncStatus(c *gin.Context) {
 		targetImage := record.ACRImage
 		if targetImage == "" {
 			targetImage = h.generateACRImageWithArchitecture(record.OriginalImage, record.Tag, record.Architecture)
-		} else if !strings.Contains(targetImage, ":") {
-			tag := record.Tag
-			if tag == "" {
-				tag = "latest"
-			}
-			targetImage = fmt.Sprintf("%s:%s", targetImage, tag)
 		}
 
 		detail := models.ImageSyncDetailResponse{
@@ -423,13 +427,6 @@ func (h *SyncHandler) GetSyncHistory(c *gin.Context) {
 		if targetImage == "" {
 			// 如果没有ACR地址，使用generateACRImageWithArchitecture生成
 			targetImage = h.generateACRImageWithArchitecture(record.OriginalImage, record.Tag, record.Architecture)
-		} else if !strings.Contains(targetImage, ":") {
-			// 如果ACR地址没有标签，添加标签
-			tag := record.Tag
-			if tag == "" {
-				tag = "latest"
-			}
-			targetImage = fmt.Sprintf("%s:%s", targetImage, tag)
 		}
 
 		// 架构信息，如果为空则默认为amd64
@@ -777,7 +774,7 @@ func (h *SyncHandler) CheckAndUpdateTaskStatus(task *models.SyncTask) {
 		taskStartTime = task.CreatedAt
 	}
 	
-	timeoutDuration := 30 * time.Minute
+	timeoutDuration := time.Duration(config.AppConfig.Sync.TimeoutMinutes) * time.Minute
 	if now.Sub(taskStartTime) > timeoutDuration {
 		logger.Logger.Warn("任务执行超时，标记为失败", 
 			zap.String("task_id", task.TaskID),
@@ -916,29 +913,34 @@ func (h *SyncHandler) processBatchSyncTask(taskID string) {
 		return
 	}
 
-	// 获取所有待同步的镜像记录，按优先级排序
+	// 获取所有待同步的镜像记录，按输入顺序排序
 	var records []models.ImageSyncRecord
 	if err := database.DB.Where("task_id = ? AND sync_status = ?", taskID, models.SyncStatusPending).
-		Order("priority DESC, created_at ASC").
+		Order("input_order ASC").
 		Find(&records).Error; err != nil {
 		h.handleBatchSyncError(taskID, fmt.Sprintf("查询镜像记录失败: %v", err))
 		return
 	}
 
 	// 构建要添加到images.txt的镜像列表
+	// 直接使用 OriginalInput 字段，保持原始输入格式和顺序
 	var processedImages []string
 	for _, record := range records {
-		imageStr := record.OriginalImage
-		if record.Tag != "" {
-			imageStr = imageStr + ":" + record.Tag
+		if record.OriginalInput != "" {
+			processedImages = append(processedImages, record.OriginalInput)
+		} else {
+			// 兼容旧数据，如果没有 OriginalInput 字段，则使用旧逻辑
+			imageWithTag := record.OriginalImage
+			if record.Tag != "" {
+				imageWithTag = record.OriginalImage + ":" + record.Tag
+			}
+			
+			if record.Architecture == "arm64" {
+				processedImages = append(processedImages, "--platform=linux/arm64 "+imageWithTag)
+			} else {
+				processedImages = append(processedImages, imageWithTag)
+			}
 		}
-		
-		// 如果是arm64架构，添加platform参数
-		if record.Architecture == "arm64" {
-			imageStr = "--platform=linux/arm64 " + imageStr
-		}
-		
-		processedImages = append(processedImages, imageStr)
 	}
 
 	// 执行Git操作

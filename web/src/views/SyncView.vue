@@ -1,5 +1,40 @@
 <template>
   <div class="sync-view">
+    <!-- 统计卡片 -->
+    <div class="stats-grid">
+      <el-card class="stat-card">
+        <div class="stat-content">
+          <div class="stat-number">{{ imageStore.imageStats.total }}</div>
+          <div class="stat-label">总镜像数</div>
+        </div>
+        <el-icon class="stat-icon total"><Box /></el-icon>
+      </el-card>
+      
+      <el-card class="stat-card">
+        <div class="stat-content">
+          <div class="stat-number success">{{ imageStore.imageStats.success }}</div>
+          <div class="stat-label">同步成功</div>
+        </div>
+        <el-icon class="stat-icon success"><CircleCheck /></el-icon>
+      </el-card>
+      
+      <el-card class="stat-card">
+        <div class="stat-content">
+          <div class="stat-number warning">{{ imageStore.imageStats.syncing }}</div>
+          <div class="stat-label">同步中</div>
+        </div>
+        <el-icon class="stat-icon warning"><Loading /></el-icon>
+      </el-card>
+      
+      <el-card class="stat-card">
+        <div class="stat-content">
+          <div class="stat-number danger">{{ imageStore.imageStats.failed }}</div>
+          <div class="stat-label">同步失败</div>
+        </div>
+        <el-icon class="stat-icon danger"><CircleClose /></el-icon>
+      </el-card>
+    </div>
+
     <el-card class="sync-card">
       <template #header>
         <div class="card-header">
@@ -29,169 +64,260 @@
       </el-tabs>
     </el-card>
 
-    <!-- 当前任务状态 -->
-    <el-card v-if="syncStore.hasCurrentTask" class="status-card">
-      <template #header>
-        <div class="card-header">
-          <span>当前同步任务</span>
-          <el-tag :type="getStatusType(syncStore.taskStatus)">
-            {{ getStatusText(syncStore.taskStatus) }}
-          </el-tag>
-        </div>
-      </template>
-
-      <div class="task-info">
-        <el-descriptions :column="2" border>
-          <el-descriptions-item label="任务ID">
-            {{ syncStore.currentTask.task_id }}
-          </el-descriptions-item>
-          <el-descriptions-item label="源镜像">
-            {{ syncStore.currentTask.source_image }}
-          </el-descriptions-item>
-          <el-descriptions-item label="目标镜像">
-            {{ syncStore.currentTask.target_image }}
-          </el-descriptions-item>
-          <el-descriptions-item label="创建时间">
-            {{ formatTime(syncStore.currentTask.created_at) }}
-          </el-descriptions-item>
-          <el-descriptions-item label="GitHub Actions" v-if="syncStore.currentTask.github_run_url">
-            <el-link :href="syncStore.currentTask.github_run_url" target="_blank" type="primary">
-              查看运行详情
-            </el-link>
-          </el-descriptions-item>
-          <el-descriptions-item label="同步说明" v-if="syncStore.currentTask.description">
-            {{ syncStore.currentTask.description }}
-          </el-descriptions-item>
-        </el-descriptions>
-
-        <!-- 进度条 -->
-        <div class="progress-section" v-if="syncStore.taskStatus === 'syncing'">
-          <el-progress 
-            :percentage="getProgress()" 
-            :status="getProgressStatus()"
-            :stroke-width="8"
-          />
-          <div class="progress-text">
-            {{ getProgressText() }}
-          </div>
-        </div>
-
-        <!-- 错误信息 -->
-        <el-alert
-          v-if="syncStore.taskStatus === 'failed' && syncStore.currentTask.message"
-          :title="syncStore.currentTask.message"
-          type="error"
-          :closable="false"
-          show-icon
-        />
-
-        <!-- 成功信息 -->
-        <el-alert
-          v-if="syncStore.taskStatus === 'success'"
-          title="镜像同步成功！"
-          type="success"
-          :closable="false"
-          show-icon
-        >
-          <template #default>
-            <div>镜像已成功同步到阿里云容器镜像服务</div>
-            <div v-if="syncStore.currentTask.target_image">
-              目标镜像：<el-tag>{{ syncStore.currentTask.target_image }}</el-tag>
+    <!-- 镜像列表 -->
+    <div class="images-section">
+      <el-card class="list-card">
+        <template #header>
+          <div class="card-header">
+            <span>镜像列表</span>
+            <div class="header-actions">
+              <el-button 
+                type="primary" 
+                :icon="Refresh" 
+                @click="refreshImageData"
+                :loading="imageStore.loading"
+                size="small"
+              >
+                刷新
+              </el-button>
             </div>
-          </template>
-        </el-alert>
+          </div>
+        </template>
 
-        <!-- 操作按钮 -->
-        <div class="task-actions">
+        <!-- 搜索和筛选 -->
+        <div class="filter-section">
+          <el-row :gutter="16">
+            <el-col :span="8">
+              <el-input
+                v-model="searchText"
+                placeholder="搜索镜像名称"
+                :prefix-icon="Search"
+                clearable
+                @input="handleSearch"
+              />
+            </el-col>
+            <el-col :span="4">
+              <el-select
+                v-model="statusFilter"
+                placeholder="筛选状态"
+                clearable
+                @change="handleStatusFilter"
+              >
+                <el-option label="等待中" value="pending" />
+                <el-option label="同步中" value="syncing" />
+                <el-option label="成功" value="success" />
+                <el-option label="失败" value="failed" />
+              </el-select>
+            </el-col>
+            <el-col :span="4">
+              <el-select
+                v-model="architectureFilter"
+                placeholder="筛选架构"
+                clearable
+                @change="handleArchitectureFilter"
+              >
+                <el-option label="amd64" value="amd64" />
+                <el-option label="arm64" value="arm64" />
+              </el-select>
+            </el-col>
+            <el-col :span="4">
+              <el-button @click="clearFilters">清除筛选</el-button>
+            </el-col>
+          </el-row>
+        </div>
+
+        <!-- 表格 -->
+        <el-table 
+          :data="imageStore.images" 
+          v-loading="imageStore.loading"
+          empty-text="暂无镜像记录"
+          @sort-change="handleSortChange"
+          :default-sort="{ prop: 'updated_at', order: 'descending' }"
+        >
+          <el-table-column prop="original_image" label="源镜像" min-width="200" sortable="custom">
+            <template #default="{ row }">
+              <div class="image-info">
+                <div class="image-name">{{ row.original_image }}:{{ row.tag }}</div>
+              </div>
+            </template>
+          </el-table-column>
+          
+          <el-table-column prop="acr_image" label="目标镜像" min-width="200">
+            <template #default="{ row }">
+              <div class="image-name">{{ getTargetImage(row) }}</div>
+            </template>
+          </el-table-column>
+          
+          <el-table-column prop="architecture" label="架构" width="80" sortable="custom">
+            <template #default="{ row }">
+              <el-tag :type="row.architecture === 'arm64' ? 'warning' : 'info'" size="small">
+                {{ row.architecture || 'amd64' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          
+          <el-table-column prop="sync_status" label="状态" width="100" sortable="custom">
+            <template #default="{ row }">
+              <div class="status-cell">
+                <el-icon 
+                  v-if="row.sync_status === 'syncing' || row.sync_status === 'pending'" 
+                  class="loading-icon"
+                >
+                  <Loading />
+                </el-icon>
+                <el-tag :type="getImageStatusType(row.sync_status)">
+                  {{ getImageStatusText(row.sync_status) }}
+                </el-tag>
+              </div>
+            </template>
+          </el-table-column>
+          
+          <el-table-column prop="created_at" label="创建时间" width="180" sortable="custom">
+            <template #default="{ row }">
+              {{ formatTime(row.created_at) }}
+            </template>
+          </el-table-column>
+          
+          <el-table-column prop="updated_at" label="更新时间" width="180" sortable="custom">
+            <template #default="{ row }">
+              {{ formatTime(row.updated_at) }}
+            </template>
+          </el-table-column>
+          
+          <el-table-column label="操作" width="200" fixed="right">
+            <template #default="{ row }">
+              <div class="action-buttons">
+                <el-button 
+                  v-if="getTargetImage(row) && row.sync_status === 'success'" 
+                  type="text" 
+                  size="small"
+                  @click="copyToClipboard(getTargetImage(row))"
+                >
+                  复制
+                </el-button>
+                
+                <el-button 
+                  type="text" 
+                  size="small"
+                  @click="viewImageDetails(row)"
+                >
+                  详情
+                </el-button>
+                
+                <el-button 
+                  v-if="row.status === 'failed'" 
+                  type="text" 
+                  size="small"
+                  @click="retryImageSync(row)"
+                  :loading="retryingIds.includes(row.id)"
+                >
+                  重试
+                </el-button>
+                
+                <el-button 
+                  v-if="row.github_run_url" 
+                  type="text" 
+                  size="small"
+                  @click="openGitHubRun(row.github_run_url)"
+                >
+                  GitHub
+                </el-button>
+                
+                <el-popconfirm
+                  title="确定要删除这条记录吗？"
+                  @confirm="deleteImage(row)"
+                >
+                  <template #reference>
+                    <el-button 
+                      type="text" 
+                      size="small"
+                      class="danger-button"
+                      :loading="deletingIds.includes(row.id)"
+                    >
+                      删除
+                    </el-button>
+                  </template>
+                </el-popconfirm>
+              </div>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <!-- 分页 -->
+        <div class="pagination-wrapper">
+          <el-pagination
+            v-model:current-page="currentPage"
+            v-model:page-size="pageSize"
+            :page-sizes="[10, 20, 50, 100]"
+            :total="imageStore.pagination.total"
+            layout="total, sizes, prev, pager, next, jumper"
+            @size-change="handleSizeChange"
+            @current-change="handleCurrentChange"
+          />
+        </div>
+      </el-card>
+    </div>
+
+    <!-- 镜像详情对话框 -->
+    <el-dialog
+      v-model="detailDialogVisible"
+      title="镜像详情"
+      width="600px"
+    >
+      <el-descriptions v-if="selectedImage" :column="1" border>
+        <el-descriptions-item label="ID">
+          {{ selectedImage.id }}
+        </el-descriptions-item>
+        <el-descriptions-item label="源镜像">
+          {{ selectedImage.original_image }}:{{ selectedImage.tag }}
+        </el-descriptions-item>
+        <el-descriptions-item label="目标镜像">
+          {{ getTargetImage(selectedImage) }}
+        </el-descriptions-item>
+        <el-descriptions-item label="状态">
+          <el-tag :type="getImageStatusType(selectedImage.sync_status)">
+            {{ getImageStatusText(selectedImage.sync_status) }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="任务ID" v-if="selectedImage.task_id">
+          {{ selectedImage.task_id }}
+        </el-descriptions-item>
+        <el-descriptions-item label="GitHub Run ID" v-if="selectedImage.github_run_id">
+          {{ selectedImage.github_run_id }}
+        </el-descriptions-item>
+        <el-descriptions-item label="GitHub URL" v-if="selectedImage.github_run_url">
+          <el-link :href="selectedImage.github_run_url" target="_blank" type="primary">
+            查看GitHub Actions
+          </el-link>
+        </el-descriptions-item>
+        <el-descriptions-item label="同步说明" v-if="selectedImage.description">
+          {{ selectedImage.description }}
+        </el-descriptions-item>
+        <el-descriptions-item label="错误信息" v-if="selectedImage.error_message && selectedImage.sync_status === 'failed'">
+          <el-alert :title="selectedImage.error_message" type="error" :closable="false" />
+        </el-descriptions-item>
+        <el-descriptions-item label="创建时间">
+          {{ formatTime(selectedImage.created_at) }}
+        </el-descriptions-item>
+        <el-descriptions-item label="更新时间">
+          {{ formatTime(selectedImage.updated_at) }}
+        </el-descriptions-item>
+      </el-descriptions>
+      
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="detailDialogVisible = false">关闭</el-button>
           <el-button 
-            v-if="syncStore.taskStatus === 'failed'" 
+            v-if="selectedImage && selectedImage.sync_status === 'failed'" 
             type="primary" 
-            @click="retryCurrentTask"
-            :loading="syncStore.loading"
+            @click="retryImageSync(selectedImage)"
           >
             重试同步
           </el-button>
-          <el-button 
-            v-if="['success', 'failed'].includes(syncStore.taskStatus)" 
-            @click="clearCurrentTask"
-          >
-            清除任务
-          </el-button>
-        </div>
-      </div>
-    </el-card>
-
-    <!-- 最近同步历史 -->
-    <el-card class="history-card">
-      <template #header>
-        <div class="card-header">
-          <span>最近同步历史</span>
-          <el-button 
-            type="text" 
-            @click="$router.push('/images')"
-            size="small"
-          >
-            查看全部
-          </el-button>
         </div>
       </template>
+    </el-dialog>
 
-      <el-table 
-        :data="recentHistory" 
-        v-loading="historyLoading"
-        empty-text="暂无同步记录"
-      >
-        <el-table-column prop="source_image" label="镜像" min-width="250">
-          <template #default="{ row }">
-            <div class="image-info">
-              <div class="source-image">{{ row.source_image }}</div>
-              <div class="target-image" v-if="row.target_image">
-                <el-tag size="small" type="success">{{ row.target_image }}</el-tag>
-              </div>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column prop="status" label="状态" width="120">
-          <template #default="{ row }">
-            <div class="status-cell">
-              <el-icon 
-                v-if="row.status === 'syncing' || row.status === 'pending'" 
-                class="loading-icon"
-              >
-                <Loading />
-              </el-icon>
-              <el-tag :type="getStatusType(row.status)">
-                {{ getStatusText(row.status) }}
-              </el-tag>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column prop="created_at" label="同步时间" width="160">
-          <template #default="{ row }">
-            {{ formatTime(row.created_at) }}
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="120">
-          <template #default="{ row }">
-            <el-button 
-              type="text" 
-              size="small"
-              @click="viewSyncDetails(row)"
-            >
-              详情
-            </el-button>
-            <el-button 
-              v-if="row.target_image && row.status === 'success'"
-              type="text" 
-              size="small" 
-              @click="copyToClipboard(row.target_image)"
-            >
-              复制
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-card>
   </div>
 </template>
 
@@ -207,9 +333,14 @@ import {
   Warning,
   Link,
   DocumentCopy,
-  Loading
+  Loading,
+  Box,
+  CircleCheck,
+  CircleClose,
+  Search
 } from '@element-plus/icons-vue'
 import { useSyncStore } from '@/stores/sync'
+import { useImageStore } from '@/stores/image'
 import SingleSyncForm from '@/components/SingleSyncForm.vue'
 import BatchSyncForm from '@/components/BatchSyncForm.vue'
 import dayjs from 'dayjs'
@@ -219,124 +350,46 @@ const router = useRouter()
 
 // 状态管理
 const syncStore = useSyncStore()
+const imageStore = useImageStore()
 
 // 响应式数据
 const refreshing = ref(false)
-const historyLoading = ref(false)
 const activeTab = ref('single')
+
+// 镜像列表相关变量
+const searchText = ref('')
+const statusFilter = ref('')
+const architectureFilter = ref('')
+const currentPage = ref(1)
+const pageSize = ref(20)
+const retryingIds = ref([])
+const deletingIds = ref([])
+const detailDialogVisible = ref(false)
+const selectedImage = ref(null)
 
 // 处理单个同步成功
 const handleSingleSyncSuccess = (task) => {
-  // 确保currentTask已经设置（通常在submitSync中已经设置）
-  if (task && !syncStore.currentTask) {
-    syncStore.currentTask = task
-  }
-  startStatusPolling()
-  loadRecentHistory()
+  // 刷新镜像数据和统计
+  imageStore.loadImageStats()
+  refreshImageData()
 }
 
 // 处理批量同步成功
 const handleBatchSyncSuccess = (task) => {
-  loadRecentHistory()
+  // 刷新镜像数据和统计
+  imageStore.loadImageStats()
+  refreshImageData()
 }
 
-// 最近历史记录
-const recentHistory = computed(() => {
-  // 后端已经返回了完整的数据，包括source_image和target_image，直接使用即可
-  return syncStore.syncHistory.slice(0, 5)
-})
 
 
 
-// 重试当前任务
-const retryCurrentTask = async () => {
-  if (!syncStore.currentTask) return
-  
-  try {
-    // 从当前任务的images中获取镜像信息
-    const images = syncStore.currentTask.images || []
-    if (images.length === 0) {
-      ElMessage.error('无法获取任务镜像信息')
-      return
-    }
-    
-    const syncData = {
-      images: images
-    }
-    
-    await syncStore.submitSync(syncData)
-    ElMessage.success('重试任务已提交')
-    startStatusPolling()
-    
-  } catch (error) {
-    ElMessage.error('重试任务失败')
-  }
-}
 
-// 清除当前任务
-const clearCurrentTask = () => {
-  syncStore.clearCurrentTask()
-  stopStatusPolling()
-}
 
-// 状态轮询
-let statusPollingTimer = null
 
-const startStatusPolling = () => {
-  if (!syncStore.currentTask) return
-  
-  statusPollingTimer = setInterval(async () => {
-    try {
-      await syncStore.getSyncStatus(syncStore.currentTask.task_id)
-      
-      // 如果任务完成，停止轮询
-      if (['success', 'failed'].includes(syncStore.taskStatus)) {
-        stopStatusPolling()
-        // 刷新历史记录
-        loadRecentHistory()
-      }
-    } catch (error) {
-      console.error('轮询状态失败:', error)
-    }
-  }, 5000) // 每5秒轮询一次
-}
 
-const stopStatusPolling = () => {
-  if (statusPollingTimer) {
-    clearInterval(statusPollingTimer)
-    statusPollingTimer = null
-  }
-}
 
-// 刷新状态
-const refreshStatus = async () => {
-  if (!syncStore.currentTask) return
-  
-  refreshing.value = true
-  try {
-    await syncStore.getSyncStatus(syncStore.currentTask.task_id)
-    ElMessage.success('状态已刷新')
-  } catch (error) {
-    ElMessage.error('刷新状态失败')
-  } finally {
-    refreshing.value = false
-  }
-}
 
-// 加载最近历史
-const loadRecentHistory = async () => {
-  console.log('Loading recent history...')
-  historyLoading.value = true
-  try {
-    const result = await syncStore.loadSyncHistory({ page: 1, page_size: 5 })
-    console.log('Recent history loaded:', result)
-    console.log('Sync history data:', syncStore.syncHistory)
-  } catch (error) {
-    console.error('加载历史记录失败:', error)
-  } finally {
-    historyLoading.value = false
-  }
-}
 
 // 工具函数
 const getStatusType = (status) => {
@@ -359,31 +412,7 @@ const getStatusText = (status) => {
   return statusMap[status] || '未知'
 }
 
-const getProgress = () => {
-  if (!syncStore.currentTask) return 0
-  
-  const status = syncStore.taskStatus
-  if (status === 'pending') return 10
-  if (status === 'syncing') return 50
-  if (status === 'success') return 100
-  if (status === 'failed') return 100
-  
-  return 0
-}
 
-const getProgressStatus = () => {
-  const status = syncStore.taskStatus
-  if (status === 'failed') return 'exception'
-  if (status === 'success') return 'success'
-  return undefined
-}
-
-const getProgressText = () => {
-  const status = syncStore.taskStatus
-  if (status === 'pending') return '任务已提交，等待处理...'
-  if (status === 'syncing') return '正在同步镜像，请稍候...'
-  return ''
-}
 
 const formatTime = (time) => {
   return dayjs(time).format('YYYY-MM-DD HH:mm:ss')
@@ -415,26 +444,194 @@ const openGitHubRun = (url) => {
   window.open(url, '_blank')
 }
 
+// 镜像相关方法
+const refreshImageData = async () => {
+  await imageStore.loadImages({
+    page: currentPage.value,
+    page_size: pageSize.value,
+    search: searchText.value,
+    status: statusFilter.value,
+    architecture: architectureFilter.value
+  })
+}
+
+const handleSearch = () => {
+  currentPage.value = 1
+  refreshImageData()
+}
+
+const handleStatusFilter = () => {
+  currentPage.value = 1
+  refreshImageData()
+}
+
+const handleArchitectureFilter = () => {
+  currentPage.value = 1
+  refreshImageData()
+}
+
+const clearFilters = () => {
+  searchText.value = ''
+  statusFilter.value = ''
+  architectureFilter.value = ''
+  currentPage.value = 1
+  refreshImageData()
+}
+
+const handleSortChange = ({ prop, order }) => {
+  const sortBy = prop
+  const sortOrder = order === 'ascending' ? 'asc' : 'desc'
+  
+  imageStore.loadImages({
+    page: currentPage.value,
+    page_size: pageSize.value,
+    search: searchText.value,
+    status: statusFilter.value,
+    architecture: architectureFilter.value,
+    sort_by: sortBy,
+    sort_order: sortOrder
+  })
+}
+
+const handleSizeChange = (size) => {
+  pageSize.value = size
+  currentPage.value = 1
+  refreshImageData()
+}
+
+const handleCurrentChange = (page) => {
+  currentPage.value = page
+  refreshImageData()
+}
+
+const getTargetImage = (row) => {
+  if (row.acr_image) {
+    // acr_image已经包含完整的镜像地址和标签，不需要再添加tag
+    return row.acr_image
+  }
+  return ''
+}
+
+const getImageStatusType = (status) => {
+  const statusMap = {
+    pending: 'info',
+    syncing: 'warning',
+    success: 'success',
+    failed: 'danger'
+  }
+  return statusMap[status] || 'info'
+}
+
+const getImageStatusText = (status) => {
+  const statusMap = {
+    pending: '等待中',
+    syncing: '同步中',
+    success: '成功',
+    failed: '失败'
+  }
+  return statusMap[status] || '未知'
+}
+
+const viewImageDetails = (row) => {
+  selectedImage.value = row
+  detailDialogVisible.value = true
+}
+
+const retryImageSync = async (row) => {
+  if (retryingIds.value.includes(row.id)) return
+  
+  retryingIds.value.push(row.id)
+  try {
+    await imageStore.retrySync(row.id)
+    ElMessage.success('重试请求已提交')
+    refreshImageData()
+  } catch (error) {
+    ElMessage.error('重试失败')
+  } finally {
+    retryingIds.value = retryingIds.value.filter(id => id !== row.id)
+  }
+}
+
+const deleteImage = async (row) => {
+  if (deletingIds.value.includes(row.id)) return
+  
+  deletingIds.value.push(row.id)
+  try {
+    await imageStore.deleteImage(row.id)
+    ElMessage.success('删除成功')
+    refreshImageData()
+  } catch (error) {
+    ElMessage.error('删除失败')
+  } finally {
+    deletingIds.value = deletingIds.value.filter(id => id !== row.id)
+  }
+}
+
+// 状态轮询
+let statusPollingTimer = null
+
+const startStatusPolling = () => {
+  // 每5秒轮询一次状态
+  statusPollingTimer = setInterval(async () => {
+    // 检查是否有当前任务正在进行
+    if (syncStore.currentTask && 
+        (syncStore.currentTask.status === 'pending' || syncStore.currentTask.status === 'running')) {
+      console.log('检测到进行中的同步任务，更新任务状态')
+      try {
+        // 根据任务类型调用不同的状态更新API
+        if (syncStore.currentTask.total_images > 1) {
+          // 批量同步任务
+          await syncStore.getBatchSyncStatus(syncStore.currentTask.task_id)
+        } else {
+          // 单个同步任务
+          await syncStore.getSyncStatus(syncStore.currentTask.task_id)
+        }
+      } catch (error) {
+        console.error('更新任务状态失败:', error)
+      }
+    }
+    
+    // 检查镜像列表中是否有同步中的镜像
+    const hasSyncingImages = imageStore.images.some(img => 
+      img.sync_status === 'pending' || img.sync_status === 'syncing'
+    )
+    
+    if (hasSyncingImages) {
+      console.log('检测到同步中的镜像，自动刷新镜像列表')
+      imageStore.loadImageStats()
+      refreshImageData()
+    }
+  }, 5000)
+}
+
+const stopStatusPolling = () => {
+  if (statusPollingTimer) {
+    clearInterval(statusPollingTimer)
+    statusPollingTimer = null
+  }
+}
+
 // 生命周期
 onMounted(() => {
-  loadRecentHistory()
+  // 加载镜像数据
+  imageStore.loadImageStats()
+  refreshImageData()
   
-  // 如果有当前任务且正在进行中，开始轮询
-  if (syncStore.hasCurrentTask && ['pending', 'syncing'].includes(syncStore.taskStatus)) {
-    startStatusPolling()
-  }
+  // 开始状态轮询
+  startStatusPolling()
 })
 
-// 组件卸载时清理定时器
 onUnmounted(() => {
+  // 清理定时器
   stopStatusPolling()
 })
 </script>
 
 <style scoped>
 .sync-view {
-  max-width: 1000px;
+  max-width: 1400px;
   margin: 0 auto;
+  padding: 0 20px;
 }
 
 .sync-card,
@@ -497,6 +694,146 @@ onUnmounted(() => {
 }
 
 .task-actions .el-button {
+  margin-left: 8px;
+}
+
+/* 镜像部分样式 */
+.images-section {
+  margin-top: 20px;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.stat-card {
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+
+.stat-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+}
+
+.stat-card .el-card__body {
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.stat-content {
+  flex: 1;
+}
+
+.stat-number {
+  font-size: 28px;
+  font-weight: bold;
+  line-height: 1;
+  margin-bottom: 8px;
+}
+
+.stat-number.success {
+  color: #67c23a;
+}
+
+.stat-number.warning {
+  color: #e6a23c;
+}
+
+.stat-number.danger {
+  color: #f56c6c;
+}
+
+.stat-label {
+  font-size: 14px;
+  color: #909399;
+  margin: 0;
+}
+
+.stat-icon {
+  font-size: 32px;
+  opacity: 0.8;
+}
+
+.stat-icon.total {
+  color: #409eff;
+}
+
+.stat-icon.success {
+  color: #67c23a;
+}
+
+.stat-icon.warning {
+  color: #e6a23c;
+}
+
+.stat-icon.danger {
+  color: #f56c6c;
+}
+
+.list-card {
+  margin-top: 20px;
+}
+
+.filter-section {
+  margin-bottom: 20px;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.action-buttons .el-button {
+  margin: 0;
+}
+
+.danger-button {
+  color: #f56c6c !important;
+}
+
+.danger-button:hover {
+  color: #f78989 !important;
+}
+
+.pagination-wrapper {
+  margin-top: 20px;
+  display: flex;
+  justify-content: center;
+}
+
+.status-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.loading-icon {
+  animation: spin 1s linear infinite;
+  color: #409eff;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.dialog-footer {
+  text-align: right;
+}
+
+.dialog-footer .el-button {
   margin-left: 8px;
 }
 </style>

@@ -1,6 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import SyncView from '@/views/SyncView.vue'
-import ImagesView from '@/views/ImagesView.vue'
 import GitHubView from '@/views/GitHubView.vue'
 
 const routes = [
@@ -14,14 +13,6 @@ const routes = [
     component: SyncView,
     meta: {
       title: '镜像同步'
-    }
-  },
-  {
-    path: '/images',
-    name: 'Images',
-    component: ImagesView,
-    meta: {
-      title: '镜像列表'
     }
   },
   {
