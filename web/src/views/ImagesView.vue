@@ -118,7 +118,7 @@
         v-loading="imageStore.loading"
         empty-text="暂无镜像记录"
         @sort-change="handleSortChange"
-        :default-sort="{ prop: 'updated_at', order: 'descending' }"
+        :default-sort="{ prop: 'created_at', order: 'descending' }"
       >
         <el-table-column type="index" label="序号" width="80" :index="getRowIndex" />
         <el-table-column prop="original_image" label="源镜像" min-width="200" sortable="custom">
@@ -395,7 +395,9 @@ const handleSearch = () => {
 
 // 状态筛选
 const handleStatusFilter = () => {
+  console.log('handleStatusFilter called, statusFilter.value:', statusFilter.value)
   imageStore.updateFilters({ status: statusFilter.value })
+  console.log('After updateFilters, imageStore.filters:', imageStore.filters)
   currentPage.value = 1
   imageStore.updatePagination(1, pageSize.value)
   imageStore.loadImages()
@@ -441,7 +443,7 @@ const handleSortChange = ({ column, prop, order }) => {
     sortOrder.value = order === 'ascending' ? 'asc' : 'desc'
   } else {
     // 清除排序，恢复默认
-    sortBy.value = 'updated_at'
+    sortBy.value = 'created_at'
     sortOrder.value = 'desc'
   }
   
@@ -662,13 +664,12 @@ const stopStatusPolling = () => {
 // 生命周期
 onMounted(() => {
   console.log('ImagesView mounted')
-  // 设置默认筛选条件
-  imageStore.updateFilters({ 
-    status: statusFilter.value,
-    search: searchText.value,
-    architecture: architectureFilter.value,
-    deduplicate: deduplicateEnabled.value
-  })
+  // 同步UI状态与store状态
+  statusFilter.value = imageStore.filters.status
+  searchText.value = imageStore.filters.search
+  architectureFilter.value = imageStore.filters.architecture
+  deduplicateEnabled.value = imageStore.filters.deduplicate
+  
   loadData().catch(error => {
     console.error('ImagesView loadData error:', error)
   })

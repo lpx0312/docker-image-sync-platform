@@ -33,9 +33,20 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 	status := c.Query("status")
 	search := c.Query("search")
 	architecture := c.Query("architecture")
-	sortBy := c.DefaultQuery("sort_by", "updated_at")
+	sortBy := c.DefaultQuery("sort_by", "created_at")
 	sortOrder := c.DefaultQuery("sort_order", "desc")
 	deduplicate := c.DefaultQuery("deduplicate", "false") == "true" // 新增去重参数
+
+	// 添加调试日志
+	logger.Logger.Info("GetImages API调用参数", 
+		zap.Int("page", page),
+		zap.Int("pageSize", pageSize),
+		zap.String("status", status),
+		zap.String("search", search),
+		zap.String("architecture", architecture),
+		zap.String("sortBy", sortBy),
+		zap.String("sortOrder", sortOrder),
+		zap.Bool("deduplicate", deduplicate))
 
 	if page < 1 {
 		page = 1
@@ -125,7 +136,7 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 			filteredQuery.Count(&total)
 
 			// 构建排序字符串
-			orderStr := "updated_at DESC" // 默认排序
+			orderStr := "created_at DESC" // 默认排序
 			if sortBy != "" {
 				// 验证排序字段
 				validSortFields := map[string]bool{
@@ -157,12 +168,31 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 			}
 		}
 	} else {
-		// 普通模式：不去重
+		// 普通模式：不去重，直接应用所有筛选条件
+		// 重新构建查询以确保所有筛选条件都被应用
+		filteredQuery := database.DB.Model(&models.ImageSyncRecord{})
+
+		// 应用所有筛选条件
+		if status != "" {
+			filteredQuery = filteredQuery.Where("sync_status = ?", status)
+		}
+		if architecture != "" {
+			if architecture == "amd64" {
+				filteredQuery = filteredQuery.Where("(architecture = ? OR architecture IS NULL OR architecture = '')", architecture)
+			} else {
+				filteredQuery = filteredQuery.Where("architecture = ?", architecture)
+			}
+		}
+		if search != "" {
+			filteredQuery = filteredQuery.Where("original_image LIKE ? OR acr_image LIKE ?", 
+				"%"+search+"%", "%"+search+"%")
+		}
+
 		// 查询总数
-		query.Count(&total)
+		filteredQuery.Count(&total)
 
 		// 构建排序字符串
-		orderStr := "updated_at DESC" // 默认排序
+		orderStr := "created_at DESC" // 默认排序
 		if sortBy != "" {
 			// 验证排序字段
 			validSortFields := map[string]bool{
@@ -183,7 +213,7 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 		}
 
 		// 查询数据
-		if err := query.Order(orderStr).
+		if err := filteredQuery.Order(orderStr).
 			Offset(offset).
 			Limit(pageSize).
 			Find(&images).Error; err != nil {

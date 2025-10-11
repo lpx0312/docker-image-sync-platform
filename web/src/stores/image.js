@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { imageAPI } from '@/api'
 
 export const useImageStore = defineStore('image', () => {
@@ -19,13 +19,13 @@ export const useImageStore = defineStore('image', () => {
     total: 0
   })
   const filters = ref({
-    status: 'success', // 默认筛选成功状态
+    status: '', // 默认不筛选状态
     search: '',
     architecture: '',
-    deduplicate: false // 去重开关
+    deduplicate: true // 去重开关，默认开启
   })
   const sorting = ref({
-    sortBy: 'updated_at',
+    sortBy: 'created_at',
     sortOrder: 'desc'
   })
 
@@ -63,6 +63,7 @@ export const useImageStore = defineStore('image', () => {
         ...params
       }
       
+      console.log('loadImages queryParams:', queryParams)
       const response = await imageAPI.getImageList(queryParams)
       images.value = response.data || []
       pagination.value.total = response.total || 0
@@ -124,16 +125,19 @@ export const useImageStore = defineStore('image', () => {
   }
 
   const updateFilters = (newFilters) => {
+    console.log('updateFilters called with:', newFilters)
+    console.log('Current filters before update:', filters.value)
     filters.value = { ...filters.value, ...newFilters }
+    console.log('Updated filters:', filters.value)
     pagination.value.page = 1 // 重置到第一页
   }
 
   const clearFilters = () => {
     filters.value = {
-      status: 'success', // 保持默认的成功状态筛选
+      status: '', // 默认不筛选状态
       search: '',
       architecture: '',
-      deduplicate: false
+      deduplicate: true // 去重开关，默认开启
     }
     pagination.value.page = 1
   }
@@ -192,6 +196,12 @@ export const useImageStore = defineStore('image', () => {
       throw error
     }
   }
+
+  // 监控filters变化
+  watch(filters, (newFilters, oldFilters) => {
+    console.log('Filters changed from:', oldFilters, 'to:', newFilters)
+    console.trace('Filters change stack trace')
+  }, { deep: true })
 
   return {
     // 状态

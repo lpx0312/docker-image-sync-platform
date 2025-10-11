@@ -148,7 +148,7 @@
           v-loading="imageStore.loading"
           empty-text="暂无镜像记录"
           @sort-change="handleSortChange"
-          :default-sort="{ prop: 'updated_at', order: 'descending' }"
+          :default-sort="{ prop: 'created_at', order: 'descending' }"
         >
           <el-table-column type="index" label="序号" width="80" :index="getRowIndex" />
           <el-table-column prop="original_image" label="源镜像" min-width="200" sortable="custom">
@@ -481,23 +481,30 @@ const openGitHubRun = (url) => {
 
 // 镜像相关方法
 const refreshImageData = async () => {
-  await imageStore.loadImages({
-    page: currentPage.value,
-    page_size: pageSize.value,
+  // 先同步本地状态到store
+  imageStore.updateFilters({
     search: searchText.value,
     status: statusFilter.value,
     architecture: architectureFilter.value,
     deduplicate: deduplicateEnabled.value
   })
+  
+  // 更新分页
+  imageStore.updatePagination(currentPage.value, pageSize.value)
+  
+  // 加载镜像数据
+  await imageStore.loadImages()
 }
 
 const handleSearch = () => {
   currentPage.value = 1
+  imageStore.updatePagination(1, pageSize.value)
   refreshImageData()
 }
 
 const handleStatusFilter = () => {
   currentPage.value = 1
+  imageStore.updatePagination(1, pageSize.value)
   refreshImageData()
 }
 
@@ -717,6 +724,14 @@ const stopStatusPolling = () => {
 
 // 生命周期
 onMounted(() => {
+  // 同步store状态到本地变量
+  searchText.value = imageStore.filters.search
+  statusFilter.value = imageStore.filters.status
+  architectureFilter.value = imageStore.filters.architecture
+  deduplicateEnabled.value = imageStore.filters.deduplicate
+  currentPage.value = imageStore.pagination.page
+  pageSize.value = imageStore.pagination.page_size
+  
   // 加载镜像数据
   imageStore.loadImageStats()
   refreshImageData()
