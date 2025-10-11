@@ -548,6 +548,14 @@ func (h *ImageHandler) BatchCheckImages(c *gin.Context) {
 				zap.Uint("id", image.ID),
 				zap.String("target_image", targetImage))
 			
+			// 检测失败时，也要更新镜像状态为失败
+			if updateErr := database.DB.Model(&image).Updates(map[string]interface{}{
+				"sync_status": models.SyncStatusFailed,
+				"error_message": fmt.Sprintf("检测失败: %v", err),
+			}).Error; updateErr != nil {
+				logger.Logger.Error("更新镜像状态失败", zap.Error(updateErr), zap.Uint("id", image.ID))
+			}
+			
 			results = append(results, map[string]interface{}{
 				"id": image.ID,
 				"original_image": image.OriginalImage,
