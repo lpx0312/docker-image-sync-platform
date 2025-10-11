@@ -42,6 +42,14 @@
           <span>镜像列表</span>
           <div class="header-actions">
             <el-button 
+              type="success" 
+              @click="batchCheckImages"
+              :loading="batchChecking"
+              size="small"
+            >
+              批量检测
+            </el-button>
+            <el-button 
               type="primary" 
               :icon="Refresh" 
               @click="refreshData"
@@ -57,7 +65,7 @@
       <!-- 搜索和筛选 -->
       <div class="filter-section">
         <el-row :gutter="16">
-          <el-col :span="8">
+          <el-col :span="6">
             <el-input
               v-model="searchText"
               placeholder="搜索镜像名称"
@@ -91,6 +99,14 @@
             </el-select>
           </el-col>
           <el-col :span="4">
+            <el-checkbox
+              v-model="deduplicateEnabled"
+              @change="handleDeduplicateChange"
+            >
+              去重显示
+            </el-checkbox>
+          </el-col>
+          <el-col :span="4">
             <el-button @click="clearFilters">清除筛选</el-button>
           </el-col>
         </el-row>
@@ -104,6 +120,7 @@
         @sort-change="handleSortChange"
         :default-sort="{ prop: 'updated_at', order: 'descending' }"
       >
+        <el-table-column type="index" label="序号" width="80" :index="getRowIndex" />
         <el-table-column prop="original_image" label="源镜像" min-width="200" sortable="custom">
           <template #default="{ row }">
             <div class="image-info">
@@ -172,6 +189,15 @@
                 @click="viewDetails(row)"
               >
                 详情
+              </el-button>
+              
+              <el-button 
+                type="text" 
+                size="small"
+                @click="checkImageExists(row)"
+                :loading="checkingIds.includes(row.id)"
+              >
+                检测
               </el-button>
               
               <el-button 
@@ -307,14 +333,17 @@ const imageStore = useImageStore()
 
 // 响应式数据
 const searchText = ref('')
-const statusFilter = ref('success')
+const statusFilter = ref('')
 const architectureFilter = ref('')
+const deduplicateEnabled = ref(true) // 去重开关，默认开启
 const currentPage = ref(1)
 const pageSize = ref(20)
 const detailDialogVisible = ref(false)
 const selectedImage = ref(null)
 const retryingIds = ref([])
 const deletingIds = ref([])
+const checkingIds = ref([])
+const batchChecking = ref(false)
 const sortBy = ref('updated_at')
 const sortOrder = ref('desc')
 const aliyunConfig = ref({
@@ -380,15 +409,25 @@ const handleArchitectureFilter = () => {
   imageStore.loadImages()
 }
 
+// 去重处理
+const handleDeduplicateChange = () => {
+  imageStore.updateFilters({ deduplicate: deduplicateEnabled.value })
+  currentPage.value = 1
+  imageStore.updatePagination(1, pageSize.value)
+  imageStore.loadImages()
+}
+
 // 清除筛选
 const clearFilters = () => {
   searchText.value = ''
-  statusFilter.value = 'success' // 保持默认的成功状态筛选
+  statusFilter.value = ''
   architectureFilter.value = ''
+  deduplicateEnabled.value = true // 重置去重开关为默认开启
   imageStore.updateFilters({ 
-    status: 'success', // 保持默认的成功状态筛选
+    status: '',
     search: '', 
-    architecture: '' 
+    architecture: '',
+    deduplicate: true
   })
   currentPage.value = 1
   imageStore.updatePagination(1, pageSize.value)
@@ -479,6 +518,51 @@ const deleteImage = async (row) => {
   }
 }
 
+// 检测单个镜像是否存在
+const checkImageExists = async (row) => {
+  checkingIds.value.push(row.id)
+  try {
+    const result = await imageStore.checkImageExists(row.id)
+    if (result.exists) {
+      ElMessage.success(`镜像 ${row.original_image} 检测成功，状态已更新`)
+    } else {
+      ElMessage.warning(`镜像 ${row.original_image} 不存在，状态已更新为失败`)
+    }
+    
+    // 无论检测结果如何，都重新加载数据以更新状态
+    await loadData()
+  } catch (error) {
+    console.error('检测镜像失败:', error)
+    ElMessage.error('检测镜像失败')
+  } finally {
+    checkingIds.value = checkingIds.value.filter(id => id !== row.id)
+  }
+}
+
+// 批量检测镜像
+const batchCheckImages = async () => {
+  if (imageStore.images.length === 0) {
+    ElMessage.warning('没有可检测的镜像')
+    return
+  }
+  
+  batchChecking.value = true
+  try {
+    const imageIds = imageStore.images.map(img => img.id)
+    const result = await imageStore.batchCheckImages(imageIds)
+    
+    ElMessage.success(`批量检测完成：${result.success_count}个镜像存在，${result.failed_count}个镜像不存在`)
+    
+    // 重新加载数据
+    await loadData()
+  } catch (error) {
+    console.error('批量检测失败:', error)
+    ElMessage.error('批量检测失败')
+  } finally {
+    batchChecking.value = false
+  }
+}
+
 // 复制到剪贴板
 const copyToClipboard = async (text) => {
   try {
@@ -492,6 +576,11 @@ const copyToClipboard = async (text) => {
 // 打开GitHub Actions
 const openGitHubRun = (url) => {
   window.open(url, '_blank')
+}
+
+// 计算行序号
+const getRowIndex = (index) => {
+  return (currentPage.value - 1) * pageSize.value + index + 1
 }
 
 // 工具函数
@@ -573,8 +662,13 @@ const stopStatusPolling = () => {
 // 生命周期
 onMounted(() => {
   console.log('ImagesView mounted')
-  // 设置默认筛选条件为成功状态
-  imageStore.updateFilters({ status: statusFilter.value })
+  // 设置默认筛选条件
+  imageStore.updateFilters({ 
+    status: statusFilter.value,
+    search: searchText.value,
+    architecture: architectureFilter.value,
+    deduplicate: deduplicateEnabled.value
+  })
   loadData().catch(error => {
     console.error('ImagesView loadData error:', error)
   })

@@ -21,7 +21,8 @@ export const useImageStore = defineStore('image', () => {
   const filters = ref({
     status: 'success', // 默认筛选成功状态
     search: '',
-    architecture: ''
+    architecture: '',
+    deduplicate: false // 去重开关
   })
   const sorting = ref({
     sortBy: 'updated_at',
@@ -131,7 +132,8 @@ export const useImageStore = defineStore('image', () => {
     filters.value = {
       status: 'success', // 保持默认的成功状态筛选
       search: '',
-      architecture: ''
+      architecture: '',
+      deduplicate: false
     }
     pagination.value.page = 1
   }
@@ -163,6 +165,34 @@ export const useImageStore = defineStore('image', () => {
     }
   }
 
+  const checkImageExists = async (id) => {
+    try {
+      const response = await imageAPI.checkImageExists(id)
+      // 如果镜像存在，更新本地状态
+      if (response.exists) {
+        updateImageStatus(id, 'success')
+        await loadImageStats()
+      }
+      return response
+    } catch (error) {
+      console.error('检测镜像失败:', error)
+      throw error
+    }
+  }
+
+  const batchCheckImages = async (ids) => {
+    try {
+      const response = await imageAPI.batchCheckImages(ids)
+      // 重新加载数据以获取最新状态
+      await loadImages()
+      await loadImageStats()
+      return response
+    } catch (error) {
+      console.error('批量检测镜像失败:', error)
+      throw error
+    }
+  }
+
   return {
     // 状态
     images,
@@ -186,6 +216,8 @@ export const useImageStore = defineStore('image', () => {
     clearFilters,
     updateSorting,
     getImageById,
-    updateImageStatus
+    updateImageStatus,
+    checkImageExists,
+    batchCheckImages
   }
 })

@@ -93,17 +93,26 @@ const (
 
 // TaskStatus 任务状态常量
 const (
-	TaskStatusPending   = "pending"
-	TaskStatusRunning   = "running"
-	TaskStatusCompleted = "completed"
-	TaskStatusFailed    = "failed"
-	TaskStatusPaused    = "paused"
+	TaskStatusPending        = "pending"
+	TaskStatusRunning        = "running"
+	TaskStatusCompleted      = "completed"
+	TaskStatusSuccess        = "completed"  // 成功状态的别名
+	TaskStatusFailed         = "failed"
+	TaskStatusPartialSuccess = "partial_success"
+	TaskStatusPaused         = "paused"
 )
 
 // ImageRequest 镜像同步请求（保持向后兼容）
 type ImageRequest struct {
 	Images       []string `json:"images" binding:"required"`
 	Architecture string   `json:"architecture"`
+}
+
+// SyncRequest 单个同步请求
+type SyncRequest struct {
+	Images       []string `json:"images" binding:"required"`
+	Architecture string   `json:"architecture"`
+	Description  string   `json:"description"`
 }
 
 // BatchSyncRequest 批量镜像同步请求

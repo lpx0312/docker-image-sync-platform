@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"docker-image-sync-platform/internal/database"
 	"docker-image-sync-platform/internal/logger"
@@ -12,6 +14,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
 // ImageHandler 镜像处理器
@@ -31,6 +35,7 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 	architecture := c.Query("architecture")
 	sortBy := c.DefaultQuery("sort_by", "updated_at")
 	sortOrder := c.DefaultQuery("sort_order", "desc")
+	deduplicate := c.DefaultQuery("deduplicate", "false") == "true" // 新增去重参数
 
 	if page < 1 {
 		page = 1
@@ -66,40 +71,126 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 			"%"+search+"%", "%"+search+"%")
 	}
 
-	// 查询总数
+	var images []models.ImageSyncRecord
 	var total int64
-	query.Count(&total)
 
-	// 构建排序字符串
-	orderStr := "updated_at DESC" // 默认排序
-	if sortBy != "" {
-		// 验证排序字段
-		validSortFields := map[string]bool{
-			"original_image": true,
-			"sync_status":    true,
-			"architecture":   true,
-			"created_at":     true,
-			"updated_at":     true,
+	if deduplicate {
+		// 去重模式：先去重，再应用过滤条件，确保去重优先级最高
+		// 第一步：获取所有去重后的记录ID（基于源镜像(含tag)、目标镜像、架构和同步状态的组合去重）
+		subQuery := database.DB.Model(&models.ImageSyncRecord{}).
+			Select("MAX(id) as max_id").
+			Group("original_image, tag, acr_image, architecture, sync_status")
+
+		// 第二步：获取去重后的所有记录ID
+		var maxIds []struct {
+			MaxId uint `json:"max_id"`
 		}
-		
-		if validSortFields[sortBy] {
-			if sortOrder == "asc" {
-				orderStr = fmt.Sprintf("%s ASC", sortBy)
-			} else {
-				orderStr = fmt.Sprintf("%s DESC", sortBy)
+		if err := subQuery.Find(&maxIds).Error; err != nil {
+			logger.Logger.Error("查询去重镜像ID失败", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "查询镜像列表失败"})
+			return
+		}
+
+		// 提取ID列表
+		var deduplicatedIds []uint
+		for _, item := range maxIds {
+			deduplicatedIds = append(deduplicatedIds, item.MaxId)
+		}
+
+		if len(deduplicatedIds) == 0 {
+			// 没有数据
+			images = []models.ImageSyncRecord{}
+			total = 0
+		} else {
+			// 第三步：在去重后的记录上应用过滤条件
+			filteredQuery := database.DB.Model(&models.ImageSyncRecord{}).Where("id IN ?", deduplicatedIds)
+
+			// 应用过滤条件
+			if status != "" {
+				filteredQuery = filteredQuery.Where("sync_status = ?", status)
+			}
+			if architecture != "" {
+				if architecture == "amd64" {
+					filteredQuery = filteredQuery.Where("(architecture = ? OR architecture IS NULL OR architecture = '')", architecture)
+				} else {
+					filteredQuery = filteredQuery.Where("architecture = ?", architecture)
+				}
+			}
+			if search != "" {
+				filteredQuery = filteredQuery.Where("original_image LIKE ? OR acr_image LIKE ?", 
+					"%"+search+"%", "%"+search+"%")
+			}
+
+			// 获取过滤后的总数
+			filteredQuery.Count(&total)
+
+			// 构建排序字符串
+			orderStr := "updated_at DESC" // 默认排序
+			if sortBy != "" {
+				// 验证排序字段
+				validSortFields := map[string]bool{
+					"original_image": true,
+					"sync_status":    true,
+					"architecture":   true,
+					"created_at":     true,
+					"updated_at":     true,
+				}
+				
+				if validSortFields[sortBy] {
+					if sortOrder == "asc" {
+						orderStr = fmt.Sprintf("%s ASC", sortBy)
+					} else {
+						orderStr = fmt.Sprintf("%s DESC", sortBy)
+					}
+				}
+			}
+
+			// 分页查询
+			if err := filteredQuery.
+				Order(orderStr).
+				Offset(offset).
+				Limit(pageSize).
+				Find(&images).Error; err != nil {
+				logger.Logger.Error("查询过滤后的镜像数据失败", zap.Error(err))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "查询镜像列表失败"})
+				return
 			}
 		}
-	}
+	} else {
+		// 普通模式：不去重
+		// 查询总数
+		query.Count(&total)
 
-	// 查询数据
-	var images []models.ImageSyncRecord
-	if err := query.Order(orderStr).
-		Offset(offset).
-		Limit(pageSize).
-		Find(&images).Error; err != nil {
-		logger.Logger.Error("查询镜像列表失败", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询镜像列表失败"})
-		return
+		// 构建排序字符串
+		orderStr := "updated_at DESC" // 默认排序
+		if sortBy != "" {
+			// 验证排序字段
+			validSortFields := map[string]bool{
+				"original_image": true,
+				"sync_status":    true,
+				"architecture":   true,
+				"created_at":     true,
+				"updated_at":     true,
+			}
+			
+			if validSortFields[sortBy] {
+				if sortOrder == "asc" {
+					orderStr = fmt.Sprintf("%s ASC", sortBy)
+				} else {
+					orderStr = fmt.Sprintf("%s DESC", sortBy)
+				}
+			}
+		}
+
+		// 查询数据
+		if err := query.Order(orderStr).
+			Offset(offset).
+			Limit(pageSize).
+			Find(&images).Error; err != nil {
+			logger.Logger.Error("查询镜像列表失败", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "查询镜像列表失败"})
+			return
+		}
 	}
 
 	// 处理镜像数据，确保目标镜像地址包含完整标签
@@ -331,4 +422,211 @@ func (h *ImageHandler) generateACRImageWithArchitecture(originalImage, tag, arch
 	finalTagWithArch := finalTag + architectureSuffix
 	
 	return fmt.Sprintf("%s/%s/%s:%s", registry, namespace, imageName, finalTagWithArch)
+}
+
+// CheckImageExists 检测镜像是否存在
+func (h *ImageHandler) CheckImageExists(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的镜像ID"})
+		return
+	}
+
+	var image models.ImageSyncRecord
+	if err := database.DB.First(&image, uint(id)).Error; err != nil {
+		logger.Logger.Error("查询镜像失败", zap.Error(err), zap.Uint64("id", id))
+		c.JSON(http.StatusNotFound, gin.H{"error": "镜像不存在"})
+		return
+	}
+
+	// 生成目标镜像地址
+	targetImage := h.generateACRImageWithArchitecture(image.OriginalImage, image.Tag, image.Architecture)
+	
+	// 检测镜像是否存在
+	exists, err := h.checkImageExistsInRegistry(targetImage)
+	if err != nil {
+		logger.Logger.Error("检测镜像存在性失败", 
+			zap.Error(err), 
+			zap.String("target_image", targetImage))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "检测镜像存在性失败",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	// 根据检测结果和当前状态决定是否更新状态
+	if exists {
+		// 只有当前状态为失败时，检测成功才更新为成功
+		if image.SyncStatus == models.SyncStatusFailed {
+			if err := database.DB.Model(&image).Updates(map[string]interface{}{
+				"sync_status": models.SyncStatusSuccess,
+				"acr_image":   targetImage,
+				"error_message": "",
+			}).Error; err != nil {
+				logger.Logger.Error("更新镜像状态失败", zap.Error(err))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "更新镜像状态失败"})
+				return
+			}
+			
+			logger.Logger.Info("镜像检测成功，状态已更新", 
+				zap.Uint64("id", id),
+				zap.String("target_image", targetImage))
+		} else {
+			logger.Logger.Info("镜像检测成功，但状态已为成功，无需更新", 
+				zap.Uint64("id", id),
+				zap.String("target_image", targetImage))
+		}
+	} else {
+		// 镜像不存在时，更新状态为失败
+		if err := database.DB.Model(&image).Updates(map[string]interface{}{
+			"sync_status": models.SyncStatusFailed,
+			"error_message": "镜像不存在",
+		}).Error; err != nil {
+			logger.Logger.Error("更新镜像状态失败", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "更新镜像状态失败"})
+			return
+		}
+		
+		logger.Logger.Info("镜像检测失败，状态已更新为失败", 
+			zap.Uint64("id", id),
+			zap.String("target_image", targetImage))
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"exists": exists,
+		"target_image": targetImage,
+		"message": func() string {
+			if exists {
+				return "镜像存在，状态已更新为成功"
+			}
+			return "镜像不存在，状态已更新为失败"
+		}(),
+	})
+}
+
+// BatchCheckImages 批量检测镜像是否存在
+func (h *ImageHandler) BatchCheckImages(c *gin.Context) {
+	var request struct {
+		IDs []uint `json:"ids" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误"})
+		return
+	}
+
+	if len(request.IDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "镜像ID列表不能为空"})
+		return
+	}
+
+	if len(request.IDs) > 50 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "一次最多检测50个镜像"})
+		return
+	}
+
+	var images []models.ImageSyncRecord
+	if err := database.DB.Where("id IN ?", request.IDs).Find(&images).Error; err != nil {
+		logger.Logger.Error("查询镜像列表失败", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询镜像列表失败"})
+		return
+	}
+
+	results := make([]map[string]interface{}, 0, len(images))
+	successCount := 0
+	failedCount := 0
+
+	for _, image := range images {
+		targetImage := h.generateACRImageWithArchitecture(image.OriginalImage, image.Tag, image.Architecture)
+		
+		exists, err := h.checkImageExistsInRegistry(targetImage)
+		if err != nil {
+			logger.Logger.Error("检测镜像存在性失败", 
+				zap.Error(err), 
+				zap.Uint("id", image.ID),
+				zap.String("target_image", targetImage))
+			
+			results = append(results, map[string]interface{}{
+				"id": image.ID,
+				"original_image": image.OriginalImage,
+				"target_image": targetImage,
+				"exists": false,
+				"error": err.Error(),
+			})
+			failedCount++
+			continue
+		}
+
+		// 根据检测结果和当前状态决定是否更新状态
+		if exists {
+			// 只有当前状态为失败时，检测成功才更新为成功
+			if image.SyncStatus == models.SyncStatusFailed {
+				if err := database.DB.Model(&image).Updates(map[string]interface{}{
+					"sync_status": models.SyncStatusSuccess,
+					"acr_image":   targetImage,
+					"error_message": "",
+				}).Error; err != nil {
+					logger.Logger.Error("更新镜像状态失败", zap.Error(err), zap.Uint("id", image.ID))
+				}
+			}
+			successCount++
+		} else {
+			// 镜像不存在时，更新状态为失败
+			if err := database.DB.Model(&image).Updates(map[string]interface{}{
+				"sync_status": models.SyncStatusFailed,
+				"error_message": "镜像不存在",
+			}).Error; err != nil {
+				logger.Logger.Error("更新镜像状态失败", zap.Error(err), zap.Uint("id", image.ID))
+			}
+			failedCount++
+		}
+
+		results = append(results, map[string]interface{}{
+			"id": image.ID,
+			"original_image": image.OriginalImage,
+			"target_image": targetImage,
+			"exists": exists,
+		})
+	}
+
+	logger.Logger.Info("批量检测镜像完成", 
+		zap.Int("total", len(images)),
+		zap.Int("success", successCount),
+		zap.Int("failed", failedCount))
+
+	c.JSON(http.StatusOK, gin.H{
+		"total": len(images),
+		"success_count": successCount,
+		"failed_count": failedCount,
+		"results": results,
+		"message": fmt.Sprintf("检测完成：%d个镜像存在，%d个镜像不存在", successCount, failedCount),
+	})
+}
+
+// checkImageExistsInRegistry 检测镜像在注册表中是否存在
+func (h *ImageHandler) checkImageExistsInRegistry(imageRef string) (bool, error) {
+	// 解析镜像引用
+	ref, err := name.ParseReference(imageRef)
+	if err != nil {
+		return false, fmt.Errorf("解析镜像引用失败: %v", err)
+	}
+
+	// 创建带超时的上下文
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// 尝试获取镜像的manifest
+	_, err = remote.Head(ref, remote.WithContext(ctx))
+	if err != nil {
+		// 如果是404错误，说明镜像不存在
+		if strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "not found") {
+			return false, nil
+		}
+		// 其他错误返回错误信息
+		return false, fmt.Errorf("检测镜像存在性失败: %v", err)
+	}
+
+	return true, nil
 }

@@ -171,6 +171,15 @@
           <el-icon><Upload /></el-icon>
           开始批量同步 ({{ parsedImages.length }} 个镜像)
         </el-button>
+        <el-button 
+          type="warning" 
+          @click="submitMockBatchSync" 
+          :loading="mockLoading"
+          :disabled="parsedImages.length === 0"
+        >
+          <el-icon><Upload /></el-icon>
+          模拟批量同步 ({{ parsedImages.length }} 个镜像)
+        </el-button>
         <el-button @click="resetForm">
           <el-icon><RefreshLeft /></el-icon>
           重置
@@ -209,6 +218,7 @@ const imageInput = ref('')
 const parsedImages = ref([])
 const imageArchitectureMap = ref(new Map())
 const loading = ref(false)
+const mockLoading = ref(false)
 
 // 表单验证规则
 const batchRules = {
@@ -675,6 +685,112 @@ const submitBatchSync = async () => {
     ElMessage.error('提交批量同步任务失败')
   } finally {
     loading.value = false
+  }
+}
+
+// 提交模拟批量同步
+const submitMockBatchSync = async () => {
+  try {
+    await batchFormRef.value.validate()
+    
+    if (parsedImages.value.length === 0) {
+      ElMessage.warning('请至少添加一个镜像')
+      return
+    }
+    
+    mockLoading.value = true
+    
+    // 构建批量同步请求（与真实同步相同的数据结构）
+    const batchData = {
+      images: parsedImages.value.flatMap(image => {
+        // 处理自定义混合架构模式
+        if (batchForm.architectureMode === 'custom') {
+          // 新的数据结构：image 是对象
+          if (typeof image === 'object') {
+            const [imageName, tag] = image.displayName.split(':')
+            return [{
+              source_image: imageName,
+              target_tag: tag || 'latest',
+              architecture: image.architecture,
+              priority: 1
+            }]
+          } else {
+            // 兼容旧的字符串格式
+            if (image.startsWith('--platform=')) {
+              const parts = image.split(' ')
+              if (parts.length >= 2) {
+                const platformPart = parts[0]
+                const sourceImage = parts.slice(1).join(' ')
+                
+                // 提取架构信息
+                let architecture = 'amd64'
+                if (platformPart.includes('linux/arm64')) {
+                  architecture = 'arm64'
+                } else if (platformPart.includes('linux/amd64')) {
+                  architecture = 'amd64'
+                }
+                
+                const [imageName, tag] = sourceImage.split(':')
+                return [{
+                  source_image: imageName,
+                  target_tag: tag || 'latest',
+                  architecture: architecture,
+                  priority: 1
+                }]
+              }
+            } else {
+              // 没有 --platform 参数的镜像，默认为amd64架构
+              const [imageName, tag] = image.split(':')
+              return [{
+                source_image: imageName,
+                target_tag: tag || 'latest',
+                architecture: 'amd64',
+                priority: 1
+              }]
+            }
+          }
+        }
+        
+        // 处理其他架构模式
+        const [imageName, tag] = image.split(':')
+        const baseImage = {
+          source_image: imageName,
+          target_tag: tag || 'latest',
+          priority: 1
+        }
+        
+        if (batchForm.architectureMode === 'both') {
+          return [
+            { ...baseImage, architecture: 'amd64' },
+            { ...baseImage, architecture: 'arm64' }
+          ]
+        } else {
+          return [{ ...baseImage, architecture: batchForm.architectureMode }]
+        }
+      }),
+      max_concurrent: batchForm.maxConcurrent,
+      auto_retry: batchForm.autoRetry,
+      retry_count: batchForm.autoRetry ? batchForm.maxRetries : 0
+    }
+    
+    const response = await syncAPI.submitMockBatchSync(batchData)
+    
+    ElMessage.success('模拟批量同步任务已提交')
+    
+    // 通知父组件
+    emit('success', response)
+    
+    // 重置表单
+    resetForm()
+    
+  } catch (error) {
+    if (error.errors) {
+      // 表单验证错误
+      return
+    }
+    ElMessage.error('提交模拟批量同步任务失败')
+  } finally {
+    mockLoading.value = false
   }
 }
 

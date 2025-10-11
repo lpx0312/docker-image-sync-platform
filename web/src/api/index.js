@@ -40,6 +40,9 @@ export const syncAPI = {
   // 提交批量同步任务
   submitBatchSync: (data) => api.post('/sync/batch', data),
   
+  // 提交模拟批量同步任务
+  submitMockBatchSync: (data) => api.post('/sync/batch/mock', data),
+  
   // 获取同步状态
   getSyncStatus: (taskId) => api.get(`/sync/status/${taskId}`),
   
@@ -65,7 +68,13 @@ export const imageAPI = {
   getImageStats: () => api.get('/images/stats'),
   
   // 重试同步
-  retrySync: (id) => api.post(`/images/${id}/retry`)
+  retrySync: (id) => api.post(`/images/${id}/retry`),
+  
+  // 检测镜像是否存在
+  checkImageExists: (id) => api.post(`/images/${id}/check`),
+  
+  // 批量检测镜像
+  batchCheckImages: (ids) => api.post('/images/batch-check', { ids })
 }
 
 // GitHub Actions相关API
