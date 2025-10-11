@@ -730,7 +730,7 @@ onMounted(() => {
   architectureFilter.value = imageStore.filters.architecture
   deduplicateEnabled.value = imageStore.filters.deduplicate
   currentPage.value = imageStore.pagination.page
-  pageSize.value = imageStore.pagination.page_size
+  pageSize.value = imageStore.pagination.pageSize
   
   // 加载镜像数据
   imageStore.loadImageStats()
