@@ -211,7 +211,7 @@ if not exist node_modules (
 )
 
 REM 启动前端开发服务器
-echo   🌐 启动Vite开发服务器 (端口5173)...
+echo   🌐 启动Vite开发服务器 (端口3000)...
 echo   🔥 热模块替换(HMR): 代码修改实时更新
 start "Docker镜像同步平台 - 前端开发服务器" cmd /c "echo 前端开发服务器启动中... && npm run dev"
 
@@ -225,7 +225,7 @@ echo.
 echo ✅ 🎉 开发环境启动成功！
 echo.
 echo 🌐 访问地址:
-echo   📱 前端开发界面: http://localhost:5173
+echo   📱 前端开发界面: http://localhost:3000
 echo   🔌 后端API接口: http://localhost:8080/api/v1
 echo   💚 健康检查接口: http://localhost:8080/api/v1/health
 echo   🗄️  数据库连接: localhost:3306 (docker_sync/sync123456)

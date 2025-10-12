@@ -56,7 +56,7 @@ help:
 	@echo "  dev          - 启动完整开发环境（前端+后端）"
 	@echo ""
 	@echo "🔧 开发相关:"
-	@echo "  frontend     - 仅启动前端开发服务器 (http://localhost:5173)"
+	@echo "  frontend     - 仅启动前端开发服务器 (http://localhost:3000)"
 	@echo "  backend      - 仅启动后端开发服务器 (http://localhost:8080)"
 	@echo "  health-check - 检查开发环境健康状态"
 	@echo ""
@@ -157,7 +157,7 @@ dev:
 	fi
 
 # 仅启动前端开发服务器
-# 默认运行在 http://localhost:5173
+# 默认运行在 http://localhost:3000
 frontend:
 	@echo "🎨 启动前端开发服务器..."
 	@if [ -d "$(WEB_DIR)" ]; then \
@@ -180,7 +180,7 @@ health-check:
 	@curl -f http://localhost:8080/api/v1/health >/dev/null 2>&1 && \
 		echo "✅ 后端服务正常" || echo "❌ 后端服务异常"
 	@echo "检查前端服务..."
-	@curl -f http://localhost:5173 >/dev/null 2>&1 && \
+	@curl -f http://localhost:3000 >/dev/null 2>&1 && \
 		echo "✅ 前端服务正常" || echo "❌ 前端服务异常"
 
 # ============================================================================

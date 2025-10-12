@@ -185,6 +185,19 @@ func (h *SyncHandler) SubmitBatchSync(c *gin.Context) {
 			architecture = "amd64"
 		}
 		
+		// 构建原始输入格式
+		var originalInput string
+		imageWithTag := originalImage
+		if tag != "" {
+			imageWithTag = originalImage + ":" + tag
+		}
+		
+		if architecture == "arm64" {
+			originalInput = "--platform=linux/arm64 " + imageWithTag
+		} else {
+			originalInput = imageWithTag
+		}
+		
 		// 创建镜像同步记录
 		record := &models.ImageSyncRecord{
 			TaskID:        taskID,                      // 关联的批量任务ID
@@ -195,6 +208,7 @@ func (h *SyncHandler) SubmitBatchSync(c *gin.Context) {
 			InputOrder:    i + 1,                       // 在批量任务中的顺序
 			Priority:      img.Priority,                // 同步优先级
 			MaxRetries:    req.RetryCount,              // 最大重试次数
+			OriginalInput: originalInput,               // 保存用户原始输入（根据架构格式化）
 		}
 
 		// 保存镜像同步记录到数据库
@@ -313,6 +327,14 @@ func (h *SyncHandler) SubmitSync(c *gin.Context) {
 		// 支持格式：image:tag 或 image（默认latest）
 		originalImage, tag := h.parseImageNameAndTag(imageStr)
 		
+		// 构建原始输入格式
+		var originalInput string
+		if req.Architecture == "arm64" {
+			originalInput = "--platform=linux/arm64 " + imageStr
+		} else {
+			originalInput = imageStr
+		}
+		
 		// 创建镜像同步记录
 		record := &models.ImageSyncRecord{
 			TaskID:        taskID,                      // 关联的任务ID
@@ -321,6 +343,7 @@ func (h *SyncHandler) SubmitSync(c *gin.Context) {
 			Architecture:  req.Architecture,            // 目标架构
 			SyncStatus:    models.SyncStatusPending,    // 初始状态：等待同步
 			InputOrder:    i + 1,                       // 在任务中的顺序
+			OriginalInput: originalInput,               // 保存用户原始输入（根据架构格式化）
 		}
 
 		// 保存镜像同步记录到数据库

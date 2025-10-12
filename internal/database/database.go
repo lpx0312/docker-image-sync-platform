@@ -175,38 +175,87 @@ func AutoMigrate() error {
 //   - error: 配置初始化失败时返回错误信息，成功时返回nil
 func initDefaultConfigs() error {
 	// ====================================================================
-	// 定义系统默认配置项
+	// 从配置文件读取系统默认配置项
 	// ====================================================================
-	// 这些配置项是系统正常运行所必需的基础设置
-	// 每个配置项包含键名、默认值和描述信息
+	// 这些配置项从 config.yaml 文件中读取，避免硬编码
+	// 如果配置文件中没有相应配置，则使用合理的默认值
+	
+	// 从配置文件中读取阿里云配置
+	aliyunRegistry := config.AppConfig.Aliyun.Registry
+	if aliyunRegistry == "" {
+		aliyunRegistry = "registry.cn-hangzhou.aliyuncs.com" // 默认值
+	}
+	
+	aliyunNamespace := config.AppConfig.Aliyun.Namespace
+	if aliyunNamespace == "" {
+		aliyunNamespace = "your-namespace" // 默认值
+	}
+	
+	// 从配置文件中读取同步配置
+	syncTimeoutMinutes := fmt.Sprintf("%d", config.AppConfig.Sync.TimeoutMinutes)
+	if config.AppConfig.Sync.TimeoutMinutes == 0 {
+		syncTimeoutMinutes = "30" // 默认30分钟
+	}
+	
+	// 从配置文件中读取最大并发数
+	maxConcurrentSyncs := fmt.Sprintf("%d", config.AppConfig.Sync.MaxConcurrentJobs)
+	if config.AppConfig.Sync.MaxConcurrentJobs == 0 {
+		maxConcurrentSyncs = "3" // 默认3个并发任务，与config.yaml中的值一致
+	}
+	
+	// 从配置文件中读取重试配置
+	maxRetryCount := fmt.Sprintf("%d", config.AppConfig.Sync.MaxRetryCount)
+	if config.AppConfig.Sync.MaxRetryCount == 0 {
+		maxRetryCount = "3" // 默认重试3次
+	}
+	
+	retryIntervalMinutes := fmt.Sprintf("%d", config.AppConfig.Sync.RetryIntervalMinutes)
+	if config.AppConfig.Sync.RetryIntervalMinutes == 0 {
+		retryIntervalMinutes = "5" // 默认重试间隔5分钟
+	}
+	
 	defaultConfigs := []models.SystemConfig{
 		{
-			Key:         "aliyun_registry_prefix",
-			Value:       "registry.cn-hangzhou.aliyuncs.com",
+			ConfigKey:   "aliyun_registry_prefix",
+			ConfigValue: aliyunRegistry,
 			Description: "阿里云镜像仓库前缀",
-			// 说明：阿里云容器镜像服务的访问地址前缀
-			// 不同地域有不同的前缀，杭州地域为 registry.cn-hangzhou.aliyuncs.com
+			// 说明：从config.yaml中的aliyun.registry读取
+			// 不同地域有不同的前缀，如杭州地域为 registry.cn-hangzhou.aliyuncs.com
 		},
 		{
-			Key:         "aliyun_namespace",
-			Value:       "your-namespace",
+			ConfigKey:   "aliyun_namespace",
+			ConfigValue: aliyunNamespace,
 			Description: "阿里云镜像仓库命名空间",
-			// 说明：用户在阿里云创建的命名空间名称
-			// 需要用户根据实际情况修改为自己的命名空间
+			// 说明：从config.yaml中的aliyun.namespace读取
+			// 用户在阿里云创建的命名空间名称
 		},
 		{
-			Key:         "sync_check_interval",
-			Value:       "30",
-			Description: "同步状态检查间隔（秒）",
-			// 说明：系统检查同步任务状态的时间间隔
-			// 值越小检查越频繁，但会增加系统负载
+			ConfigKey:   "sync_timeout_minutes",
+			ConfigValue: syncTimeoutMinutes,
+			Description: "同步任务超时时间（分钟）",
+			// 说明：从config.yaml中的sync.timeout_minutes读取
+			// 单个镜像同步任务的最大执行时间
 		},
 		{
-			Key:         "max_concurrent_syncs",
-			Value:       "5",
+			ConfigKey:   "max_concurrent_syncs",
+			ConfigValue: maxConcurrentSyncs,
 			Description: "最大并发同步数量",
-			// 说明：同时进行的镜像同步任务数量上限
-			// 需要根据服务器性能和网络带宽调整
+			// 说明：从config.yaml中的sync.max_concurrent_jobs读取
+			// 同时进行的镜像同步任务数量上限
+		},
+		{
+			ConfigKey:   "max_retry_count",
+			ConfigValue: maxRetryCount,
+			Description: "同步失败重试次数",
+			// 说明：从config.yaml中的sync.max_retry_count读取
+			// 同步失败时的自动重试次数
+		},
+		{
+			ConfigKey:   "retry_interval_minutes",
+			ConfigValue: retryIntervalMinutes,
+			Description: "重试间隔时间（分钟）",
+			// 说明：从config.yaml中的sync.retry_interval_minutes读取
+			// 重试之间的等待时间
 		},
 	}
 
@@ -218,14 +267,14 @@ func initDefaultConfigs() error {
 		var existingConfig models.SystemConfig
 		
 		// 查询配置是否已存在
-		result := DB.Where("key = ?", config.Key).First(&existingConfig)
+		result := DB.Where("config_key = ?", config.ConfigKey).First(&existingConfig)
 		
 		// 如果配置不存在，则创建新配置
 		if result.Error == gorm.ErrRecordNotFound {
 			if err := DB.Create(&config).Error; err != nil {
-				return fmt.Errorf("创建默认配置 %s 失败: %w", config.Key, err)
+				return fmt.Errorf("创建默认配置 %s 失败: %w", config.ConfigKey, err)
 			}
-			log.Printf("创建默认配置: %s = %s", config.Key, config.Value)
+			log.Printf("创建默认配置: %s = %s", config.ConfigKey, config.ConfigValue)
 		}
 		// 如果配置已存在，则跳过创建，保持用户的自定义设置
 	}

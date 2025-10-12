@@ -128,7 +128,10 @@ type LogConfig struct {
 
 // SyncConfig 同步配置
 type SyncConfig struct {
-	TimeoutMinutes int `mapstructure:"timeout_minutes"`
+	TimeoutMinutes         int `mapstructure:"timeout_minutes"`          // 同步任务超时时间（分钟）
+	MaxConcurrentJobs      int `mapstructure:"max_concurrent_jobs"`      // 最大并发同步任务数
+	MaxRetryCount          int `mapstructure:"max_retry_count"`          // 失败重试次数
+	RetryIntervalMinutes   int `mapstructure:"retry_interval_minutes"`   // 重试间隔时间（分钟）
 }
 
 var AppConfig *Config

@@ -140,7 +140,11 @@ func (s *GitService) InitRepository() error {
 	if err != nil {
 		return fmt.Errorf("解析Gitee仓库URL失败: %w", err)
 	}
-	parsedURL.User = url.UserPassword(config.AppConfig.Git.Gitee.Username, config.AppConfig.Git.Gitee.Password)
+	
+	// 对用户名和密码进行URL编码以处理特殊字符
+	encodedUsername := url.QueryEscape(config.AppConfig.Git.Gitee.Username)
+	encodedPassword := url.QueryEscape(config.AppConfig.Git.Gitee.Password)
+	parsedURL.User = url.UserPassword(encodedUsername, encodedPassword)
 	authURL := parsedURL.String()
 
 	// 使用系统git命令执行克隆操作
