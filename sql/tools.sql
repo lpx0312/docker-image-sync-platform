@@ -33,3 +33,35 @@ SET original_input = CASE
 END,
 updated_at = CURRENT_TIMESTAMP
 WHERE original_input IS NULL OR original_input = '';
+
+
+
+-- 找出重复项(镜像名称+tag+架构)
+SELECT 
+    id,
+    original_image,
+    tag,
+    architecture
+FROM 
+    image_sync_records
+WHERE 
+    (original_image, tag, architecture) IN (
+        SELECT 
+            original_image,
+            tag,
+            architecture
+        FROM 
+            image_sync_records
+        WHERE 
+            deleted_at IS NULL  -- 如果只查找未被删除的记录
+        GROUP BY 
+            original_image, 
+            tag, 
+            architecture
+        HAVING 
+            COUNT(*) > 1
+    )
+ORDER BY 
+    original_image, 
+    tag, 
+    architecture;
