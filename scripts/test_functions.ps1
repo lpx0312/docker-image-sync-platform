@@ -19,6 +19,13 @@ Write-Host "`n=== 测试按查看所有Tag ===" -ForegroundColor Cyan
 Get-DockerTags -ImageName "alpine" -All -OutputFile "alpine_img.txt"
 
 
+# 默认模式：只显示 Linux 架构
+Get-DockerTags -ImageName "alpine" -Count 3
+
+# 显示 OS 模式：显示所有架构并添加 OS 前缀
+Get-DockerTags -ImageName "alpine" -Count 3 -ShowOS
+
+
 Write-Host "`n=== 测试架构镜像提取功能 ===" -ForegroundColor Cyan
 Get-DockerArchImages -ImageName "alpine" -Count 3 -OutputFile "alpine_img.txt"
 

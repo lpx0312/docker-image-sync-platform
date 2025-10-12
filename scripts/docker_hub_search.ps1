@@ -23,6 +23,8 @@ function Get-DockerTags {
         
         [switch]$All,
         
+        [switch]$ShowOS,
+        
         [string]$OutputFile = ""
     )
     
@@ -58,6 +60,8 @@ function Get-DockerTags {
             foreach ($tag in $data.results) {
                 # 提取架构信息
                 $archList = @()
+                $linuxArchList = @()  # 用于不显示OS时的Linux架构筛选
+                
                 if ($tag.images -and $tag.images.Count -gt 0) {
                     foreach ($image in $tag.images) {
                         if ($image.architecture -and $image.architecture -ne "unknown") {
@@ -65,16 +69,35 @@ function Get-DockerTags {
                             if ($image.variant) {
                                 $arch += "/$($image.variant)"
                             }
-                            $archList += $arch
+                            
+                            $os = if ($image.os) { $image.os } else { "linux" }
+                            
+                            if ($ShowOS) {
+                                # 显示OS时，非Linux的架构需要加OS前缀
+                                if ($os -ne "linux") {
+                                    $archWithOS = "$os/$arch"
+                                } else {
+                                    $archWithOS = $arch
+                                }
+                                $archList += $archWithOS
+                            } else {
+                                # 不显示OS时，只收集Linux架构
+                                if ($os -eq "linux") {
+                                    $linuxArchList += $arch
+                                }
+                            }
                         }
                     }
                 }
+                
+                # 根据ShowOS参数决定使用哪个架构列表
+                $finalArchList = if ($ShowOS) { $archList } else { $linuxArchList }
                 
                 $tagInfo = [PSCustomObject]@{
                     Tag = $tag.name
                     Status = $tag.tag_status
                     Size = [math]::Round($tag.full_size/1024/1024, 2)
-                    Architecture = ($archList | Sort-Object -Unique) -join ", "
+                    Architecture = ($finalArchList | Sort-Object -Unique) -join ", "
                     LastUpdated = $tag.last_updated
                 }
                 
@@ -194,6 +217,8 @@ function Get-DockerArchImages {
         
         [switch]$All,
         
+        [switch]$ShowOS,
+        
         [string]$OutputFile = ""
     )
     
@@ -229,6 +254,10 @@ function Get-DockerArchImages {
             foreach ($tag in $data.results) {
                 # 提取架构信息
                 $archList = @()
+                $linuxArchList = @()  # 用于不显示OS时的Linux架构筛选
+                $linuxAmd64 = $false
+                $linuxArm64 = $false
+                
                 if ($tag.images -and $tag.images.Count -gt 0) {
                     foreach ($image in $tag.images) {
                         if ($image.architecture -and $image.architecture -ne "unknown") {
@@ -236,21 +265,50 @@ function Get-DockerArchImages {
                             if ($image.variant) {
                                 $arch += "/$($image.variant)"
                             }
-                            $archList += $arch
+                            
+                            $os = if ($image.os) { $image.os } else { "linux" }
+                            
+                            if ($ShowOS) {
+                                # 显示OS时，非Linux的架构需要加OS前缀
+                                if ($os -ne "linux") {
+                                    $archWithOS = "$os/$arch"
+                                } else {
+                                    $archWithOS = $arch
+                                }
+                                $archList += $archWithOS
+                            } else {
+                                # 不显示OS时，只收集Linux架构
+                                if ($os -eq "linux") {
+                                    $linuxArchList += $arch
+                                }
+                            }
+                            
+                            # 检查Linux下的amd64和arm64架构（用于筛选）
+                            if ($os -eq "linux") {
+                                if ($image.architecture -eq "amd64") {
+                                    $linuxAmd64 = $true
+                                }
+                                if ($image.architecture -eq "arm64" -or ($image.architecture -eq "arm64" -and $image.variant -eq "v8")) {
+                                    $linuxArm64 = $true
+                                }
+                            }
                         }
                     }
                 }
                 
-                # 检查是否包含 amd64 或 arm64 架构
-                $hasAmd64 = $archList -contains "amd64"
-                $hasArm64 = ($archList -contains "arm64") -or ($archList -contains "arm64/v8")
+                # 根据ShowOS参数决定使用哪个架构列表
+                $finalArchList = if ($ShowOS) { $archList } else { $linuxArchList }
+                
+                # 检查是否包含 amd64 或 arm64 架构（仅限Linux）
+                $hasAmd64 = $linuxAmd64
+                $hasArm64 = $linuxArm64
                 
                 if ($hasAmd64 -or $hasArm64) {
                     $tagInfo = [PSCustomObject]@{
                         Tag = $tag.name
                         Status = $tag.tag_status
                         Size = [math]::Round($tag.full_size/1024/1024, 2)
-                        Architecture = ($archList | Sort-Object -Unique) -join ", "
+                        Architecture = ($finalArchList | Sort-Object -Unique) -join ", "
                         LastUpdated = $tag.last_updated
                         HasAmd64 = $hasAmd64
                         HasArm64 = $hasArm64
