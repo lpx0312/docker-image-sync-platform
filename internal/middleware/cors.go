@@ -1,3 +1,17 @@
+// Package middleware 提供了HTTP中间件功能，包括跨域资源共享(CORS)、错误处理、日志记录和速率限制等。
+// 这些中间件用于增强Web服务的安全性、可观测性和性能控制。
+//
+// 主要功能：
+//   - CORS: 处理跨域请求，支持预检请求和自定义配置
+//   - Error: 统一错误处理和响应格式化
+//   - Logger: 请求日志记录和性能监控
+//   - RateLimit: 请求频率限制和防护
+//
+// 使用示例：
+//   router := gin.New()
+//   router.Use(middleware.CORS())
+//   router.Use(middleware.Logger())
+//   router.Use(middleware.ErrorHandler())
 package middleware
 
 import (
@@ -6,7 +20,27 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// CORS 跨域中间件
+// CORS 创建一个跨域资源共享(CORS)中间件，使用默认配置。
+//
+// 功能说明：
+//   - 允许所有来源的跨域请求 (Access-Control-Allow-Origin: *)
+//   - 支持常用HTTP方法：GET, POST, PUT, DELETE, OPTIONS
+//   - 允许常用请求头：Origin, X-Requested-With, Content-Type, Accept, Authorization等
+//   - 自动处理OPTIONS预检请求
+//   - 记录请求来源信息到上下文
+//
+// 返回值：
+//   - gin.HandlerFunc: Gin框架中间件函数
+//
+// 使用场景：
+//   - 开发环境或需要允许所有来源的场景
+//   - 快速启用CORS支持，无需复杂配置
+//
+// 安全注意：
+//   - 生产环境建议使用CORSWithConfig指定具体允许的来源
+//
+// 示例：
+//   router.Use(middleware.CORS())
 func CORS() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		method := c.Request.Method
@@ -34,7 +68,37 @@ func CORS() gin.HandlerFunc {
 	}
 }
 
-// CORSWithConfig 带配置的CORS中间件
+// CORSWithConfig 创建一个可配置的跨域资源共享(CORS)中间件。
+//
+// 功能说明：
+//   - 支持自定义允许的来源、方法和请求头
+//   - 严格验证请求来源，拒绝未授权的跨域请求
+//   - 自动处理OPTIONS预检请求
+//   - 灵活配置CORS策略以满足不同安全需求
+//
+// 参数：
+//   - allowOrigins: 允许的来源列表，支持具体域名或"*"通配符
+//   - allowMethods: 允许的HTTP方法列表，如["GET", "POST", "PUT"]
+//   - allowHeaders: 允许的请求头列表，如["Content-Type", "Authorization"]
+//
+// 返回值：
+//   - gin.HandlerFunc: 配置好的Gin框架中间件函数
+//
+// 安全特性：
+//   - 来源白名单验证，拒绝未授权域名的请求
+//   - 方法和头部限制，防止不当的跨域操作
+//   - 返回403状态码拒绝非法请求
+//
+// 使用场景：
+//   - 生产环境需要严格控制跨域访问
+//   - 多域名或子域名的复杂部署场景
+//   - 需要精确控制允许的HTTP方法和头部
+//
+// 示例：
+//   origins := []string{"https://example.com", "https://app.example.com"}
+//   methods := []string{"GET", "POST", "PUT", "DELETE"}
+//   headers := []string{"Content-Type", "Authorization", "X-API-Key"}
+//   router.Use(middleware.CORSWithConfig(origins, methods, headers))
 func CORSWithConfig(allowOrigins []string, allowMethods []string, allowHeaders []string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		method := c.Request.Method

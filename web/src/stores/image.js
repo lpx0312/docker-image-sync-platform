@@ -1,10 +1,51 @@
+/**
+ * 镜像管理状态管理Store
+ * 
+ * 功能说明：
+ * - 管理镜像列表数据和状态
+ * - 提供镜像的增删改查功能
+ * - 支持分页、筛选、排序功能
+ * - 维护镜像统计信息
+ * - 处理镜像操作的加载状态
+ * 
+ * 状态管理：
+ * - images: 镜像列表数据
+ * - imageStats: 镜像统计信息
+ * - pagination: 分页配置
+ * - filters: 筛选条件
+ * - sorting: 排序配置
+ * 
+ * 主要功能：
+ * - 镜像列表加载和刷新
+ * - 镜像详情查询
+ * - 镜像删除和重试操作
+ * - 镜像存在性检测
+ * - 实时统计信息更新
+ * 
+ * @author Docker Image Sync Platform
+ * @version 1.0.0
+ */
+
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import { imageAPI } from '@/api'
 
 export const useImageStore = defineStore('image', () => {
-  // 状态
+  /**
+   * 响应式状态定义
+   */
+  
+  /** @type {Ref<Array>} 镜像列表数据 */
   const images = ref([])
+  
+  /** 
+   * @type {Ref<Object>} 镜像统计信息
+   * @property {number} total - 总数量
+   * @property {number} pending - 待同步数量
+   * @property {number} syncing - 同步中数量
+   * @property {number} success - 成功数量
+   * @property {number} failed - 失败数量
+   */
   const imageStats = ref({
     total: 0,
     pending: 0,
@@ -12,18 +53,41 @@ export const useImageStore = defineStore('image', () => {
     success: 0,
     failed: 0
   })
+  
+  /** @type {Ref<boolean>} 全局加载状态 */
   const loading = ref(false)
+  
+  /** 
+   * @type {Ref<Object>} 分页配置
+   * @property {number} page - 当前页码
+   * @property {number} pageSize - 每页数量
+   * @property {number} total - 总记录数
+   */
   const pagination = ref({
     page: 1,
     pageSize: 20,
     total: 0
   })
+  
+  /** 
+   * @type {Ref<Object>} 筛选条件配置
+   * @property {string} status - 状态筛选
+   * @property {string} search - 搜索关键词
+   * @property {string} architecture - 架构筛选
+   * @property {boolean} deduplicate - 去重开关
+   */
   const filters = ref({
     status: '', // 默认不筛选状态
     search: '',
     architecture: '',
     deduplicate: true // 去重开关，默认开启
   })
+  
+  /** 
+   * @type {Ref<Object>} 排序配置
+   * @property {string} sortBy - 排序字段
+   * @property {string} sortOrder - 排序方向 (asc/desc)
+   */
   const sorting = ref({
     sortBy: 'created_at',
     sortOrder: 'desc'

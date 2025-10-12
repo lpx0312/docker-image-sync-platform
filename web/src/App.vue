@@ -1,7 +1,37 @@
+<!--
+/**
+ * 主应用组件 (App.vue)
+ * 
+ * 功能说明：
+ * - 应用程序的根组件和主要布局容器
+ * - 提供全局导航和页面布局结构
+ * - 管理路由导航和页面切换
+ * - 定义应用的整体样式和主题
+ * 
+ * 布局结构：
+ * - Header: 顶部导航栏，包含Logo和主菜单
+ * - Main: 主内容区域，用于显示路由页面
+ * - Footer: 底部信息栏，显示版权信息
+ * 
+ * 导航功能：
+ * - 镜像同步：跳转到同步操作页面
+ * - GitHub Actions：跳转到GitHub监控页面
+ * - 响应式导航高亮显示
+ * 
+ * 技术栈：
+ * - Vue 3 Composition API
+ * - Element Plus UI组件库
+ * - Vue Router 路由管理
+ * 
+ * @author Docker Image Sync Platform
+ * @version 1.0.0
+ */
+-->
+
 <template>
   <div id="app">
     <el-container class="layout-container">
-      <!-- 顶部导航 -->
+      <!-- 顶部导航栏 -->
       <el-header class="header">
         <div class="header-content">
           <div class="logo">

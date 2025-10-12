@@ -1,22 +1,54 @@
--- 数据库迁移脚本：添加deleted_at字段
--- 用于为现有的数据库表添加软删除支持
+-- ========================================================================
+-- 数据库迁移脚本：添加软删除支持 (deleted_at字段)
+-- ========================================================================
+-- 版本：v1.1.0
+-- 创建时间：2024年
+-- 目的：为现有数据库表添加软删除功能，提高数据安全性
+-- 
+-- 软删除的优势：
+-- 1. 数据安全：删除的数据可以恢复，避免误删
+-- 2. 审计追踪：保留删除记录，便于数据分析
+-- 3. 关联完整性：避免因硬删除导致的关联数据问题
+-- 4. 性能优化：通过索引快速过滤已删除数据
+-- 
+-- 执行前提：
+-- - 确保数据库连接正常
+-- - 建议在维护窗口期间执行
+-- - 执行前请备份数据库
+-- ========================================================================
 
 USE docker_sync;
 
--- 为image_sync_records表添加deleted_at字段
+-- ========================================================================
+-- 为镜像同步记录表添加软删除支持
+-- ========================================================================
+-- 影响：image_sync_records表
+-- 功能：支持同步记录的软删除，保留历史数据用于分析
 ALTER TABLE image_sync_records 
-ADD COLUMN deleted_at TIMESTAMP NULL COMMENT '删除时间',
-ADD INDEX idx_deleted_at (deleted_at);
+ADD COLUMN deleted_at TIMESTAMP NULL COMMENT '删除时间（软删除标记，NULL表示未删除）',
+ADD INDEX idx_deleted_at (deleted_at) COMMENT '软删除查询优化索引';
 
--- 为sync_tasks表添加deleted_at字段
+-- ========================================================================
+-- 为同步任务表添加软删除支持
+-- ========================================================================
+-- 影响：sync_tasks表
+-- 功能：支持同步任务的软删除，保留任务历史便于问题排查
 ALTER TABLE sync_tasks 
-ADD COLUMN deleted_at TIMESTAMP NULL COMMENT '删除时间',
-ADD INDEX idx_deleted_at (deleted_at);
+ADD COLUMN deleted_at TIMESTAMP NULL COMMENT '删除时间（软删除标记，NULL表示未删除）',
+ADD INDEX idx_deleted_at (deleted_at) COMMENT '软删除查询优化索引';
 
--- 为system_configs表添加deleted_at字段
+-- ========================================================================
+-- 为系统配置表添加软删除支持
+-- ========================================================================
+-- 影响：system_configs表
+-- 功能：支持配置项的软删除，保留配置变更历史
 ALTER TABLE system_configs 
-ADD COLUMN deleted_at TIMESTAMP NULL COMMENT '删除时间',
-ADD INDEX idx_deleted_at (deleted_at);
+ADD COLUMN deleted_at TIMESTAMP NULL COMMENT '删除时间（软删除标记，NULL表示未删除）',
+ADD INDEX idx_deleted_at (deleted_at) COMMENT '软删除查询优化索引';
 
--- 显示迁移完成信息
-SELECT 'Migration completed: deleted_at fields added to all tables' AS status;
+-- ========================================================================
+-- 迁移完成确认
+-- ========================================================================
+-- 显示迁移执行结果，确认所有表都已成功添加软删除支持
+SELECT 'Migration completed: deleted_at fields and indexes added to all tables' AS status,
+       NOW() AS completed_at;

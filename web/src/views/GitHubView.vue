@@ -1,6 +1,33 @@
+<!--
+/**
+ * GitHub Actions监控页面组件
+ * 
+ * 功能说明：
+ * - 监控GitHub API的使用状态和限制
+ * - 展示GitHub Actions工作流运行记录
+ * - 提供API限制检查和状态监控
+ * - 显示工作流执行历史和详情
+ * 
+ * 主要功能：
+ * - API状态监控：显示剩余请求数、限制和重置时间
+ * - 工作流列表：展示GitHub Actions运行历史
+ * - 状态检查：实时检查API限制状态
+ * - 详情查看：查看具体工作流的执行详情
+ * 
+ * 监控指标：
+ * - 剩余请求数量
+ * - API使用率
+ * - 限制重置时间
+ * - 工作流执行状态
+ * 
+ * @author Docker Image Sync Platform
+ * @version 1.0.0
+ */
+-->
+
 <template>
   <div class="github-view">
-    <!-- API状态卡片 -->
+    <!-- GitHub API状态卡片 -->
     <el-card class="status-card">
       <template #header>
         <div class="card-header">

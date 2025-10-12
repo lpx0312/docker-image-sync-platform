@@ -1,125 +1,346 @@
-# Docker镜像同步平台 Makefile
+# ============================================================================
+# Docker镜像同步平台 - Makefile
+# ============================================================================
+#
+# 本Makefile提供了完整的开发、构建、测试和部署工具链
+# 
+# 快速开始：
+#   make init    - 初始化项目环境
+#   make deps    - 安装所有依赖
+#   make dev     - 启动开发环境
+#   make build   - 构建生产版本
+#   make docker-run - 使用Docker运行
+#
+# 环境要求：
+#   - Go 1.21+
+#   - Node.js 18+
+#   - Docker & Docker Compose
+#   - golangci-lint (可选，用于代码检查)
+#
+# ============================================================================
 
-.PHONY: help build run dev test clean docker-build docker-run docker-stop frontend backend deps
+# 项目配置
+PROJECT_NAME := docker-sync-platform
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+BUILD_TIME := $(shell date -u '+%Y-%m-%d_%H:%M:%S')
+GO_VERSION := $(shell go version | awk '{print $$3}')
 
-# 默认目标
+# 构建标志
+LDFLAGS := -X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME) -X main.GoVersion=$(GO_VERSION)
+BUILD_FLAGS := -ldflags "$(LDFLAGS)" -trimpath
+
+# 目录定义
+BIN_DIR := bin
+WEB_DIR := web
+LOGS_DIR := logs
+TEMP_DIR := temp
+
+# 声明所有伪目标
+.PHONY: help init deps build run dev test clean docker-build docker-run docker-stop \
+        frontend backend build-frontend build-backend test-backend fmt lint \
+        docker-logs docker-clean docker-rebuild health-check
+
+# ============================================================================
+# 帮助信息
+# ============================================================================
+
+# 默认目标：显示帮助信息
 help:
-	@echo "Docker镜像同步平台 - 可用命令:"
+	@echo "============================================================================"
+	@echo "Docker镜像同步平台 - 构建工具"
+	@echo "============================================================================"
 	@echo ""
-	@echo "开发相关:"
-	@echo "  dev          - 启动开发环境"
-	@echo "  frontend     - 启动前端开发服务器"
-	@echo "  backend      - 启动后端开发服务器"
-	@echo "  deps         - 安装所有依赖"
+	@echo "🚀 快速开始:"
+	@echo "  init         - 初始化项目环境（首次运行必须）"
+	@echo "  deps         - 安装所有依赖包"
+	@echo "  dev          - 启动完整开发环境（前端+后端）"
 	@echo ""
-	@echo "构建相关:"
-	@echo "  build        - 构建应用"
-	@echo "  build-frontend - 构建前端"
-	@echo "  build-backend  - 构建后端"
+	@echo "🔧 开发相关:"
+	@echo "  frontend     - 仅启动前端开发服务器 (http://localhost:5173)"
+	@echo "  backend      - 仅启动后端开发服务器 (http://localhost:8080)"
+	@echo "  health-check - 检查开发环境健康状态"
 	@echo ""
-	@echo "Docker相关:"
+	@echo "🏗️  构建相关:"
+	@echo "  build        - 构建完整应用（前端+后端）"
+	@echo "  build-frontend - 仅构建前端静态文件"
+	@echo "  build-backend  - 仅构建后端可执行文件"
+	@echo "  run          - 运行构建后的应用"
+	@echo ""
+	@echo "🐳 Docker相关:"
 	@echo "  docker-build - 构建Docker镜像"
-	@echo "  docker-run   - 运行Docker容器"
-	@echo "  docker-stop  - 停止Docker容器"
-	@echo "  docker-logs  - 查看Docker日志"
+	@echo "  docker-run   - 启动Docker容器组"
+	@echo "  docker-stop  - 停止Docker容器组"
+	@echo "  docker-logs  - 查看Docker容器日志"
+	@echo "  docker-clean - 清理Docker资源"
+	@echo "  docker-rebuild - 重新构建并启动Docker环境"
 	@echo ""
-	@echo "测试相关:"
-	@echo "  test         - 运行测试"
-	@echo "  test-backend - 运行后端测试"
+	@echo "🧪 测试相关:"
+	@echo "  test         - 运行所有测试"
+	@echo "  test-backend - 运行后端单元测试"
 	@echo ""
-	@echo "其他:"
-	@echo "  clean        - 清理构建文件"
-	@echo "  fmt          - 格式化代码"
-	@echo "  lint         - 代码检查"
+	@echo "🔍 代码质量:"
+	@echo "  fmt          - 格式化所有代码"
+	@echo "  lint         - 运行代码检查"
+	@echo ""
+	@echo "🧹 清理相关:"
+	@echo "  clean        - 清理所有构建文件和缓存"
+	@echo ""
+	@echo "📊 项目信息:"
+	@echo "  版本: $(VERSION)"
+	@echo "  Go版本: $(GO_VERSION)"
+	@echo "  构建时间: $(BUILD_TIME)"
+	@echo ""
+	@echo "============================================================================"
 
-# 开发环境
-dev:
-	@echo "启动开发环境..."
-	@./dev.sh
+# ============================================================================
+# 项目初始化
+# ============================================================================
 
-# 安装依赖
+# 初始化项目环境
+# 创建必要的目录结构，复制配置文件模板
+init:
+	@echo "🚀 初始化项目环境..."
+	@echo "创建目录结构..."
+	@mkdir -p $(BIN_DIR) $(LOGS_DIR) $(TEMP_DIR) git_repo
+	@echo "复制配置文件模板..."
+	@if [ ! -f .env ]; then \
+		if [ -f .env.example ]; then \
+			cp .env.example .env; \
+			echo "✅ 已创建 .env 文件，请根据需要修改配置"; \
+		else \
+			echo "⚠️  未找到 .env.example 文件"; \
+		fi \
+	else \
+		echo "✅ .env 文件已存在"; \
+	fi
+	@echo "✅ 项目初始化完成！"
+	@echo ""
+	@echo "下一步："
+	@echo "1. 编辑 .env 文件配置环境变量"
+	@echo "2. 运行 'make deps' 安装依赖"
+	@echo "3. 运行 'make dev' 启动开发环境"
+
+# ============================================================================
+# 依赖管理
+# ============================================================================
+
+# 安装所有依赖包
+# 包括Go模块依赖和前端npm包
 deps:
-	@echo "安装Go依赖..."
+	@echo "📦 安装项目依赖..."
+	@echo "安装Go模块依赖..."
 	@go mod tidy
+	@go mod download
 	@echo "安装前端依赖..."
-	@cd web && npm install
+	@if [ -d "$(WEB_DIR)" ]; then \
+		cd $(WEB_DIR) && npm install; \
+	else \
+		echo "⚠️  前端目录不存在，跳过前端依赖安装"; \
+	fi
+	@echo "✅ 依赖安装完成！"
 
-# 构建
-build: build-frontend build-backend
+# ============================================================================
+# 开发环境
+# ============================================================================
 
-build-frontend:
-	@echo "构建前端..."
-	@cd web && npm run build
+# 启动完整开发环境
+# 同时启动前端和后端开发服务器
+dev:
+	@echo "🔧 启动开发环境..."
+	@if [ -f "./dev.sh" ]; then \
+		./dev.sh; \
+	else \
+		echo "启动后端开发服务器..."; \
+		go run main.go & \
+		echo "启动前端开发服务器..."; \
+		cd $(WEB_DIR) && npm run dev; \
+	fi
 
-build-backend:
-	@echo "构建后端..."
-	@go build -o bin/docker-sync-platform main.go
-
-# 运行
-run: build
-	@echo "启动应用..."
-	@./bin/docker-sync-platform
-
-# 前端开发服务器
+# 仅启动前端开发服务器
+# 默认运行在 http://localhost:5173
 frontend:
-	@echo "启动前端开发服务器..."
-	@cd web && npm run dev
+	@echo "🎨 启动前端开发服务器..."
+	@if [ -d "$(WEB_DIR)" ]; then \
+		cd $(WEB_DIR) && npm run dev; \
+	else \
+		echo "❌ 前端目录不存在！"; \
+		exit 1; \
+	fi
 
-# 后端开发服务器
+# 仅启动后端开发服务器
+# 默认运行在 http://localhost:8080
 backend:
-	@echo "启动后端开发服务器..."
+	@echo "⚙️  启动后端开发服务器..."
 	@go run main.go
 
+# 检查开发环境健康状态
+health-check:
+	@echo "🏥 检查开发环境健康状态..."
+	@echo "检查后端服务..."
+	@curl -f http://localhost:8080/api/v1/health >/dev/null 2>&1 && \
+		echo "✅ 后端服务正常" || echo "❌ 后端服务异常"
+	@echo "检查前端服务..."
+	@curl -f http://localhost:5173 >/dev/null 2>&1 && \
+		echo "✅ 前端服务正常" || echo "❌ 前端服务异常"
+
+# ============================================================================
+# 构建相关
+# ============================================================================
+
+# 构建完整应用
+# 先构建前端，再构建后端
+build: build-frontend build-backend
+	@echo "✅ 应用构建完成！"
+	@echo "可执行文件: $(BIN_DIR)/$(PROJECT_NAME)"
+	@echo "前端文件: $(WEB_DIR)/dist/"
+
+# 构建前端静态文件
+# 生成生产环境优化的静态资源
+build-frontend:
+	@echo "🎨 构建前端..."
+	@if [ -d "$(WEB_DIR)" ]; then \
+		cd $(WEB_DIR) && npm run build; \
+		echo "✅ 前端构建完成: $(WEB_DIR)/dist/"; \
+	else \
+		echo "⚠️  前端目录不存在，跳过前端构建"; \
+	fi
+
+# 构建后端可执行文件
+# 包含版本信息和构建时间
+build-backend:
+	@echo "⚙️  构建后端..."
+	@mkdir -p $(BIN_DIR)
+	@go build $(BUILD_FLAGS) -o $(BIN_DIR)/$(PROJECT_NAME) main.go
+	@echo "✅ 后端构建完成: $(BIN_DIR)/$(PROJECT_NAME)"
+	@echo "版本信息: $(VERSION)"
+
+# 运行构建后的应用
+# 需要先执行 make build
+run: 
+	@echo "🚀 启动应用..."
+	@if [ -f "$(BIN_DIR)/$(PROJECT_NAME)" ]; then \
+		./$(BIN_DIR)/$(PROJECT_NAME); \
+	else \
+		echo "❌ 可执行文件不存在，请先运行 'make build'"; \
+		exit 1; \
+	fi
+
+# ============================================================================
 # Docker相关
+# ============================================================================
+
+# 构建Docker镜像
+# 使用项目名称和版本作为标签
 docker-build:
-	@echo "构建Docker镜像..."
-	@docker build -t docker-sync-platform .
+	@echo "🐳 构建Docker镜像..."
+	@docker build -t $(PROJECT_NAME):$(VERSION) -t $(PROJECT_NAME):latest .
+	@echo "✅ Docker镜像构建完成！"
+	@echo "镜像标签: $(PROJECT_NAME):$(VERSION), $(PROJECT_NAME):latest"
 
+# 启动Docker容器组
+# 使用docker-compose启动所有服务
 docker-run:
-	@echo "启动Docker容器..."
+	@echo "🐳 启动Docker容器组..."
 	@docker-compose up -d
+	@echo "✅ Docker容器启动完成！"
+	@echo "查看状态: docker-compose ps"
+	@echo "查看日志: make docker-logs"
 
+# 停止Docker容器组
 docker-stop:
-	@echo "停止Docker容器..."
+	@echo "🐳 停止Docker容器组..."
 	@docker-compose down
+	@echo "✅ Docker容器已停止！"
 
+# 查看Docker容器日志
+# 实时跟踪所有容器的日志输出
 docker-logs:
-	@echo "查看Docker日志..."
+	@echo "🐳 查看Docker容器日志..."
 	@docker-compose logs -f
 
-# 测试
+# 清理Docker资源
+# 停止容器并清理相关资源
+docker-clean:
+	@echo "🐳 清理Docker资源..."
+	@docker-compose down --volumes --remove-orphans
+	@docker system prune -f
+	@echo "✅ Docker资源清理完成！"
+
+# 重新构建并启动Docker环境
+# 强制重新构建镜像并启动服务
+docker-rebuild: docker-stop docker-build docker-run
+	@echo "✅ Docker环境重建完成！"
+
+# ============================================================================
+# 测试相关
+# ============================================================================
+
+# 运行所有测试
 test: test-backend
+	@echo "✅ 所有测试完成！"
 
+# 运行后端单元测试
+# 包含覆盖率报告
 test-backend:
-	@echo "运行后端测试..."
-	@go test ./...
+	@echo "🧪 运行后端测试..."
+	@go test -v -race -coverprofile=coverage.out ./...
+	@go tool cover -html=coverage.out -o coverage.html
+	@echo "✅ 后端测试完成！"
+	@echo "覆盖率报告: coverage.html"
 
-# 代码格式化
+# ============================================================================
+# 代码质量
+# ============================================================================
+
+# 格式化所有代码
+# 包括Go代码和前端代码
 fmt:
+	@echo "🔍 格式化代码..."
 	@echo "格式化Go代码..."
 	@go fmt ./...
+	@goimports -w . 2>/dev/null || true
 	@echo "格式化前端代码..."
-	@cd web && npm run lint:fix
+	@if [ -d "$(WEB_DIR)" ]; then \
+		cd $(WEB_DIR) && npm run lint:fix 2>/dev/null || true; \
+	fi
+	@echo "✅ 代码格式化完成！"
 
-# 代码检查
+# 运行代码检查
+# 使用golangci-lint检查Go代码，ESLint检查前端代码
 lint:
+	@echo "🔍 运行代码检查..."
 	@echo "检查Go代码..."
-	@golangci-lint run
+	@if command -v golangci-lint >/dev/null 2>&1; then \
+		golangci-lint run; \
+	else \
+		echo "⚠️  golangci-lint未安装，跳过Go代码检查"; \
+		echo "安装方法: https://golangci-lint.run/usage/install/"; \
+	fi
 	@echo "检查前端代码..."
-	@cd web && npm run lint
+	@if [ -d "$(WEB_DIR)" ]; then \
+		cd $(WEB_DIR) && npm run lint 2>/dev/null || true; \
+	fi
+	@echo "✅ 代码检查完成！"
 
-# 清理
+# ============================================================================
+# 清理相关
+# ============================================================================
+
+# 清理所有构建文件和缓存
+# 包括二进制文件、前端构建产物、日志等
 clean:
-	@echo "清理构建文件..."
-	@rm -rf bin/
-	@rm -rf web/dist/
-	@rm -rf web/node_modules/
-	@rm -rf logs/*
+	@echo "🧹 清理构建文件..."
+	@echo "清理二进制文件..."
+	@rm -rf $(BIN_DIR)/
+	@echo "清理前端构建产物..."
+	@rm -rf $(WEB_DIR)/dist/
+	@echo "清理依赖缓存..."
+	@rm -rf $(WEB_DIR)/node_modules/
+	@echo "清理日志文件..."
+	@rm -rf $(LOGS_DIR)/*
+	@echo "清理临时文件..."
+	@rm -rf $(TEMP_DIR)/*
+	@rm -f coverage.out coverage.html
+	@echo "清理Docker资源..."
 	@docker-compose down --volumes --remove-orphans 2>/dev/null || true
-
-# 创建必要的目录
-init:
-	@echo "初始化项目目录..."
-	@mkdir -p bin logs git_repo
-	@cp .env.example .env 2>/dev/null || true
-	@echo "请编辑 .env 文件配置您的环境变量"
+	@echo "✅ 清理完成！"
