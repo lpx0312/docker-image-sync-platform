@@ -15,13 +15,13 @@ services:
     environment:
       # 基础配置
       - TZ=Asia/Shanghai
-      - GIN_MODE=release
-      - APP_ENV=production
-      - LOG_LEVEL=info
+      - GIN_MODE=${GIN_MODE}
+      - APP_ENV=${APP_ENV}
+      - LOG_LEVEL=${LOG_LEVEL}
       
       # 服务器配置
-      - SERVER_HOST=0.0.0.0
-      - APP_PORT=8080
+      - SERVER_HOST=${SERVER_HOST}
+      - APP_PORT=${APP_PORT}
       
       # 数据库配置 (连接到同一网络的MySQL服务)
       - DB_HOST=${DB_HOST}
@@ -34,24 +34,24 @@ services:
       - DB_LOC=${DB_LOC}
       
       # Git配置 (Gitee)
-      - GITEE_REPO_URL=https://gitee.com/lpx0312/docker_image_pusher.git
-      - GITEE_USERNAME=13297049661
-      - GITEE_PASSWORD="Abc2020##"
-      - GITEE_EMAIL=lpx_0312@163.com
+      - GITEE_REPO_URL=${GITEE_REPO_URL}
+      - GITEE_USERNAME=${GITEE_USERNAME}
+      - GITEE_PASSWORD=${GITEE_PASSWORD}
+      - GITEE_EMAIL=${GITEE_EMAIL}
       
       # Git配置 (GitHub)
-      - GITHUB_REPO_URL=https://github.com/lpx0312/docker_image_pusher.git
-      - GITHUB_USERNAME=lpx_0312@163.com
-      - GITHUB_TOKEN=REDACTED_GITHUB_TOKEN
+      - GITHUB_REPO_URL=${GITHUB_REPO_URL}
+      - GITHUB_USERNAME=${GITHUB_USERNAME}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
       
       # 阿里云配置
-      - ALIYUN_REGISTRY=registry.cn-hangzhou.aliyuncs.com
-      - ALIYUN_NAMESPACE=lpx0312
-      - ALIYUN_USERNAME=lipanx
-      - ALIYUN_PASSWORD=Lipanxiang1102
+      - ALIYUN_REGISTRY=${ALIYUN_REGISTRY}
+      - ALIYUN_NAMESPACE=${ALIYUN_NAMESPACE}
+      - ALIYUN_USERNAME=${ALIYUN_USERNAME}
+      - ALIYUN_PASSWORD=${ALIYUN_PASSWORD}
       
       # 本地仓库路径
-      - GIT_LOCAL_REPO_PATH=/app/data/repos
+      - GIT_LOCAL_REPO_PATH=${GIT_LOCAL_REPO_PATH}
     volumes:
       # 持久化日志
       - ./logs:/app/logs
