@@ -308,6 +308,10 @@ func main() {
 			// GET /api/v1/config/aliyun - 获取阿里云容器镜像服务配置
 			// 返回阿里云ACR的基本配置信息（不包含敏感信息）
 			config.GET("/aliyun", configHandler.GetAliyunConfig)
+			
+			// GET /api/v1/config/status - 获取当前配置状态和环境变量信息
+			// 用于调试和验证配置是否正确加载（不包含敏感信息）
+			config.GET("/status", configHandler.GetConfigStatus)
 		}
 
 		// ====================================================================

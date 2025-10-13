@@ -6,7 +6,7 @@
 # ================================
 # 阶段1: 前端构建
 # ================================
-FROM node:18-alpine AS frontend-builder
+FROM registry.cn-hangzhou.aliyuncs.com/lpx03/node:18-alpine AS frontend-builder
 
 # 设置工作目录
 WORKDIR /app/web
@@ -30,7 +30,7 @@ RUN npm run build
 # ================================
 # 阶段2: 后端构建
 # ================================
-FROM golang:1.21-alpine AS backend-builder
+FROM registry.cn-hangzhou.aliyuncs.com/lpx03/golang:1.21-alpine AS backend-builder
 
 # 设置工作目录
 WORKDIR /app
@@ -63,7 +63,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 # ================================
 # 阶段3: 最终运行环境
 # ================================
-FROM nginx:1.25-alpine
+FROM registry.cn-hangzhou.aliyuncs.com/lpx03/nginx:1.25-alpine
 
 # 使用apk的国内镜像
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apk/repositories 
@@ -73,6 +73,7 @@ RUN apk add --no-cache \
     ca-certificates \
     tzdata \
     supervisor \
+    git \
     && rm -rf /var/cache/apk/*
 
 # 设置时区

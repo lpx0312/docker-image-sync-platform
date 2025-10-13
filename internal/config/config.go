@@ -22,14 +22,15 @@
 // - sync: 同步任务配置（超时、重试等）
 //
 // 使用方式：
-//   // 加载配置文件
-//   if err := config.LoadConfig("config.yaml"); err != nil {
-//       log.Fatal(err)
-//   }
 //
-//   // 访问配置
-//   port := config.AppConfig.Server.Port
-//   dsn := config.AppConfig.Database.GetDSN()
+//	// 加载配置文件
+//	if err := config.LoadConfig("config.yaml"); err != nil {
+//	    log.Fatal(err)
+//	}
+//
+//	// 访问配置
+//	port := config.AppConfig.Server.Port
+//	dsn := config.AppConfig.Database.GetDSN()
 //
 // Author: Docker Image Sync Platform Team
 // Version: 1.0.0
@@ -89,9 +90,9 @@ type DatabaseConfig struct {
 
 // GitConfig Git配置
 type GitConfig struct {
-	Gitee         GiteeConfig `mapstructure:"gitee"`
+	Gitee         GiteeConfig  `mapstructure:"gitee"`
 	GitHub        GitHubConfig `mapstructure:"github"`
-	LocalRepoPath string      `mapstructure:"local_repo_path"`
+	LocalRepoPath string       `mapstructure:"local_repo_path"`
 }
 
 // GiteeConfig Gitee配置
@@ -128,10 +129,10 @@ type LogConfig struct {
 
 // SyncConfig 同步配置
 type SyncConfig struct {
-	TimeoutMinutes         int `mapstructure:"timeout_minutes"`          // 同步任务超时时间（分钟）
-	MaxConcurrentJobs      int `mapstructure:"max_concurrent_jobs"`      // 最大并发同步任务数
-	MaxRetryCount          int `mapstructure:"max_retry_count"`          // 失败重试次数
-	RetryIntervalMinutes   int `mapstructure:"retry_interval_minutes"`   // 重试间隔时间（分钟）
+	TimeoutMinutes       int `mapstructure:"timeout_minutes"`        // 同步任务超时时间（分钟）
+	MaxConcurrentJobs    int `mapstructure:"max_concurrent_jobs"`    // 最大并发同步任务数
+	MaxRetryCount        int `mapstructure:"max_retry_count"`        // 失败重试次数
+	RetryIntervalMinutes int `mapstructure:"retry_interval_minutes"` // 重试间隔时间（分钟）
 }
 
 var AppConfig *Config
@@ -144,38 +145,92 @@ func LoadConfig(configPath string) error {
 	// 设置默认值
 	setDefaults()
 
+	// 启用环境变量支持
+	viper.AutomaticEnv()
+	
+	// 设置环境变量前缀（可选）
+	// viper.SetEnvPrefix("APP")
+	
+	// 设置环境变量键名映射
+	setupEnvKeyMapping()
+
+	// 读取配置文件（如果文件不存在，仅使用默认值和环境变量）
 	if err := viper.ReadInConfig(); err != nil {
-		return fmt.Errorf("读取配置文件失败: %w", err)
+		log.Printf("警告: 无法读取配置文件 %s: %v，将使用默认值和环境变量", configPath, err)
+	} else {
+		log.Printf("配置文件加载成功: %s", configPath)
 	}
 
 	AppConfig = &Config{}
 	if err := viper.Unmarshal(AppConfig); err != nil {
-		return fmt.Errorf("解析配置文件失败: %w", err)
+		return fmt.Errorf("解析配置失败: %w", err)
 	}
 
-	log.Printf("配置文件加载成功: %s", configPath)
+	log.Printf("配置加载完成，优先级: 环境变量 > 配置文件 > 默认值")
 	return nil
+}
+
+// setupEnvKeyMapping 设置环境变量键名映射
+func setupEnvKeyMapping() {
+	// 服务器配置
+	viper.BindEnv("server.host", "SERVER_HOST")
+	viper.BindEnv("server.port", "APP_PORT")
+	viper.BindEnv("server.mode", "GIN_MODE")
+	
+	// 数据库配置
+	viper.BindEnv("database.host", "DB_HOST")
+	viper.BindEnv("database.port", "DB_PORT")
+	viper.BindEnv("database.username", "DB_USERNAME")
+	viper.BindEnv("database.password", "DB_PASSWORD")
+	viper.BindEnv("database.database", "DB_DATABASE")
+	viper.BindEnv("database.charset", "DB_CHARSET")
+	viper.BindEnv("database.parse_time", "DB_PARSE_TIME")
+	viper.BindEnv("database.loc", "DB_LOC")
+	
+	// Git配置 - Gitee
+	viper.BindEnv("git.gitee.repo_url", "GITEE_REPO_URL")
+	viper.BindEnv("git.gitee.username", "GITEE_USERNAME")
+	viper.BindEnv("git.gitee.password", "GITEE_PASSWORD")
+	viper.BindEnv("git.gitee.email", "GITEE_EMAIL")
+	
+	// Git配置 - GitHub
+	viper.BindEnv("git.github.repo_url", "GITHUB_REPO_URL")
+	viper.BindEnv("git.github.username", "GITHUB_USERNAME")
+	viper.BindEnv("git.github.token", "GITHUB_TOKEN")
+	
+	// Git本地路径
+	viper.BindEnv("git.local_repo_path", "GIT_LOCAL_REPO_PATH")
+	
+	// 阿里云配置
+	viper.BindEnv("aliyun.registry", "ALIYUN_REGISTRY")
+	viper.BindEnv("aliyun.namespace", "ALIYUN_NAMESPACE")
+	viper.BindEnv("aliyun.username", "ALIYUN_USERNAME")
+	viper.BindEnv("aliyun.password", "ALIYUN_PASSWORD")
+	
+	// 日志配置
+	viper.BindEnv("log.level", "LOG_LEVEL")
+	viper.BindEnv("log.file_path", "LOG_FILE_PATH")
 }
 
 // setDefaults 设置默认配置值
 func setDefaults() {
 	viper.SetDefault("server.port", "8080")
 	viper.SetDefault("server.mode", "debug")
-	
+
 	viper.SetDefault("database.host", "localhost")
 	viper.SetDefault("database.port", 3306)
 	viper.SetDefault("database.charset", "utf8mb4")
 	viper.SetDefault("database.parse_time", true)
 	viper.SetDefault("database.loc", "Local")
-	
+
 	viper.SetDefault("git.local_repo_path", "./temp/docker_image_pusher")
-	
+
 	viper.SetDefault("log.level", "info")
 	viper.SetDefault("log.file_path", "./logs/app.log")
 	viper.SetDefault("log.max_size", 100)
 	viper.SetDefault("log.max_backups", 3)
 	viper.SetDefault("log.max_age", 28)
-	
+
 	viper.SetDefault("sync.timeout_minutes", 30)
 }
 

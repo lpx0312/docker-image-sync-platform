@@ -20,10 +20,12 @@ package handlers
 
 import (
 	"net/http"                                               // HTTP状态码和处理
+	"os"                                                     // 环境变量操作
 
 	"github.com/gin-gonic/gin"                               // Gin Web框架
 	"docker-image-sync-platform/internal/database"          // 数据库操作
 	"docker-image-sync-platform/internal/models"            // 数据模型
+	"docker-image-sync-platform/internal/config"            // 配置管理
 )
 
 // ConfigHandler 系统配置处理器
@@ -145,5 +147,142 @@ func (h *ConfigHandler) GetAliyunConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"registry":  registry,   // 阿里云容器注册表地址
 		"namespace": namespace,  // 阿里云容器注册表命名空间
+	})
+}
+
+// GetConfigStatus 获取当前配置状态和环境变量信息
+//
+// HTTP方法: GET
+// 路径: /api/v1/config/status
+//
+// 响应码:
+//   - 200: 成功返回配置状态信息
+//
+// 响应数据:
+//   - environment: 当前环境变量配置
+//   - config: 当前应用配置
+//   - database: 数据库连接状态
+//
+// 功能说明:
+//   - 显示当前加载的环境变量配置
+//   - 验证配置是否正确传递到应用中
+//   - 用于调试和配置验证
+//   - 不显示敏感信息（密码等）
+func (h *ConfigHandler) GetConfigStatus(c *gin.Context) {
+	// ====================================================================
+	// 收集环境变量信息
+	// ====================================================================
+	
+	envVars := gin.H{
+		// 基础配置
+		"gin_mode":   os.Getenv("GIN_MODE"),
+		"app_env":    os.Getenv("APP_ENV"),
+		"log_level":  os.Getenv("LOG_LEVEL"),
+		
+		// 服务器配置
+		"server_host": os.Getenv("SERVER_HOST"),
+		"app_port":    os.Getenv("APP_PORT"),
+		
+		// 数据库配置（不显示密码）
+		"db_host":     os.Getenv("DB_HOST"),
+		"db_port":     os.Getenv("DB_PORT"),
+		"db_username": os.Getenv("DB_USERNAME"),
+		"db_database": os.Getenv("DB_DATABASE"),
+		"db_charset":  os.Getenv("DB_CHARSET"),
+		
+		// Git配置（不显示密码/token）
+		"gitee_repo_url":  os.Getenv("GITEE_REPO_URL"),
+		"gitee_username":  os.Getenv("GITEE_USERNAME"),
+		"gitee_email":     os.Getenv("GITEE_EMAIL"),
+		"github_repo_url": os.Getenv("GITHUB_REPO_URL"),
+		"github_username": os.Getenv("GITHUB_USERNAME"),
+		
+		// 阿里云配置（不显示密码）
+		"aliyun_registry":  os.Getenv("ALIYUN_REGISTRY"),
+		"aliyun_namespace": os.Getenv("ALIYUN_NAMESPACE"),
+		"aliyun_username":  os.Getenv("ALIYUN_USERNAME"),
+		
+		// 路径配置
+		"git_local_repo_path": os.Getenv("GIT_LOCAL_REPO_PATH"),
+		"log_file_path":       os.Getenv("LOG_FILE_PATH"),
+	}
+
+	// ====================================================================
+	// 收集应用配置信息
+	// ====================================================================
+	
+	appConfig := gin.H{
+		"server": gin.H{
+			"port": config.AppConfig.Server.Port,
+			"mode": config.AppConfig.Server.Mode,
+		},
+		"database": gin.H{
+			"host":     config.AppConfig.Database.Host,
+			"port":     config.AppConfig.Database.Port,
+			"username": config.AppConfig.Database.Username,
+			"database": config.AppConfig.Database.Database,
+			"charset":  config.AppConfig.Database.Charset,
+		},
+		"git": gin.H{
+			"gitee": gin.H{
+				"repo_url": config.AppConfig.Git.Gitee.RepoURL,
+				"username": config.AppConfig.Git.Gitee.Username,
+				"email":    config.AppConfig.Git.Gitee.Email,
+			},
+			"github": gin.H{
+				"repo_url": config.AppConfig.Git.GitHub.RepoURL,
+				"username": config.AppConfig.Git.GitHub.Username,
+			},
+			"local_repo_path": config.AppConfig.Git.LocalRepoPath,
+		},
+		"aliyun": gin.H{
+			"registry":  config.AppConfig.Aliyun.Registry,
+			"namespace": config.AppConfig.Aliyun.Namespace,
+			"username":  config.AppConfig.Aliyun.Username,
+		},
+		"log": gin.H{
+			"level":     config.AppConfig.Log.Level,
+			"file_path": config.AppConfig.Log.FilePath,
+		},
+	}
+
+	// ====================================================================
+	// 检查数据库连接状态
+	// ====================================================================
+	
+	dbStatus := gin.H{
+		"connected": false,
+		"error":     nil,
+	}
+	
+	if database.DB != nil {
+		sqlDB, err := database.DB.DB()
+		if err == nil {
+			err = sqlDB.Ping()
+			if err == nil {
+				dbStatus["connected"] = true
+			} else {
+				dbStatus["error"] = err.Error()
+			}
+		} else {
+			dbStatus["error"] = err.Error()
+		}
+	} else {
+		dbStatus["error"] = "Database not initialized"
+	}
+
+	// ====================================================================
+	// 返回配置状态信息
+	// ====================================================================
+	
+	c.JSON(http.StatusOK, gin.H{
+		"status":      "success",
+		"message":     "Configuration status retrieved successfully",
+		"environment": envVars,
+		"config":      appConfig,
+		"database":    dbStatus,
+		"timestamp":   gin.H{
+			"unix": gin.H{},
+		},
 	})
 }
