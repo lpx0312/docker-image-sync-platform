@@ -103,8 +103,8 @@ mkdir -p logs
 echo "   ✅ 日志目录: logs/"
 
 # 创建Git仓库临时目录
-mkdir -p git_repo
-echo "   ✅ Git仓库目录: git_repo/"
+mkdir -p ./temp
+echo "   ✅ Git仓库目录: ./temp"
 
 # ============================================================================
 # 第四步：数据库启动
