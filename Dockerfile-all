@@ -1,0 +1,138 @@
+# ================================
+# 多阶段构建 Dockerfile
+# 包含前端构建、后端构建和最终运行环境
+# ================================
+
+# ================================
+# 阶段1: 前端构建
+# ================================
+FROM node:18-alpine AS frontend-builder
+
+# 设置工作目录
+WORKDIR /app/web
+
+# 配置国内 npm 镜像源
+RUN npm config set registry https://registry.npmmirror.com/ && \
+    npm config set disturl https://npmmirror.com/dist && \
+    npm config set electron_mirror https://npmmirror.com/mirrors/electron/ && \
+    npm config set sass_binary_site https://npmmirror.com/mirrors/node-sass/ && \
+    npm config set phantomjs_cdnurl https://npmmirror.com/mirrors/phantomjs/
+
+# 复制前端项目文件
+COPY web/package*.json ./
+
+# 安装依赖
+RUN npm ci --only=production --no-audit --no-fund
+
+# 复制前端源代码
+COPY web/ ./
+
+# 构建前端项目
+RUN npm run build
+
+# ================================
+# 阶段2: 后端构建
+# ================================
+FROM golang:1.21-alpine AS backend-builder
+
+# 设置工作目录
+WORKDIR /app
+
+# 配置国内 Go 模块代理
+ENV GOPROXY=https://goproxy.cn,direct
+ENV GOSUMDB=sum.golang.google.cn
+ENV GO111MODULE=on
+
+# 安装必要的包
+RUN apk add --no-cache git ca-certificates tzdata
+
+# 复制 go mod 文件
+COPY go.mod go.sum ./
+
+# 下载依赖
+RUN go mod download
+
+# 复制后端源代码
+COPY . .
+
+# 构建后端应用
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -a -installsuffix cgo \
+    -ldflags="-w -s" \
+    -o main .
+
+# ================================
+# 阶段3: 最终运行环境
+# ================================
+FROM nginx:1.25-alpine
+
+# 安装必要的包
+RUN apk add --no-cache \
+    ca-certificates \
+    tzdata \
+    supervisor \
+    && rm -rf /var/cache/apk/*
+
+# 设置时区
+ENV TZ=Asia/Shanghai
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+# 创建应用用户和目录
+RUN addgroup -g 1001 appgroup && \
+    adduser -D -u 1001 -G appgroup appuser && \
+    mkdir -p /app/logs /app/sql /var/log/supervisor
+
+# 设置工作目录
+WORKDIR /app
+
+# 从后端构建阶段复制二进制文件和配置
+COPY --from=backend-builder /app/main ./
+COPY --from=backend-builder /app/config.yaml ./
+COPY --from=backend-builder /app/sql ./sql
+
+# 从前端构建阶段复制静态文件到 nginx 目录
+COPY --from=frontend-builder /app/web/dist /usr/share/nginx/html
+
+# 复制 nginx 配置文件
+COPY nginx-all.conf /etc/nginx/nginx.conf
+
+# 创建 supervisor 配置文件
+RUN cat > /etc/supervisor/conf.d/supervisord.conf << 'EOF'
+[supervisord]
+nodaemon=true
+user=root
+logfile=/var/log/supervisor/supervisord.log
+pidfile=/var/run/supervisord.pid
+
+[program:nginx]
+command=nginx -g "daemon off;"
+autostart=true
+autorestart=true
+stderr_logfile=/var/log/supervisor/nginx.err.log
+stdout_logfile=/var/log/supervisor/nginx.out.log
+user=root
+
+[program:backend]
+command=/app/main
+directory=/app
+autostart=true
+autorestart=true
+stderr_logfile=/var/log/supervisor/backend.err.log
+stdout_logfile=/var/log/supervisor/backend.out.log
+user=appuser
+environment=HOME="/app",USER="appuser"
+EOF
+
+# 设置权限
+RUN chown -R appuser:appgroup /app && \
+    chmod +x /app/main
+
+# 暴露端口
+EXPOSE 80 8080
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost/ || exit 1
+
+# 启动 supervisor 来管理 nginx 和后端服务
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
