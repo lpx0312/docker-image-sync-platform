@@ -1,0 +1,104 @@
+# ============================================================================
+# Docker镜像同步平台 - 生产环境配置文件
+# ============================================================================
+# 
+# 使用说明：
+# 1. 复制此文件为 .env：cp .env.production .env
+# 2. 根据您的实际环境修改相应的配置值
+# 3. 确保不要将包含真实密码的 .env 文件提交到版本控制系统
+# 4. 在docker-compose-all.yml中，这些环境变量会自动传递给容器
+# 
+# 配置优先级：
+# 环境变量 > .env文件 > config.yaml > 默认值
+# 
+# ============================================================================
+
+# MySQL配置
+MYSQL_ROOT_PASSWORD=Ab123456
+MYSQL_DATABASE=docker_sync
+MYSQL_USER=docker_sync
+MYSQL_PASSWORD=Ab123456
+
+# ----------------------------------------------------------------------------
+# Git仓库配置 (Gitee) - 用于存储镜像列表
+# ----------------------------------------------------------------------------
+
+# Gitee仓库URL (必填)
+GITEE_REPO_URL=https://gitee.com/lpx03/docker_image_pusher.git
+
+# Gitee认证信息 (必填)
+GITEE_USERNAME=13297049661
+GITEE_PASSWORD="Abc2020##"
+GITEE_EMAIL=lpx_0312@163.com
+
+# ----------------------------------------------------------------------------
+# Git仓库配置 (GitHub) - 备用或主要Git仓库
+# ----------------------------------------------------------------------------
+
+# GitHub仓库URL (可选)
+GITHUB_REPO_URL=https://github.com/lpx0312/docker_image_pusher.git
+# GitHub认证信息 (使用Personal Access Token)
+GITHUB_USERNAME=lpx_0312@163.com
+GITHUB_TOKEN=REDACTED_GITHUB_TOKEN
+
+# ----------------------------------------------------------------------------
+# 阿里云容器镜像服务 (ACR) 配置
+# ----------------------------------------------------------------------------
+ALIYUN_REGISTRY=-registry.cn-hangzhou.aliyuncs.com
+# 阿里云镜像命名空间 (在阿里云控制台创建)
+ALIYUN_NAMESPACE=lpx03
+# 阿里云容器镜像服务认证信息
+ALIYUN_USERNAME=lipanx
+ALIYUN_PASSWORD=Lipanxiang1102
+
+# ----------------------------------------------------------------------------
+# 应用服务配置
+# ----------------------------------------------------------------------------
+# 运行模式 (生产环境建议使用 release)
+GIN_MODE=release
+# 日志级别 (生产环境建议使用 info 或 warn)
+LOG_LEVEL=info
+# 应用环境标识
+APP_ENV=production
+
+# ----------------------------------------------------------------------------
+# 高级配置 (通常不需要修改)
+# ----------------------------------------------------------------------------
+# 服务器配置
+SERVER_HOST=0.0.0.0
+APP_PORT=8080
+# 数据库连接配置
+DB_HOST=mysql
+DB_PORT=3306
+DB_USERNAME=docker_sync
+DB_PASSWORD=Ab123456
+DB_DATABASE=docker_sync
+DB_CHARSET=utf8mb4
+DB_PARSE_TIME=true
+DB_LOC=Local
+
+# Git本地仓库路径
+GIT_LOCAL_REPO_PATH=${GIT_LOCAL_REPO_PATH:-/app/data/repos}
+# 日志文件路径
+LOG_FILE_PATH=${LOG_FILE_PATH:-/app/logs/app.log}
+
+# ============================================================================
+# 配置验证清单
+# ============================================================================
+# 
+# 在启动服务前，请确认以下配置已正确设置：
+# 
+# ✅ 数据库配置
+#    - MYSQL_ROOT_PASSWORD: 已设置强密码
+#    - MYSQL_PASSWORD: 已设置应用数据库密码
+# 
+# ✅ Git仓库配置 (至少配置一个)
+#    - Gitee: GITEE_REPO_URL, GITEE_USERNAME, GITEE_PASSWORD
+#    - GitHub: GITHUB_REPO_URL, GITHUB_USERNAME, GITHUB_TOKEN
+# 
+# ✅ 阿里云配置 (如果使用阿里云镜像仓库)
+#    - ALIYUN_REGISTRY: 选择合适的地域
+#    - ALIYUN_NAMESPACE: 在阿里云控制台创建的命名空间
+#    - ALIYUN_USERNAME, ALIYUN_PASSWORD: 容器镜像服务认证信息
+# 
+# ============================================================================
