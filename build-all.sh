@@ -28,8 +28,11 @@ echo
 echo "🎉 镜像构建成功！"
 echo
 echo "使用以下命令启动服务："
-echo "  docker-compose -f docker-compose-all.yml up -d"
-echo
+echo "    只启动 app-all 服务(不部署Mysql)"
+echo "        docker-compose -f docker-compose-all.yml up -d"
+echo "    启动 app-all 服务并部署Mysql"
+echo "        docker-compose -f docker-compose-all.yml --profile local-mysql up -d"
+echo 
 echo "或者直接运行镜像："
 echo "  docker run -d -p 80:80 -p 8080:8080 --name docker-sync-all docker-image-sync-platform:all"
 echo
