@@ -20,38 +20,38 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
       
       # 服务器配置
-      - SERVER_HOST=0.0.0.0
-      - APP_PORT=8080
+      - SERVER_HOST=${SERVER_HOST:-0.0.0.0}
+      - APP_PORT=${APP_PORT:-8080}
       
       # 数据库配置 (连接到同一网络的MySQL服务)
-      - DB_HOST=${DB_HOST}
-      - DB_PORT=${DB_PORT} 
-      - DB_USERNAME=${DB_USERNAME}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - DB_DATABASE=${DB_DATABASE}
-      - DB_CHARSET=${DB_CHARSET}
-      - DB_PARSE_TIME=${DB_PARSE_TIME}
-      - DB_LOC=${DB_LOC}
+      - DB_HOST=${DB_HOST:-mysql}
+      - DB_PORT=${DB_PORT:-3306} 
+      - DB_USERNAME=${DB_USERNAME:-docker_sync}
+      - DB_PASSWORD=${DB_PASSWORD:-Ab123456}
+      - DB_DATABASE=${DB_DATABASE:-docker_sync}
+      - DB_CHARSET=${DB_CHARSET:-utf8mb4}
+      - DB_PARSE_TIME=${DB_PARSE_TIME:-true}
+      - DB_LOC=${DB_LOC:-Local}
       
       # Git配置 (Gitee)
-      - GITEE_REPO_URL=${GITEE_REPO_URL}
-      - GITEE_USERNAME=${GITEE_USERNAME}
-      - GITEE_PASSWORD=${GITEE_PASSWORD}
-      - GITEE_EMAIL=${GITEE_EMAIL}
+      - GITEE_REPO_URL=${GITEE_REPO_URL:-https://gitee.com/lpx0312/docker_image_pusher.git}
+      - GITEE_USERNAME=${GITEE_USERNAME:-13297049661}
+      - GITEE_PASSWORD=${GITEE_PASSWORD:-"Abc2020##"}
+      - GITEE_EMAIL=${GITEE_EMAIL:-lpx_0312@163.com}
       
       # Git配置 (GitHub)
-      - GITHUB_REPO_URL=${GITHUB_REPO_URL}
-      - GITHUB_USERNAME=${GITHUB_USERNAME}
-      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GITHUB_REPO_URL=${GITHUB_REPO_URL:-https://github.com/lpx0312/docker_image_pusher.git}
+      - GITHUB_USERNAME=${GITHUB_USERNAME:-lpx_0312@163.com}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-REDACTED_GITHUB_TOKEN}
       
       # 阿里云配置
-      - ALIYUN_REGISTRY=${ALIYUN_REGISTRY}
-      - ALIYUN_NAMESPACE=${ALIYUN_NAMESPACE} 
-      - ALIYUN_USERNAME=${ALIYUN_USERNAME}
-      - ALIYUN_PASSWORD=${ALIYUN_PASSWORD}
+      - ALIYUN_REGISTRY=${ALIYUN_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}
+      - ALIYUN_NAMESPACE=${ALIYUN_NAMESPACE:-lpx0312} 
+      - ALIYUN_USERNAME=${ALIYUN_USERNAME:-lipanx}
+      - ALIYUN_PASSWORD=${ALIYUN_PASSWORD:-Lipanxiang1102}
       
       # 本地仓库路径
-      - GIT_LOCAL_REPO_PATH=${GIT_LOCAL_REPO_PATH}
+      - GIT_LOCAL_REPO_PATH=${GIT_LOCAL_REPO_PATH:-/app/data/repos}
     volumes:
       # 持久化日志
       - ./logs:/app/logs
