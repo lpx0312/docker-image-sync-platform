@@ -13,16 +13,13 @@ WORKDIR /app/web
 
 # 配置国内 npm 镜像源
 RUN npm config set registry https://registry.npmmirror.com/ && \
-    npm config set disturl https://npmmirror.com/dist && \
-    npm config set electron_mirror https://npmmirror.com/mirrors/electron/ && \
-    npm config set sass_binary_site https://npmmirror.com/mirrors/node-sass/ && \
-    npm config set phantomjs_cdnurl https://npmmirror.com/mirrors/phantomjs/
+    npm config set cache /tmp/.npm
 
 # 复制前端项目文件
 COPY web/package*.json ./
 
 # 安装依赖
-RUN npm ci --only=production --no-audit --no-fund
+RUN npm ci --no-audit --no-fund
 
 # 复制前端源代码
 COPY web/ ./
@@ -43,6 +40,8 @@ ENV GOPROXY=https://goproxy.cn,direct
 ENV GOSUMDB=sum.golang.google.cn
 ENV GO111MODULE=on
 
+# 使用apk的国内镜像
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apk/repositories 
 # 安装必要的包
 RUN apk add --no-cache git ca-certificates tzdata
 
@@ -59,12 +58,15 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -a -installsuffix cgo \
     -ldflags="-w -s" \
-    -o main .
+    -o main main.go
 
 # ================================
 # 阶段3: 最终运行环境
 # ================================
 FROM nginx:1.25-alpine
+
+# 使用apk的国内镜像
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apk/repositories 
 
 # 安装必要的包
 RUN apk add --no-cache \
@@ -96,32 +98,8 @@ COPY --from=frontend-builder /app/web/dist /usr/share/nginx/html
 # 复制 nginx 配置文件
 COPY nginx-all.conf /etc/nginx/nginx.conf
 
-# 创建 supervisor 配置文件
-RUN cat > /etc/supervisor/conf.d/supervisord.conf << 'EOF'
-[supervisord]
-nodaemon=true
-user=root
-logfile=/var/log/supervisor/supervisord.log
-pidfile=/var/run/supervisord.pid
-
-[program:nginx]
-command=nginx -g "daemon off;"
-autostart=true
-autorestart=true
-stderr_logfile=/var/log/supervisor/nginx.err.log
-stdout_logfile=/var/log/supervisor/nginx.out.log
-user=root
-
-[program:backend]
-command=/app/main
-directory=/app
-autostart=true
-autorestart=true
-stderr_logfile=/var/log/supervisor/backend.err.log
-stdout_logfile=/var/log/supervisor/backend.out.log
-user=appuser
-environment=HOME="/app",USER="appuser"
-EOF
+# 复制 supervisor 配置文件
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 # 设置权限
 RUN chown -R appuser:appgroup /app && \
