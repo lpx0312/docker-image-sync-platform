@@ -1,0 +1,2 @@
+postgres:18.0-bookworm
+--platform=linux/arm64 postgres:18.0-bookworm
