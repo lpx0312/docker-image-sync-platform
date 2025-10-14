@@ -25,8 +25,8 @@
 PROJECT_NAME := docker-image-sync-platform
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILD_TIME := $(shell date -u '+%Y-%m-%d_%H:%M:%S')
-IMAGE_NAME_VERSION := $(PROJECT_NAME)-all:$(VERSION)
-IMAGE_NAME_LATEST := $(PROJECT_NAME)-all:latest
+IMAGE_NAME_VERSION := $(PROJECT_NAME):all-$(VERSION)
+IMAGE_NAME_LATEST := $(PROJECT_NAME):all-latest
 CONTAINER_NAME := docker-sync-all
 MYSQL_CONTAINER_NAME := docker-sync-mysql
 # 远程镜像仓库设置

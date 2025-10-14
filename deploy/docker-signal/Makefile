@@ -25,11 +25,18 @@
 PROJECT_NAME := docker-image-sync-platform
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILD_TIME := $(shell date -u '+%Y-%m-%d_%H:%M:%S')
-BACKEND_IMAGE_NAME := $(PROJECT_NAME)-backend:latest
-FRONTEND_IMAGE_NAME := $(PROJECT_NAME)-frontend:latest
+BACKEND_IMAGE_NAME_LATEST := $(PROJECT_NAME):backend-latest
+FRONTEND_IMAGE_NAME_LATEST := $(PROJECT_NAME):frontend-latest
+BACKEND_IMAGE_NAME_VERSION := $(PROJECT_NAME):backend-$(VERSION)
+FRONTEND_IMAGE_NAME_VERSION := $(PROJECT_NAME):frontend-$(VERSION)
 BACKEND_CONTAINER_NAME := docker-sync-backend
 FRONTEND_CONTAINER_NAME := docker-sync-frontend
 MYSQL_CONTAINER_NAME := docker-sync-mysql
+# 远程镜像仓库设置
+ALIYUN_REGISTRY := registry.cn-hangzhou.aliyuncs.com
+ALIYUN_USERNAME := lipanx
+ALIYUN_PASSWORD := Lipanxiang1102
+ALIYUN_NAMESPACE := lpx03
 
 # Docker Compose 文件
 COMPOSE_FILE := docker-compose.yml
@@ -62,7 +69,9 @@ help: ## 显示帮助信息
 	@echo "  $(GREEN)build$(RESET)           构建前后端Docker镜像"
 	@echo "  $(GREEN)build-backend$(RESET)   仅构建后端镜像"
 	@echo "  $(GREEN)build-frontend$(RESET)  仅构建前端镜像"
-	@echo "  $(GREEN)rebuild$(RESET)         强制重新构建所有镜像 (不使用缓存)"
+	@echo "  $(GREEN)build-push$(RESET)      构建并推送完整版Docker镜像"
+	@echo "  $(GREEN)build-push-backend$(RESET)  构建并推送后端Docker镜像"
+	@echo "  $(GREEN)build-push-frontend$(RESET) 构建并推送前端Docker镜像"
 	@echo ""
 	@echo "$(YELLOW)服务管理:$(RESET)"
 	@echo "  $(GREEN)up$(RESET)              启动服务 (不包含MySQL，使用外部数据库)"
@@ -116,12 +125,45 @@ build-frontend: ## 构建前端Docker镜像
 	@docker build --no-cache -f Dockerfile-frontend -t $(FRONTEND_IMAGE_NAME) ../../
 	@echo "$(GREEN)✅ 前端镜像构建完成！$(RESET)"
 
-.PHONY: rebuild
-rebuild: ## 强制重新构建所有镜像 (不使用缓存)
-	@echo "$(BLUE)🐳 强制重新构建所有Docker镜像...$(RESET)"
-	@$(MAKE) build-backend
-	@$(MAKE) build-frontend
-	@echo "$(GREEN)✅ 所有镜像重新构建完成！$(RESET)"
+.PHONY: build-push
+build-push: build-push-backend build-push-frontend ## 构建并推送前后端所有Docker镜像
+
+.PHONY: build-push-backend
+build-push-backend: ## 构建并推送后端Docker镜像
+	@echo "$(BLUE)🐳 构建并推送后端Docker镜像...$(RESET)"
+	@docker build --no-cache -f Dockerfile-backend -t $(BACKEND_IMAGE_NAME_LATEST) -t $(BACKEND_IMAGE_NAME_VERSION) ../../
+	@echo "$(GREEN)✅ 镜像构建完成！$(RESET)"
+	@echo "$(BLUE)🔐 登录 镜像仓库 $(ALIYUN_REGISTRY)...$(RESET)"
+	@echo "$(ALIYUN_PASSWORD)" | docker login $(ALIYUN_REGISTRY) -u "$(ALIYUN_USERNAME)" --password-stdin
+	@echo "$(BLUE)🏷️ 为 阿里云 重新打标签 $(BACKEND_IMAGE_NAME_LATEST) 为 $(ALIYUN_REGISTRY)/$(ALIYUN_NAMESPACE)/$(BACKEND_IMAGE_NAME_LATEST)...$(RESET)"
+	@docker tag $(BACKEND_IMAGE_NAME_LATEST) $(ALIYUN_REGISTRY)/$(ALIYUN_NAMESPACE)/$(BACKEND_IMAGE_NAME_LATEST)
+	@echo "$(BLUE)🏷️ 为 阿里云 重新打标签 $(BACKEND_IMAGE_NAME_VERSION) 为 $(ALIYUN_REGISTRY)/$(ALIYUN_NAMESPACE)/$(BACKEND_IMAGE_NAME_VERSION)...$(RESET)"
+	@docker tag $(BACKEND_IMAGE_NAME_VERSION) $(ALIYUN_REGISTRY)/$(ALIYUN_NAMESPACE)/$(BACKEND_IMAGE_NAME_VERSION)
+	@echo "$(BLUE)🚀 推送镜像 $(ALIYUN_REGISTRY)/$(ALIYUN_NAMESPACE)/$(BACKEND_IMAGE_NAME_LATEST) 和 $(ALIYUN_REGISTRY)/$(ALIYUN_NAMESPACE)/$(BACKEND_IMAGE_NAME_VERSION)...$(RESET)"
+	@docker push $(ALIYUN_REGISTRY)/$(ALIYUN_NAMESPACE)/$(BACKEND_IMAGE_NAME_LATEST)
+	@docker push $(ALIYUN_REGISTRY)/$(ALIYUN_NAMESPACE)/$(BACKEND_IMAGE_NAME_VERSION)
+	@echo "$(GREEN)✅ 镜像推送完成！$(RESET)"
+
+.PHONY: build-push-frontend
+build-push-frontend: ## 构建并推送前端Docker镜像
+	@echo "$(BLUE)🐳 构建并推送前端Docker镜像...$(RESET)"
+	@docker build --no-cache -f Dockerfile-frontend -t $(FRONTEND_IMAGE_NAME_LATEST) -t $(FRONTEND_IMAGE_NAME_VERSION) ../../
+	@echo "$(GREEN)✅ 镜像构建完成！$(RESET)"
+	@echo "$(BLUE)🔐 登录 镜像仓库 $(ALIYUN_REGISTRY)...$(RESET)"
+	@echo "$(ALIYUN_PASSWORD)" | docker login $(ALIYUN_REGISTRY) -u "$(ALIYUN_USERNAME)" --password-stdin
+	@echo "$(BLUE)🏷️ 为 阿里云 重新打标签 $(FRONTEND_IMAGE_NAME_LATEST) 为 $(ALIYUN_REGISTRY)/$(ALIYUN_NAMESPACE)/$(FRONTEND_IMAGE_NAME_LATEST)...$(RESET)"
+	@docker tag $(FRONTEND_IMAGE_NAME_LATEST) $(ALIYUN_REGISTRY)/$(ALIYUN_NAMESPACE)/$(FRONTEND_IMAGE_NAME_LATEST)
+	@echo "$(BLUE)🏷️ 为 阿里云 重新打标签 $(FRONTEND_IMAGE_NAME_VERSION) 为 $(ALIYUN_REGISTRY)/$(ALIYUN_NAMESPACE)/$(FRONTEND_IMAGE_NAME_VERSION)...$(RESET)"
+	@docker tag $(FRONTEND_IMAGE_NAME_VERSION) $(ALIYUN_REGISTRY)/$(ALIYUN_NAMESPACE)/$(FRONTEND_IMAGE_NAME_VERSION)
+	@echo "$(BLUE)🚀 推送镜像 $(ALIYUN_REGISTRY)/$(ALIYUN_NAMESPACE)/$(FRONTEND_IMAGE_NAME_LATEST) 和 $(ALIYUN_REGISTRY)/$(ALIYUN_NAMESPACE)/$(FRONTEND_IMAGE_NAME_VERSION)...$(RESET)"
+	@docker push $(ALIYUN_REGISTRY)/$(ALIYUN_NAMESPACE)/$(FRONTEND_IMAGE_NAME_LATEST)
+	@docker push $(ALIYUN_REGISTRY)/$(ALIYUN_NAMESPACE)/$(FRONTEND_IMAGE_NAME_VERSION)
+	@echo "$(GREEN)✅ 镜像推送完成！$(RESET)"
+
+
+
+
+
 
 # ============================================================================
 # 服务管理

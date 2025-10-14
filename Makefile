@@ -67,14 +67,6 @@ help:
 	@echo "  build-backend  - 仅构建后端可执行文件"
 	@echo "  run          - 运行构建后的应用"
 	@echo ""
-	@echo "🐳 Docker相关:"
-	@echo "  docker-build - 构建Docker镜像"
-	@echo "  docker-run   - 启动Docker容器组"
-	@echo "  docker-stop  - 停止Docker容器组"
-	@echo "  docker-logs  - 查看Docker容器日志"
-	@echo "  docker-clean - 清理Docker资源"
-	@echo "  docker-rebuild - 重新构建并启动Docker环境"
-	@echo ""
 	@echo "🧪 测试相关:"
 	@echo "  test         - 运行所有测试"
 	@echo "  test-backend - 运行后端单元测试"
@@ -102,21 +94,21 @@ help:
 init:
 	@echo "🚀 初始化项目环境..."
 	@echo "创建目录结构..."
-	@mkdir -p $(BIN_DIR) $(LOGS_DIR) $(TEMP_DIR) git_repo
-	@echo "复制配置文件模板..."
-	@if [ ! -f .env ]; then \
-		if [ -f .env.example ]; then \
-			cp .env.example .env; \
-			echo "✅ 已创建 .env 文件，请根据需要修改配置"; \
-		else \
-			echo "⚠️  未找到 .env.example 文件"; \
-		fi \
-	else \
-		echo "✅ .env 文件已存在"; \
-	fi
-	@echo "✅ 项目初始化完成！"
-	@echo ""
-	@echo "下一步："
+	@mkdir -p $(BIN_DIR) $(LOGS_DIR) $(TEMP_DIR)
+# @echo "复制配置文件模板..."
+# @if [ ! -f .env ]; then \
+# 	if [ -f .env.example ]; then \
+# 		cp .env.example .env; \
+# 		echo "✅ 已创建 .env 文件，请根据需要修改配置"; \
+# 	else \
+# 		echo "⚠️  未找到 .env.example 文件"; \
+# 	fi \
+# else \
+# 	echo "✅ .env 文件已存在"; \
+# fi
+# @echo "✅ 项目初始化完成！"
+# @echo ""
+# @echo "下一步："
 	@echo "1. 编辑 .env 文件配置环境变量"
 	@echo "2. 运行 'make deps' 安装依赖"
 	@echo "3. 运行 'make dev' 启动开发环境"
@@ -228,99 +220,6 @@ run:
 		exit 1; \
 	fi
 
-# ============================================================================
-# Docker相关
-# ============================================================================
-
-# 构建Docker镜像
-# 使用项目名称和版本作为标签
-docker-build: 
-	@echo "🐳 构建Docker镜像..."
-	@docker build -t $(PROJECT_NAME):$(VERSION) -t $(PROJECT_NAME):latest .
-	@echo "✅ Docker镜像构建完成！"
-	@echo "镜像标签: $(PROJECT_NAME):$(VERSION), $(PROJECT_NAME):latest"
-
-# 启动Docker容器组
-# 使用docker-compose启动所有服务
-docker-run:
-	@echo "🐳 启动Docker容器组..."
-	@docker-compose up -d
-	@echo "✅ Docker容器启动完成！"
-	@echo "查看状态: docker-compose ps"
-	@echo "查看日志: make docker-logs"
-
-# 停止Docker容器组
-docker-stop:
-	@echo "🐳 停止Docker容器组..."
-	@docker-compose down
-	@echo "✅ Docker容器已停止！"
-
-# 查看Docker容器日志
-# 实时跟踪所有容器的日志输出
-docker-logs:
-	@echo "🐳 查看Docker容器日志..."
-	@docker-compose logs -f
-
-# 清理Docker资源
-# 停止容器并清理相关资源
-docker-clean:
-	@echo "🐳 清理Docker资源..."
-	@docker-compose down --volumes --remove-orphans
-	@docker system prune -f
-	@echo "✅ Docker资源清理完成！"
-
-# 重新构建并启动Docker环境
-# 强制重新构建镜像并启动服务
-docker-rebuild: docker-stop docker-build docker-run
-	@echo "✅ Docker环境重建完成！"
-
-# ============================================================================
-# 完整版部署相关 (deploy/docker-all/)
-# ============================================================================
-
-# 构建完整版Docker镜像 (前端+后端)
-# 使用 deploy/docker-all/ 目录下的配置
-deploy-all-build:
-	@echo "🐳 构建完整版Docker镜像..."
-	@cd deploy/docker-all && chmod +x build-all.sh && ./build-all.sh
-	@echo "✅ 完整版Docker镜像构建完成！"
-
-# 启动完整版服务 (不包含MySQL)
-# 使用外部MySQL数据库
-deploy-all-up:
-	@echo "🐳 启动完整版服务..."
-	@cd deploy/docker-all && docker-compose -f docker-compose-all.yml up -d
-	@echo "✅ 完整版服务启动完成！"
-	@echo "前端界面: http://localhost"
-	@echo "后端API: http://localhost:8080/api"
-	@echo "健康检查: http://localhost/health"
-
-# 启动完整版服务 (包含MySQL)
-# 包含本地MySQL数据库
-deploy-all-up-with-mysql:
-	@echo "🐳 启动完整版服务 (包含MySQL)..."
-	@cd deploy/docker-all && docker-compose -f docker-compose-all.yml --profile local-mysql up -d
-	@echo "✅ 完整版服务启动完成！"
-	@echo "前端界面: http://localhost"
-	@echo "后端API: http://localhost:8080/api"
-	@echo "健康检查: http://localhost/health"
-	@echo "MySQL: localhost:3306"
-
-# 停止完整版服务 (智能停止，同时处理有/无MySQL的情况)
-deploy-all-down:
-	@echo "🐳 停止完整版服务..."
-	@cd deploy/docker-all && docker-compose -f docker-compose-all.yml down 2>/dev/null || true
-	@cd deploy/docker-all && docker-compose -f docker-compose-all.yml --profile local-mysql down 2>/dev/null || true
-	@echo "✅ 完整版服务已停止！"
-
-# 查看完整版服务日志
-deploy-all-logs:
-	@echo "🐳 查看完整版服务日志..."
-	@cd deploy/docker-all && docker-compose -f docker-compose-all.yml logs -f
-
-# 重新构建并启动完整版服务
-deploy-all-rebuild: deploy-all-down deploy-all-build deploy-all-up
-	@echo "✅ 完整版服务重建完成！"
 
 # ============================================================================
 # 测试相关
