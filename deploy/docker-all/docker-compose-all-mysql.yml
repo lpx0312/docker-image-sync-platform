@@ -4,7 +4,7 @@ services:
   app-all:
     build:
       context: ../../
-      dockerfile: Dockerfile-all
+      dockerfile: deploy/docker-all/Dockerfile-all
       args:
         - BUILDKIT_INLINE_CACHE=1
     image: docker-image-sync-platform:all

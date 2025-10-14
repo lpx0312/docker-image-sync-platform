@@ -144,7 +144,7 @@ func (s *GitService) InitRepository() error {
 	var authURL string
 	if config.AppConfig.Git.Gitee.Token != "" {
 		// 使用访问令牌认证 (推荐方式)
-		// Gitee格式: https://username:token@gitee.com/username/repo.git
+		// Gitee格式: https://username:token@gitee.com
 		encodedUsername := url.QueryEscape(config.AppConfig.Git.Gitee.Username)
 		encodedToken := url.QueryEscape(config.AppConfig.Git.Gitee.Token)
 		parsedURL.User = url.UserPassword(encodedUsername, encodedToken)

@@ -1,0 +1,86 @@
+# ============================================================================
+# Docker镜像同步平台 - 生产环境配置文件
+# ============================================================================
+# 
+# 使用说明：
+# 1. 复制此文件为 .env：cp .env.production .env
+# 2. 根据您的实际环境修改相应的配置值
+# 3. 确保不要将包含真实密码的 .env 文件提交到版本控制系统
+# 4. 在docker-compose-all.yml中，这些环境变量会自动传递给容器
+# 
+# 配置优先级：
+# 环境变量 > .env文件 > config.yaml > 默认值
+# 
+# ============================================================================
+
+# MySQL配置
+MYSQL_ROOT_PASSWORD=Ab123456
+MYSQL_DATABASE=docker_sync
+MYSQL_USER=docker_sync
+MYSQL_PASSWORD=Ab123456
+
+# ----------------------------------------------------------------------------
+# Git仓库配置 (Gitee) - 用于存储镜像列表
+# ----------------------------------------------------------------------------
+
+# Gitee仓库URL (必填)
+GITEE_REPO_URL=https://gitee.com/lpx03/docker_image_pusher.git
+
+# Gitee认证信息 (必填)
+GITEE_USERNAME=13297049661
+GITEE_PASSWORD="Abc2020##"
+# Gitee访问令牌 (推荐使用，优先于密码认证)
+# 在 https://gitee.com/profile/personal_access_tokens 创建
+GITEE_TOKEN=63fde4aa0198d257ea4d8f25af2077a9
+GITEE_EMAIL=lpx_0312@163.com
+
+# ----------------------------------------------------------------------------
+# Git仓库配置 (GitHub) - 备用或主要Git仓库
+# ----------------------------------------------------------------------------
+
+# GitHub仓库URL (可选)
+GITHUB_REPO_URL=https://github.com/lpx0312/docker_image_pusher.git
+# GitHub认证信息 (使用Personal Access Token)
+GITHUB_USERNAME=lpx_0312@163.com
+GITHUB_TOKEN=REDACTED_GITHUB_TOKEN
+
+# ----------------------------------------------------------------------------
+# 阿里云容器镜像服务 (ACR) 配置
+# ----------------------------------------------------------------------------
+ALIYUN_REGISTRY=registry.cn-hangzhou.aliyuncs.com
+# 阿里云镜像命名空间 (在阿里云控制台创建)
+ALIYUN_NAMESPACE=lpx03
+# 阿里云容器镜像服务认证信息
+ALIYUN_USERNAME=lipanx
+ALIYUN_PASSWORD=Lipanxiang1102
+
+# ----------------------------------------------------------------------------
+# 应用服务配置
+# ----------------------------------------------------------------------------
+# 运行模式 (生产环境建议使用 release)
+GIN_MODE=release
+# 日志级别 (生产环境建议使用 info 或 warn)
+LOG_LEVEL=info
+# 应用环境标识
+APP_ENV=production
+
+# ----------------------------------------------------------------------------
+# 高级配置 (通常不需要修改)
+# ----------------------------------------------------------------------------
+# 服务器配置
+SERVER_HOST=0.0.0.0
+APP_PORT=8080
+# 数据库连接配置
+DB_HOST=mysql
+DB_PORT=3306
+DB_USERNAME=root
+DB_PASSWORD=Ab123456
+DB_DATABASE=docker_sync
+DB_CHARSET=utf8mb4
+DB_PARSE_TIME=true
+DB_LOC=Local
+
+# Git本地仓库路径
+GIT_LOCAL_REPO_PATH=/app/data/repos
+# 日志文件路径
+LOG_FILE_PATH=/app/logs/app.log
