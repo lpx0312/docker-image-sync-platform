@@ -116,13 +116,13 @@ build: build-backend build-frontend ## 构建前后端Docker镜像
 .PHONY: build-backend
 build-backend: ## 构建后端Docker镜像
 	@echo "$(BLUE)🐳 构建后端Docker镜像...$(RESET)"
-	@docker build --no-cache -f Dockerfile-backend -t $(BACKEND_IMAGE_NAME) ../../
+	@docker build --no-cache -f Dockerfile-backend -t $(BACKEND_IMAGE_NAME_LATEST) -t $(BACKEND_IMAGE_NAME_VERSION) ../../
 	@echo "$(GREEN)✅ 后端镜像构建完成！$(RESET)"
 
 .PHONY: build-frontend
 build-frontend: ## 构建前端Docker镜像
 	@echo "$(BLUE)🐳 构建前端Docker镜像...$(RESET)"
-	@docker build --no-cache -f Dockerfile-frontend -t $(FRONTEND_IMAGE_NAME) ../../
+	@docker build --no-cache -f Dockerfile-frontend -t $(FRONTEND_IMAGE_NAME_LATEST) -t $(FRONTEND_IMAGE_NAME_VERSION) ../../
 	@echo "$(GREEN)✅ 前端镜像构建完成！$(RESET)"
 
 .PHONY: build-push
@@ -301,7 +301,7 @@ clean-all: ## 清理所有相关资源 (危险操作)
 	@echo "$(BLUE)🧹 清理所有资源...$(RESET)"
 	@$(MAKE) down
 	@docker rm -f $(BACKEND_CONTAINER_NAME) $(FRONTEND_CONTAINER_NAME) $(MYSQL_CONTAINER_NAME) 2>/dev/null || true
-	@docker rmi $(BACKEND_IMAGE_NAME) $(FRONTEND_IMAGE_NAME) 2>/dev/null || true
+	@docker rmi $(BACKEND_IMAGE_NAME_LATEST) $(BACKEND_IMAGE_NAME_VERSION) $(FRONTEND_IMAGE_NAME_LATEST) $(FRONTEND_IMAGE_NAME_VERSION) 2>/dev/null || true
 	@docker volume rm docker-signal_mysql_data 2>/dev/null || true
 	@docker network rm docker-signal_docker-sync-network 2>/dev/null || true
 	@echo "$(GREEN)✅ 所有资源已清理！$(RESET)"

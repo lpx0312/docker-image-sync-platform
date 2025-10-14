@@ -235,7 +235,7 @@ clean-all: ## 清理所有相关资源 (危险操作)
 	@echo "$(BLUE)🧹 清理所有资源...$(RESET)"
 	@$(MAKE) down
 	@docker rm -f $(CONTAINER_NAME) $(MYSQL_CONTAINER_NAME) 2>/dev/null || true
-	@docker rmi $(IMAGE_NAME_LATEST) 2>/dev/null || true
+	@docker rmi $(IMAGE_NAME_LATEST) $(IMAGE_NAME_VERSION) 2>/dev/null || true
 	@docker volume rm docker-all_mysql_data 2>/dev/null || true
 	@docker network rm docker-all_app-network 2>/dev/null || true
 	@echo "$(GREEN)✅ 所有资源已清理！$(RESET)"

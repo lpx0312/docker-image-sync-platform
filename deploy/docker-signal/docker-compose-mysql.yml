@@ -70,14 +70,14 @@ services:
       # 构建上下文：当前目录
       context: ../../
       # Dockerfile路径
-      dockerfile: Dockerfile-backend
+      dockerfile: deploy/docker-signal/Dockerfile-backend
       args:
         - BUILDKIT_INLINE_CACHE=1
       # 构建参数（可选）
       # args:
       #   GO_VERSION: 1.21
       #   BUILD_ENV: production
-    image: docker-image-sync-platform:backend-latest
+    image: registry.cn-hangzhou.aliyuncs.com/lpx03/docker-image-sync-platform:backend_latest
     container_name: docker-sync-backend
     restart: unless-stopped
     ports:
@@ -146,11 +146,11 @@ services:
   frontend:
     build:
       context: ../../
-      dockerfile: Dockerfile-frontend
+      dockerfile: deploy/docker-signal/Dockerfile-frontend
       args:
         - BUILDKIT_INLINE_CACHE=1
     # 使用轻量级的Alpine Linux版本
-    image: docker-image-sync-platform-frontend:latest
+    image: registry.cn-hangzhou.aliyuncs.com/lpx03/docker-image-sync-platform:frontend_latest
     container_name: docker-sync-frontend
     restart: unless-stopped
     ports:
