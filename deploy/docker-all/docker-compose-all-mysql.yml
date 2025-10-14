@@ -55,8 +55,8 @@ services:
       - GIT_LOCAL_REPO_PATH=${GIT_LOCAL_REPO_PATH:-/app/data/repo}
     volumes:
       # 持久化日志
-      - ./logs:/app/logs
-      - ./data:/app/data
+      - ./temp_logs:/app/logs
+      - ./temp_data:/app/data
     restart: unless-stopped
     depends_on:
       - mysql  # 注释掉依赖，在远程MySQL模式下不需要本地MySQL服务

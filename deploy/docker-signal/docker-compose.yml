@@ -79,8 +79,8 @@ services:
       - GIT_LOCAL_REPO_PATH=${GIT_LOCAL_REPO_PATH:-/app/data/repo}
     volumes:
       - ./config.yaml:/app/config.yaml:ro
-      - ./logs:/app/logs
-      - ./data:/app/data
+      - ./temp_logs:/app/logs
+      - ./temp_data:/app/data
     networks:
       - docker-sync-network
     healthcheck:
