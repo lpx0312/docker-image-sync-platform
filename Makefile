@@ -19,8 +19,9 @@
 #
 # ============================================================================
 
+
 # 项目配置
-PROJECT_NAME := docker-sync-platform
+PROJECT_NAME := docker-image-sync-platform
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILD_TIME := $(shell date -u '+%Y-%m-%d_%H:%M:%S')
 GO_VERSION := $(shell go version | awk '{print $$3}')
@@ -126,13 +127,19 @@ init:
 
 # 安装所有依赖包
 # 包括Go模块依赖和前端npm包
+# 	# @go env -w GOPROXY=https://goproxy.cn,https://goproxy.io,https://mirrors.aliyun.com/goproxy/,direct
 deps:
 	@echo "📦 安装项目依赖..."
 	@echo "安装Go模块依赖..."
+	@echo "使用国内Go模块代理..."
+	@go env -w GOPROXY=https://goproxy.cn,https://goproxy.io,https://mirrors.aliyun.com/goproxy/,direct
+	@go env -w GOSUMDB=sum.golang.google.cn
+	@go env -w GO111MODULE=on
 	@go mod tidy
 	@go mod download
 	@echo "安装前端依赖..."
 	@if [ -d "$(WEB_DIR)" ]; then \
+		npm config set registry https://registry.npmmirror.com/  && \
 		cd $(WEB_DIR) && npm install; \
 	else \
 		echo "⚠️  前端目录不存在，跳过前端依赖安装"; \
@@ -147,14 +154,10 @@ deps:
 # 同时启动前端和后端开发服务器
 dev:
 	@echo "🔧 启动开发环境..."
-	@if [ -f "./dev.sh" ]; then \
-		./dev.sh; \
-	else \
-		echo "启动后端开发服务器..."; \
-		go run main.go & \
-		echo "启动前端开发服务器..."; \
-		cd $(WEB_DIR) && npm run dev; \
-	fi
+	@echo "启动后端开发服务器..."; 
+	@go run main.go &
+	@echo "启动前端开发服务器..."; 
+	@cd $(WEB_DIR) && npm run dev; 
 
 # 仅启动前端开发服务器
 # 默认运行在 http://localhost:3000
@@ -231,7 +234,7 @@ run:
 
 # 构建Docker镜像
 # 使用项目名称和版本作为标签
-docker-build:
+docker-build: 
 	@echo "🐳 构建Docker镜像..."
 	@docker build -t $(PROJECT_NAME):$(VERSION) -t $(PROJECT_NAME):latest .
 	@echo "✅ Docker镜像构建完成！"

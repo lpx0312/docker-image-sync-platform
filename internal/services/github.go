@@ -52,10 +52,10 @@ import (
 //   - API速率限制的监控和管理
 //   - 与镜像同步流程的无缝集成
 type GitHubService struct {
-	client   *resty.Client // HTTP客户端，用于API调用
-	baseURL  string        // GitHub API基础URL
-	owner    string        // 仓库所有者
-	repo     string        // 仓库名称
+	client  *resty.Client // HTTP客户端，用于API调用
+	baseURL string        // GitHub API基础URL
+	owner   string        // 仓库所有者
+	repo    string        // 仓库名称
 }
 
 // WorkflowRun GitHub Actions工作流运行信息
@@ -127,16 +127,16 @@ func NewGitHubService() *GitHubService {
 	// ====================================================================
 	// HTTP客户端初始化
 	// ====================================================================
-	
+
 	client := resty.New()
 	client.SetTimeout(30 * time.Second)
 	client.SetHeader("Accept", "application/vnd.github.v3+json")
 	client.SetHeader("User-Agent", "docker-image-sync-platform")
-	
+
 	// ====================================================================
 	// 认证配置
 	// ====================================================================
-	
+
 	// 如果配置了GitHub Token，则设置认证
 	if config.AppConfig.Git.GitHub.Token != "" {
 		client.SetAuthToken(config.AppConfig.Git.GitHub.Token)
@@ -145,7 +145,7 @@ func NewGitHubService() *GitHubService {
 	// ====================================================================
 	// 仓库信息解析
 	// ====================================================================
-	
+
 	// 解析GitHub仓库URL，提取所有者和仓库名
 	repoURL := config.AppConfig.Git.GitHub.RepoURL
 	owner, repo := parseGitHubRepo(repoURL)
@@ -191,11 +191,11 @@ func NewGitHubService() *GitHubService {
 //   - 获取工作流运行链接供用户查看
 func (s *GitHubService) GetWorkflowRun(commitSHA string) (string, string, error) {
 	url := fmt.Sprintf("%s/repos/%s/%s/actions/runs", s.baseURL, s.owner, s.repo)
-	
+
 	// ====================================================================
 	// 重试查询机制
 	// ====================================================================
-	
+
 	// 等待一段时间，让GitHub同步Gitee的更改
 	// GitHub和Gitee之间可能存在同步延迟
 	maxRetries := 10
@@ -203,7 +203,7 @@ func (s *GitHubService) GetWorkflowRun(commitSHA string) (string, string, error)
 		// ================================================================
 		// API调用
 		// ================================================================
-		
+
 		resp, err := s.client.R().
 			SetQueryParam("head_sha", commitSHA).
 			SetQueryParam("per_page", "10").
@@ -217,9 +217,9 @@ func (s *GitHubService) GetWorkflowRun(commitSHA string) (string, string, error)
 		// ================================================================
 		// 响应状态检查
 		// ================================================================
-		
+
 		if resp.StatusCode() != http.StatusOK {
-			logger.Logger.Error("GitHub API响应错误", 
+			logger.Logger.Error("GitHub API响应错误",
 				zap.Int("status_code", resp.StatusCode()),
 				zap.String("response", string(resp.Body())))
 			return "", "", fmt.Errorf("GitHub API响应错误: %d", resp.StatusCode())
@@ -228,7 +228,7 @@ func (s *GitHubService) GetWorkflowRun(commitSHA string) (string, string, error)
 		// ================================================================
 		// 响应解析
 		// ================================================================
-		
+
 		var response WorkflowRunsResponse
 		if err := json.Unmarshal(resp.Body(), &response); err != nil {
 			return "", "", fmt.Errorf("解析响应失败: %w", err)
@@ -237,11 +237,11 @@ func (s *GitHubService) GetWorkflowRun(commitSHA string) (string, string, error)
 		// ================================================================
 		// 查找匹配的工作流
 		// ================================================================
-		
+
 		// 查找匹配的工作流运行
 		for _, run := range response.WorkflowRuns {
 			if run.HeadSHA == commitSHA {
-				logger.Logger.Info("找到GitHub Actions运行", 
+				logger.Logger.Info("找到GitHub Actions运行",
 					zap.String("run_id", fmt.Sprintf("%d", run.ID)),
 					zap.String("status", run.Status),
 					zap.String("url", run.HTMLURL))
@@ -252,10 +252,10 @@ func (s *GitHubService) GetWorkflowRun(commitSHA string) (string, string, error)
 		// ================================================================
 		// 重试等待
 		// ================================================================
-		
+
 		// 如果没有找到，等待一段时间后重试
 		if i < maxRetries-1 {
-			logger.Logger.Info("未找到GitHub Actions运行，等待重试", 
+			logger.Logger.Info("未找到GitHub Actions运行，等待重试",
 				zap.String("commit_sha", commitSHA),
 				zap.Int("retry", i+1))
 			time.Sleep(30 * time.Second)
@@ -296,7 +296,7 @@ func (s *GitHubService) GetWorkflowRun(commitSHA string) (string, string, error)
 //   - 提供用户界面的状态更新
 func (s *GitHubService) GetWorkflowRunStatus(runID string) (string, error) {
 	url := fmt.Sprintf("%s/repos/%s/%s/actions/runs/%s", s.baseURL, s.owner, s.repo, runID)
-	
+
 	resp, err := s.client.R().Get(url)
 	if err != nil {
 		return "", err
@@ -347,7 +347,7 @@ func (s *GitHubService) GetWorkflowRunStatus(runID string) (string, error) {
 //   - 发送任务完成通知
 func (s *GitHubService) GetWorkflowRunConclusion(runID string) (string, error) {
 	url := fmt.Sprintf("%s/repos/%s/%s/actions/runs/%s", s.baseURL, s.owner, s.repo, runID)
-	
+
 	resp, err := s.client.R().Get(url)
 	if err != nil {
 		return "", err
@@ -398,7 +398,7 @@ func (s *GitHubService) GetWorkflowRunConclusion(runID string) (string, error) {
 //   - 提供管理界面的详细视图
 func (s *GitHubService) GetWorkflowRunDetails(runID string) (*WorkflowRun, error) {
 	url := fmt.Sprintf("%s/repos/%s/%s/actions/runs/%s", s.baseURL, s.owner, s.repo, runID)
-	
+
 	resp, err := s.client.R().Get(url)
 	if err != nil {
 		return nil, err
@@ -450,7 +450,7 @@ func (s *GitHubService) GetWorkflowRunDetails(runID string) (*WorkflowRun, error
 //   - 生成工作流执行报告
 func (s *GitHubService) ListWorkflowRuns(page, perPage int) (*WorkflowRunsResponse, error) {
 	url := fmt.Sprintf("%s/repos/%s/%s/actions/runs", s.baseURL, s.owner, s.repo)
-	
+
 	resp, err := s.client.R().
 		SetQueryParam("page", fmt.Sprintf("%d", page)).
 		SetQueryParam("per_page", fmt.Sprintf("%d", perPage)).
@@ -505,7 +505,7 @@ func (s *GitHubService) ListWorkflowRuns(page, perPage int) (*WorkflowRunsRespon
 //   - 系统健康状态检查
 func (s *GitHubService) CheckRateLimit() (map[string]interface{}, error) {
 	url := fmt.Sprintf("%s/rate_limit", s.baseURL)
-	
+
 	resp, err := s.client.R().Get(url)
 	if err != nil {
 		return nil, err
@@ -564,12 +564,12 @@ func parseGitHubRepo(repoURL string) (owner, repo string) {
 	// ====================================================================
 	// 输入验证
 	// ====================================================================
-	
+
 	// 支持多种格式的URL
 	// https://github.com/owner/repo
 	// https://github.com/owner/repo.git
 	// git@github.com:owner/repo.git
-	
+
 	if repoURL == "" {
 		return "", ""
 	}
@@ -577,7 +577,7 @@ func parseGitHubRepo(repoURL string) (owner, repo string) {
 	// ====================================================================
 	// URL标准化处理
 	// ====================================================================
-	
+
 	// 移除协议部分（http://、https://）
 	if idx := strings.Index(repoURL, "://"); idx != -1 {
 		repoURL = repoURL[idx+3:]
@@ -603,7 +603,7 @@ func parseGitHubRepo(repoURL string) (owner, repo string) {
 	// ====================================================================
 	// 路径分割和提取
 	// ====================================================================
-	
+
 	// 分割owner和repo
 	parts := strings.Split(repoURL, "/")
 	if len(parts) >= 2 {

@@ -16,11 +16,12 @@ import (
 //   - Error: 详细错误信息，可选字段，调试时使用
 //
 // JSON示例：
-//   {
-//     "code": 400,
-//     "message": "参数验证失败",
-//     "error": "name字段不能为空"
-//   }
+//
+//	{
+//	  "code": 400,
+//	  "message": "参数验证失败",
+//	  "error": "name字段不能为空"
+//	}
 type ErrorResponse struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
@@ -52,7 +53,8 @@ type ErrorResponse struct {
 //   - 防止敏感信息泄露
 //
 // 示例：
-//   router.Use(middleware.ErrorHandler(logger))
+//
+//	router.Use(middleware.ErrorHandler(logger))
 func ErrorHandler(logger *zap.Logger) gin.HandlerFunc {
 	return gin.CustomRecovery(func(c *gin.Context, recovered interface{}) {
 		if err, ok := recovered.(string); ok {
@@ -125,8 +127,9 @@ func (e *APIError) Error() string {
 //   - 统一错误处理流程
 //
 // 示例：
-//   err := NewAPIError(400, "用户名不能为空", nil)
-//   err := NewAPIError(500, "数据库连接失败", dbErr)
+//
+//	err := NewAPIError(400, "用户名不能为空", nil)
+//	err := NewAPIError(500, "数据库连接失败", dbErr)
 func NewAPIError(code int, message string, err error) *APIError {
 	return &APIError{
 		Code:    code,
@@ -149,10 +152,10 @@ func NewAPIError(code int, message string, err error) *APIError {
 //   - err: 要处理的错误对象
 //
 // 错误处理逻辑：
-//   1. 检查是否为APIError类型
-//   2. 记录错误日志（包含请求路径、方法等上下文）
-//   3. 返回相应的HTTP状态码和错误消息
-//   4. 对未知错误返回500状态码
+//  1. 检查是否为APIError类型
+//  2. 记录错误日志（包含请求路径、方法等上下文）
+//  3. 返回相应的HTTP状态码和错误消息
+//  4. 对未知错误返回500状态码
 //
 // 使用场景：
 //   - 控制器中的统一错误处理
@@ -160,10 +163,11 @@ func NewAPIError(code int, message string, err error) *APIError {
 //   - 错误日志的集中记录
 //
 // 示例：
-//   if err != nil {
-//       HandleError(c, logger, err)
-//       return
-//   }
+//
+//	if err != nil {
+//	    HandleError(c, logger, err)
+//	    return
+//	}
 func HandleError(c *gin.Context, logger *zap.Logger, err error) {
 	if apiErr, ok := err.(*APIError); ok {
 		logger.Error("API Error",
@@ -208,7 +212,8 @@ func HandleError(c *gin.Context, logger *zap.Logger, err error) {
 //   - 参数值不符合业务规则
 //
 // 示例：
-//   return ValidationError("用户名长度必须在3-20个字符之间")
+//
+//	return ValidationError("用户名长度必须在3-20个字符之间")
 func ValidationError(message string) *APIError {
 	return NewAPIError(http.StatusBadRequest, message, nil)
 }
@@ -227,7 +232,8 @@ func ValidationError(message string) *APIError {
 //   - 已删除的资源
 //
 // 示例：
-//   return NotFoundError("指定的镜像记录不存在")
+//
+//	return NotFoundError("指定的镜像记录不存在")
 func NotFoundError(message string) *APIError {
 	return NewAPIError(http.StatusNotFound, message, nil)
 }
@@ -246,7 +252,8 @@ func NotFoundError(message string) *APIError {
 //   - 业务规则冲突
 //
 // 示例：
-//   return ConflictError("该镜像正在同步中，请勿重复操作")
+//
+//	return ConflictError("该镜像正在同步中，请勿重复操作")
 func ConflictError(message string) *APIError {
 	return NewAPIError(http.StatusConflict, message, nil)
 }
@@ -266,7 +273,8 @@ func ConflictError(message string) *APIError {
 //   - 系统内部异常
 //
 // 示例：
-//   return InternalError("数据库操作失败", dbErr)
+//
+//	return InternalError("数据库操作失败", dbErr)
 func InternalError(message string, err error) *APIError {
 	return NewAPIError(http.StatusInternalServerError, message, err)
 }

@@ -7,7 +7,7 @@ services:
       dockerfile: deploy/docker-all/Dockerfile-all
       args:
         - BUILDKIT_INLINE_CACHE=1
-    image: docker-image-sync-platform:all
+    image: docker-image-sync-platform-all:latest
     container_name: docker-sync-all
     ports:
       - "80:80"      # Nginx 前端服务

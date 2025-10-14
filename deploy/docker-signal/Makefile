@@ -23,8 +23,10 @@
 
 # 项目配置
 PROJECT_NAME := docker-image-sync-platform
-BACKEND_IMAGE_NAME := $(PROJECT_NAME):backend
-FRONTEND_IMAGE_NAME := $(PROJECT_NAME):frontend
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+BUILD_TIME := $(shell date -u '+%Y-%m-%d_%H:%M:%S')
+BACKEND_IMAGE_NAME := $(PROJECT_NAME)-backend:latest
+FRONTEND_IMAGE_NAME := $(PROJECT_NAME)-frontend:latest
 BACKEND_CONTAINER_NAME := docker-sync-backend
 FRONTEND_CONTAINER_NAME := docker-sync-frontend
 MYSQL_CONTAINER_NAME := docker-sync-mysql
@@ -42,6 +44,9 @@ MAGENTA := \033[35m
 CYAN := \033[36m
 WHITE := \033[37m
 RESET := \033[0m
+
+
+
 
 # ============================================================================
 # 帮助信息

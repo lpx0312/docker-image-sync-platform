@@ -51,9 +51,10 @@ import (
 //   - 集成任务管理和错误追踪
 //
 // 状态流转：
-//   pending -> syncing -> success/failed
-//   failed -> retrying -> success/failed
-//   任何状态 -> skipped（手动跳过）
+//
+//	pending -> syncing -> success/failed
+//	failed -> retrying -> success/failed
+//	任何状态 -> skipped（手动跳过）
 //
 // 使用场景：
 //   - 镜像同步状态的实时跟踪
@@ -61,26 +62,26 @@ import (
 //   - 失败重试和错误分析
 //   - 性能监控和容量规划
 type ImageSyncRecord struct {
-	ID            uint           `json:"id" gorm:"primaryKey"`                                                                                                                                    // 主键ID
-	OriginalImage string         `json:"original_image" gorm:"type:varchar(500);not null;index"`                                                                                             // 源镜像地址，建立索引以提高查询性能
-	ACRImage      string         `json:"acr_image" gorm:"type:varchar(500)"`                                                                                                                  // 目标ACR镜像地址
-	Tag           string         `json:"tag" gorm:"type:varchar(100)"`                                                                                                                        // 镜像标签
-	Architecture  string         `json:"architecture" gorm:"type:varchar(50);default:'amd64'"`                                                                                               // 目标架构，默认amd64
-	OriginalInput string         `json:"original_input" gorm:"type:varchar(600)"`                                                                                                             // 保存用户原始输入格式，用于追溯
-	InputOrder    int            `json:"input_order" gorm:"default:0;index"`                                                                                                                  // 原始输入顺序，用于批量处理时保持顺序
-	SyncStatus    string         `json:"sync_status" gorm:"type:enum('pending','syncing','success','failed','retrying','skipped');default:'pending';index"`                               // 同步状态，建立索引以提高状态查询性能
-	ErrorMessage  string         `json:"error_message" gorm:"type:text"`                                                                                                                      // 错误信息，支持长文本存储
-	TaskID        string         `json:"task_id" gorm:"type:varchar(100);index"`                                                                                                              // 关联的任务ID，建立索引以提高任务查询性能
-	Priority      int            `json:"priority" gorm:"default:0"`                                                                                                                           // 优先级，数字越大优先级越高
-	RetryCount    int            `json:"retry_count" gorm:"default:0"`                                                                                                                        // 当前重试次数
-	MaxRetries    int            `json:"max_retries" gorm:"default:3"`                                                                                                                        // 最大重试次数
-	StartedAt     *time.Time     `json:"started_at"`                                                                                                                                          // 开始同步时间
-	CompletedAt   *time.Time     `json:"completed_at"`                                                                                                                                        // 完成同步时间
-	Duration      int64          `json:"duration" gorm:"default:0"`                                                                                                                           // 同步耗时（秒），用于性能分析
-	ImageSize     int64          `json:"image_size" gorm:"default:0"`                                                                                                                         // 镜像大小（字节），用于容量统计
-	CreatedAt     time.Time      `json:"created_at" gorm:"index"`                                                                                                                             // 创建时间，建立索引以提高时间范围查询性能
-	UpdatedAt     time.Time      `json:"updated_at"`                                                                                                                                          // 更新时间
-	DeletedAt     gorm.DeletedAt `json:"-" gorm:"index"`                                                                                                                                      // 软删除时间，建立索引以提高软删除查询性能
+	ID            uint           `json:"id" gorm:"primaryKey"`                                                                                              // 主键ID
+	OriginalImage string         `json:"original_image" gorm:"type:varchar(500);not null;index"`                                                            // 源镜像地址，建立索引以提高查询性能
+	ACRImage      string         `json:"acr_image" gorm:"type:varchar(500)"`                                                                                // 目标ACR镜像地址
+	Tag           string         `json:"tag" gorm:"type:varchar(100)"`                                                                                      // 镜像标签
+	Architecture  string         `json:"architecture" gorm:"type:varchar(50);default:'amd64'"`                                                              // 目标架构，默认amd64
+	OriginalInput string         `json:"original_input" gorm:"type:varchar(600)"`                                                                           // 保存用户原始输入格式，用于追溯
+	InputOrder    int            `json:"input_order" gorm:"default:0;index"`                                                                                // 原始输入顺序，用于批量处理时保持顺序
+	SyncStatus    string         `json:"sync_status" gorm:"type:enum('pending','syncing','success','failed','retrying','skipped');default:'pending';index"` // 同步状态，建立索引以提高状态查询性能
+	ErrorMessage  string         `json:"error_message" gorm:"type:text"`                                                                                    // 错误信息，支持长文本存储
+	TaskID        string         `json:"task_id" gorm:"type:varchar(100);index"`                                                                            // 关联的任务ID，建立索引以提高任务查询性能
+	Priority      int            `json:"priority" gorm:"default:0"`                                                                                         // 优先级，数字越大优先级越高
+	RetryCount    int            `json:"retry_count" gorm:"default:0"`                                                                                      // 当前重试次数
+	MaxRetries    int            `json:"max_retries" gorm:"default:3"`                                                                                      // 最大重试次数
+	StartedAt     *time.Time     `json:"started_at"`                                                                                                        // 开始同步时间
+	CompletedAt   *time.Time     `json:"completed_at"`                                                                                                      // 完成同步时间
+	Duration      int64          `json:"duration" gorm:"default:0"`                                                                                         // 同步耗时（秒），用于性能分析
+	ImageSize     int64          `json:"image_size" gorm:"default:0"`                                                                                       // 镜像大小（字节），用于容量统计
+	CreatedAt     time.Time      `json:"created_at" gorm:"index"`                                                                                           // 创建时间，建立索引以提高时间范围查询性能
+	UpdatedAt     time.Time      `json:"updated_at"`                                                                                                        // 更新时间
+	DeletedAt     gorm.DeletedAt `json:"-" gorm:"index"`                                                                                                    // 软删除时间，建立索引以提高软删除查询性能
 }
 
 // SyncTask 同步任务数据模型
@@ -111,29 +112,29 @@ type ImageSyncRecord struct {
 //   - 同步进度的实时监控
 //   - 任务历史记录和统计分析
 type SyncTask struct {
-	ID              uint           `json:"id" gorm:"primaryKey"`                                                                                                     // 主键ID
-	TaskID          string         `json:"task_id" gorm:"type:varchar(100);uniqueIndex;not null"`                                                                // 任务唯一标识符，建立唯一索引
-	ImagesJSON      string         `json:"images_json" gorm:"type:text"`                                                                                          // 镜像列表的JSON存储，支持复杂数据结构
-	Status          string         `json:"status" gorm:"type:enum('pending','running','completed','failed','paused');default:'pending';index"`                 // 任务状态，建立索引以提高状态查询性能
-	GitHubActionURL string         `json:"github_action_url" gorm:"type:varchar(500)"`                                                                           // GitHub Actions工作流页面链接
-	GitHubRunID     string         `json:"github_run_id" gorm:"type:varchar(100)"`                                                                               // GitHub Actions运行ID
-	CommitSHA       string         `json:"commit_sha" gorm:"type:varchar(100)"`                                                                                  // 关联的Git提交SHA
-	StartedAt       *time.Time     `json:"started_at"`                                                                                                            // 任务开始时间
-	CompletedAt     *time.Time     `json:"completed_at"`                                                                                                          // 任务完成时间
-	ErrorMessage    string         `json:"error_message" gorm:"type:text"`                                                                                       // 任务级别的错误信息
+	ID              uint       `json:"id" gorm:"primaryKey"`                                                                               // 主键ID
+	TaskID          string     `json:"task_id" gorm:"type:varchar(100);uniqueIndex;not null"`                                              // 任务唯一标识符，建立唯一索引
+	ImagesJSON      string     `json:"images_json" gorm:"type:text"`                                                                       // 镜像列表的JSON存储，支持复杂数据结构
+	Status          string     `json:"status" gorm:"type:enum('pending','running','completed','failed','paused');default:'pending';index"` // 任务状态，建立索引以提高状态查询性能
+	GitHubActionURL string     `json:"github_action_url" gorm:"type:varchar(500)"`                                                         // GitHub Actions工作流页面链接
+	GitHubRunID     string     `json:"github_run_id" gorm:"type:varchar(100)"`                                                             // GitHub Actions运行ID
+	CommitSHA       string     `json:"commit_sha" gorm:"type:varchar(100)"`                                                                // 关联的Git提交SHA
+	StartedAt       *time.Time `json:"started_at"`                                                                                         // 任务开始时间
+	CompletedAt     *time.Time `json:"completed_at"`                                                                                       // 任务完成时间
+	ErrorMessage    string     `json:"error_message" gorm:"type:text"`                                                                     // 任务级别的错误信息
 	// 批量同步相关字段
-	Description     string         `json:"description" gorm:"type:varchar(500)"`                                                                                 // 任务描述，便于用户识别和管理
-	MaxConcurrent   int            `json:"max_concurrent" gorm:"default:3"`                                                                                      // 最大并发数，控制同时进行的镜像同步数量
-	TotalImages     int            `json:"total_images" gorm:"default:0"`                                                                                        // 总镜像数量
-	CompletedImages int            `json:"completed_images" gorm:"default:0"`                                                                                    // 已完成镜像数量
-	FailedImages    int            `json:"failed_images" gorm:"default:0"`                                                                                       // 失败镜像数量
-	AutoRetry       bool           `json:"auto_retry" gorm:"default:false"`                                                                                      // 是否启用自动重试
-	RetryCount      int            `json:"retry_count" gorm:"default:0"`                                                                                         // 允许的重试次数
-	CurrentRetry    int            `json:"current_retry" gorm:"default:0"`                                                                                       // 当前重试次数
-	Progress        float64        `json:"progress" gorm:"type:decimal(5,2);default:0.00"`                                                                      // 任务进度百分比（0.00-100.00）
-	CreatedAt       time.Time      `json:"created_at" gorm:"index"`                                                                                              // 创建时间，建立索引以提高时间范围查询性能
-	UpdatedAt       time.Time      `json:"updated_at"`                                                                                                           // 更新时间
-	DeletedAt       gorm.DeletedAt `json:"-" gorm:"index"`                                                                                                       // 软删除时间，建立索引以提高软删除查询性能
+	Description     string         `json:"description" gorm:"type:varchar(500)"`           // 任务描述，便于用户识别和管理
+	MaxConcurrent   int            `json:"max_concurrent" gorm:"default:3"`                // 最大并发数，控制同时进行的镜像同步数量
+	TotalImages     int            `json:"total_images" gorm:"default:0"`                  // 总镜像数量
+	CompletedImages int            `json:"completed_images" gorm:"default:0"`              // 已完成镜像数量
+	FailedImages    int            `json:"failed_images" gorm:"default:0"`                 // 失败镜像数量
+	AutoRetry       bool           `json:"auto_retry" gorm:"default:false"`                // 是否启用自动重试
+	RetryCount      int            `json:"retry_count" gorm:"default:0"`                   // 允许的重试次数
+	CurrentRetry    int            `json:"current_retry" gorm:"default:0"`                 // 当前重试次数
+	Progress        float64        `json:"progress" gorm:"type:decimal(5,2);default:0.00"` // 任务进度百分比（0.00-100.00）
+	CreatedAt       time.Time      `json:"created_at" gorm:"index"`                        // 创建时间，建立索引以提高时间范围查询性能
+	UpdatedAt       time.Time      `json:"updated_at"`                                     // 更新时间
+	DeletedAt       gorm.DeletedAt `json:"-" gorm:"index"`                                 // 软删除时间，建立索引以提高软删除查询性能
 }
 
 // SystemConfig 系统配置数据模型
@@ -159,13 +160,13 @@ type SyncTask struct {
 //   - 运行时配置热更新
 //   - 配置变更历史追踪
 type SystemConfig struct {
-	ID          uint           `json:"id" gorm:"primaryKey"`                                      // 主键ID
+	ID          uint           `json:"id" gorm:"primaryKey"`                                     // 主键ID
 	ConfigKey   string         `json:"config_key" gorm:"type:varchar(100);uniqueIndex;not null"` // 配置键，建立唯一索引确保键的唯一性
 	ConfigValue string         `json:"config_value" gorm:"type:text"`                            // 配置值，支持长文本存储复杂配置
 	Description string         `json:"description" gorm:"type:varchar(500)"`                     // 配置描述，便于理解配置用途
-	CreatedAt   time.Time      `json:"created_at"`                                                // 创建时间
-	UpdatedAt   time.Time      `json:"updated_at"`                                                // 更新时间
-	DeletedAt   gorm.DeletedAt `json:"-" gorm:"index"`                                            // 软删除时间，建立索引以提高软删除查询性能
+	CreatedAt   time.Time      `json:"created_at"`                                               // 创建时间
+	UpdatedAt   time.Time      `json:"updated_at"`                                               // 更新时间
+	DeletedAt   gorm.DeletedAt `json:"-" gorm:"index"`                                           // 软删除时间，建立索引以提高软删除查询性能
 }
 
 // TableName 设置数据库表名
@@ -248,8 +249,8 @@ const (
 //   - 与旧版本客户端的兼容
 //   - 快速测试和验证
 type ImageRequest struct {
-	Images       []string `json:"images" binding:"required"`       // 镜像列表，必填字段
-	Architecture string   `json:"architecture"`                    // 目标架构，可选
+	Images       []string `json:"images" binding:"required"` // 镜像列表，必填字段
+	Architecture string   `json:"architecture"`              // 目标架构，可选
 }
 
 // SyncRequest 单个同步请求
@@ -267,9 +268,9 @@ type ImageRequest struct {
 //   - 简单的批量同步
 //   - 基础的同步功能
 type SyncRequest struct {
-	Images       []string `json:"images" binding:"required"`       // 镜像列表，必填字段
-	Architecture string   `json:"architecture"`                    // 目标架构，可选
-	Description  string   `json:"description"`                     // 任务描述，可选
+	Images       []string `json:"images" binding:"required"` // 镜像列表，必填字段
+	Architecture string   `json:"architecture"`              // 目标架构，可选
+	Description  string   `json:"description"`               // 任务描述，可选
 }
 
 // BatchSyncRequest 批量镜像同步请求
@@ -294,10 +295,10 @@ type SyncRequest struct {
 //   - 生产环境的批量迁移
 //   - 自动化CI/CD流水线
 type BatchSyncRequest struct {
-	Images        []ImageSyncItem `json:"images" binding:"required"`                    // 镜像同步项列表，必填
-	MaxConcurrent int             `json:"max_concurrent" binding:"min=1,max=10"`        // 最大并发数，范围1-10
-	AutoRetry     bool            `json:"auto_retry"`                                    // 是否启用自动重试
-	RetryCount    int             `json:"retry_count" binding:"min=0,max=3"`            // 重试次数，范围0-3
+	Images        []ImageSyncItem `json:"images" binding:"required"`             // 镜像同步项列表，必填
+	MaxConcurrent int             `json:"max_concurrent" binding:"min=1,max=10"` // 最大并发数，范围1-10
+	AutoRetry     bool            `json:"auto_retry"`                            // 是否启用自动重试
+	RetryCount    int             `json:"retry_count" binding:"min=0,max=3"`     // 重试次数，范围0-3
 }
 
 // ImageSyncItem 单个镜像同步项
@@ -317,10 +318,10 @@ type BatchSyncRequest struct {
 //   - 混合架构的批量同步
 //   - 复杂的同步策略配置
 type ImageSyncItem struct {
-	SourceImage  string `json:"source_image" binding:"required"`  // 源镜像地址，必填
-	TargetTag    string `json:"target_tag"`                       // 目标标签，可选
-	Architecture string `json:"architecture"`                     // 目标架构，可选
-	Priority     int    `json:"priority"`                         // 优先级，数字越大优先级越高
+	SourceImage  string `json:"source_image" binding:"required"` // 源镜像地址，必填
+	TargetTag    string `json:"target_tag"`                      // 目标标签，可选
+	Architecture string `json:"architecture"`                    // 目标架构，可选
+	Priority     int    `json:"priority"`                        // 优先级，数字越大优先级越高
 }
 
 // API响应模型定义
@@ -364,8 +365,8 @@ type BatchSyncResponse struct {
 //   - 快速同步操作的响应
 //   - 基础API的返回格式
 type SyncResponse struct {
-	TaskID  string `json:"task_id"`  // 任务ID
-	Message string `json:"message"`  // 响应消息
+	TaskID  string `json:"task_id"` // 任务ID
+	Message string `json:"message"` // 响应消息
 }
 
 // ImageListResponse 镜像列表响应

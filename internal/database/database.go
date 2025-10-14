@@ -13,14 +13,15 @@
 // - 连接池: 优化数据库连接性能和资源使用
 //
 // 使用方式：
-//   // 初始化数据库
-//   if err := database.InitDatabase(); err != nil {
-//       log.Fatal(err)
-//   }
-//   defer database.CloseDatabase()
 //
-//   // 获取数据库实例
-//   db := database.GetDB()
+//	// 初始化数据库
+//	if err := database.InitDatabase(); err != nil {
+//	    log.Fatal(err)
+//	}
+//	defer database.CloseDatabase()
+//
+//	// 获取数据库实例
+//	db := database.GetDB()
 //
 // Author: Docker Image Sync Platform Team
 // Version: 1.0.0
@@ -66,7 +67,7 @@ func InitDatabase() error {
 	// 从配置文件中获取数据库连接信息（主机、端口、用户名、密码等）
 	// DSN格式：username:password@tcp(host:port)/database?charset=utf8mb4&parseTime=True&loc=Local
 	dsn := config.AppConfig.Database.GetDSN()
-	
+
 	// ====================================================================
 	// 第二步：建立GORM数据库连接
 	// ====================================================================
@@ -76,7 +77,7 @@ func InitDatabase() error {
 		// 生产环境可考虑设置为Error级别以减少日志输出
 		Logger: logger.Default.LogMode(logger.Info),
 	})
-	
+
 	if err != nil {
 		return fmt.Errorf("连接数据库失败: %w", err)
 	}
@@ -139,13 +140,13 @@ func AutoMigrate() error {
 		&models.SyncTask{},        // 同步任务表：存储批量同步任务的信息
 		&models.SystemConfig{},    // 系统配置表：存储应用运行时的配置参数
 	)
-	
+
 	if err != nil {
 		return fmt.Errorf("数据库表迁移失败: %w", err)
 	}
 
 	log.Println("数据库表迁移完成")
-	
+
 	// ====================================================================
 	// 第二步：初始化系统默认配置
 	// ====================================================================
@@ -154,7 +155,7 @@ func AutoMigrate() error {
 	if err := initDefaultConfigs(); err != nil {
 		return fmt.Errorf("初始化默认配置失败: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -179,41 +180,41 @@ func initDefaultConfigs() error {
 	// ====================================================================
 	// 这些配置项从 config.yaml 文件中读取，避免硬编码
 	// 如果配置文件中没有相应配置，则使用合理的默认值
-	
+
 	// 从配置文件中读取阿里云配置
 	aliyunRegistry := config.AppConfig.Aliyun.Registry
 	if aliyunRegistry == "" {
 		aliyunRegistry = "registry.cn-hangzhou.aliyuncs.com" // 默认值
 	}
-	
+
 	aliyunNamespace := config.AppConfig.Aliyun.Namespace
 	if aliyunNamespace == "" {
 		aliyunNamespace = "your-namespace" // 默认值
 	}
-	
+
 	// 从配置文件中读取同步配置
 	syncTimeoutMinutes := fmt.Sprintf("%d", config.AppConfig.Sync.TimeoutMinutes)
 	if config.AppConfig.Sync.TimeoutMinutes == 0 {
 		syncTimeoutMinutes = "30" // 默认30分钟
 	}
-	
+
 	// 从配置文件中读取最大并发数
 	maxConcurrentSyncs := fmt.Sprintf("%d", config.AppConfig.Sync.MaxConcurrentJobs)
 	if config.AppConfig.Sync.MaxConcurrentJobs == 0 {
 		maxConcurrentSyncs = "3" // 默认3个并发任务，与config.yaml中的值一致
 	}
-	
+
 	// 从配置文件中读取重试配置
 	maxRetryCount := fmt.Sprintf("%d", config.AppConfig.Sync.MaxRetryCount)
 	if config.AppConfig.Sync.MaxRetryCount == 0 {
 		maxRetryCount = "3" // 默认重试3次
 	}
-	
+
 	retryIntervalMinutes := fmt.Sprintf("%d", config.AppConfig.Sync.RetryIntervalMinutes)
 	if config.AppConfig.Sync.RetryIntervalMinutes == 0 {
 		retryIntervalMinutes = "5" // 默认重试间隔5分钟
 	}
-	
+
 	defaultConfigs := []models.SystemConfig{
 		{
 			ConfigKey:   "aliyun_registry_prefix",
@@ -265,10 +266,10 @@ func initDefaultConfigs() error {
 	// 遍历所有默认配置，检查是否已存在，不存在则创建
 	for _, config := range defaultConfigs {
 		var existingConfig models.SystemConfig
-		
+
 		// 查询配置是否已存在
 		result := DB.Where("config_key = ?", config.ConfigKey).First(&existingConfig)
-		
+
 		// 如果配置不存在，则创建新配置
 		if result.Error == gorm.ErrRecordNotFound {
 			if err := DB.Create(&config).Error; err != nil {
@@ -319,7 +320,7 @@ func CloseDatabase() error {
 		if err != nil {
 			return fmt.Errorf("获取底层数据库连接失败: %w", err)
 		}
-		
+
 		// ====================================================================
 		// 关闭数据库连接池
 		// ====================================================================
@@ -328,7 +329,7 @@ func CloseDatabase() error {
 		if err := sqlDB.Close(); err != nil {
 			return fmt.Errorf("关闭数据库连接失败: %w", err)
 		}
-		
+
 		log.Println("数据库连接已关闭")
 	}
 	// 如果 DB 为 nil，说明数据库连接未初始化或已关闭，无需操作

@@ -23,10 +23,17 @@
 
 # 项目配置
 PROJECT_NAME := docker-image-sync-platform
-IMAGE_NAME := $(PROJECT_NAME):all
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+BUILD_TIME := $(shell date -u '+%Y-%m-%d_%H:%M:%S')
+IMAGE_NAME_VERSION := $(PROJECT_NAME)-all:$(VERSION)
+IMAGE_NAME_LATEST := $(PROJECT_NAME)-all:latest
 CONTAINER_NAME := docker-sync-all
 MYSQL_CONTAINER_NAME := docker-sync-mysql
-
+# 远程镜像仓库设置
+ALIYUN_REGISTRY := registry.cn-hangzhou.aliyuncs.com
+ALIYUN_USERNAME := lipanx
+ALIYUN_PASSWORD := Lipanxiang1102
+ALIYUN_NAMESPACE := lpx03
 # Docker Compose 文件
 COMPOSE_FILE := docker-compose-all.yml
 COMPOSE_FILE_MYSQL := docker-compose-all-mysql.yml
@@ -53,7 +60,7 @@ help: ## 显示帮助信息
 	@echo ""
 	@echo "$(YELLOW)构建相关:$(RESET)"
 	@echo "  $(GREEN)build$(RESET)           构建完整版Docker镜像"
-	@echo "  $(GREEN)rebuild$(RESET)         强制重新构建镜像 (不使用缓存)"
+	@echo "  $(GREEN)build-push$(RESET)      构建并推送完整版Docker镜像"
 	@echo ""
 	@echo "$(YELLOW)服务管理:$(RESET)"
 	@echo "  $(GREEN)up$(RESET)              启动服务 (不包含MySQL，使用外部数据库)"
@@ -94,14 +101,24 @@ help: ## 显示帮助信息
 .PHONY: build
 build: ## 构建完整版Docker镜像
 	@echo "$(BLUE)🐳 构建完整版Docker镜像...$(RESET)"
-	@docker build --no-cache -f Dockerfile-all -t $(IMAGE_NAME) ../../
+	@docker build --no-cache -f Dockerfile-all -t $(IMAGE_NAME_LATEST) -t $(IMAGE_NAME_VERSION) ../../
 	@echo "$(GREEN)✅ 镜像构建完成！$(RESET)"
 
-.PHONY: rebuild
-rebuild: ## 强制重新构建镜像 (不使用缓存)
-	@echo "$(BLUE)🐳 强制重新构建Docker镜像...$(RESET)"
-	@docker build --no-cache -f Dockerfile-all -t $(IMAGE_NAME) ../../
-	@echo "$(GREEN)✅ 镜像重新构建完成！$(RESET)"
+.PHONY: build-push
+build-push: ## 构建并推送完整版Docker镜像
+	@echo "$(BLUE)🐳 构建并推送完整版Docker镜像...$(RESET)"
+	@docker build --no-cache -f Dockerfile-all -t $(IMAGE_NAME_LATEST) -t $(IMAGE_NAME_VERSION) ../../
+	@echo "$(GREEN)✅ 镜像构建完成！$(RESET)"
+	@echo "$(BLUE)🔐 登录 镜像仓库 $(ALIYUN_REGISTRY)...$(RESET)"
+	@echo "$(ALIYUN_PASSWORD)" | docker login $(ALIYUN_REGISTRY) -u "$(ALIYUN_USERNAME)" --password-stdin
+	@echo "$(BLUE)🏷️ 为 阿里云 重新打标签 $(IMAGE_NAME_LATEST) 为 $(ALIYUN_REGISTRY)/$(ALIYUN_NAMESPACE)/$(IMAGE_NAME_LATEST)...$(RESET)"
+	@docker tag $(IMAGE_NAME_LATEST) $(ALIYUN_REGISTRY)/$(ALIYUN_NAMESPACE)/$(IMAGE_NAME_LATEST)
+	@echo "$(BLUE)🏷️ 为 阿里云 重新打标签 $(IMAGE_NAME_VERSION) 为 $(ALIYUN_REGISTRY)/$(ALIYUN_NAMESPACE)/$(IMAGE_NAME_VERSION)...$(RESET)"
+	@docker tag $(IMAGE_NAME_VERSION) $(ALIYUN_REGISTRY)/$(ALIYUN_NAMESPACE)/$(IMAGE_NAME_VERSION)
+	@echo "$(BLUE)🚀 推送镜像 $(ALIYUN_REGISTRY)/$(ALIYUN_NAMESPACE)/$(IMAGE_NAME_LATEST) 和 $(ALIYUN_REGISTRY)/$(ALIYUN_NAMESPACE)/$(IMAGE_NAME_VERSION)...$(RESET)"
+	@docker push $(ALIYUN_REGISTRY)/$(ALIYUN_NAMESPACE)/$(IMAGE_NAME_LATEST)
+	@docker push $(ALIYUN_REGISTRY)/$(ALIYUN_NAMESPACE)/$(IMAGE_NAME_VERSION)
+	@echo "$(GREEN)✅ 镜像推送完成！$(RESET)"
 
 # ============================================================================
 # 服务管理
@@ -218,7 +235,7 @@ clean-all: ## 清理所有相关资源 (危险操作)
 	@echo "$(BLUE)🧹 清理所有资源...$(RESET)"
 	@$(MAKE) down
 	@docker rm -f $(CONTAINER_NAME) $(MYSQL_CONTAINER_NAME) 2>/dev/null || true
-	@docker rmi $(IMAGE_NAME) 2>/dev/null || true
+	@docker rmi $(IMAGE_NAME_LATEST) 2>/dev/null || true
 	@docker volume rm docker-all_mysql_data 2>/dev/null || true
 	@docker network rm docker-all_app-network 2>/dev/null || true
 	@echo "$(GREEN)✅ 所有资源已清理！$(RESET)"

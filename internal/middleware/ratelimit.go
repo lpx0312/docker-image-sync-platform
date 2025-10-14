@@ -49,11 +49,12 @@ type RateLimiter struct {
 //   - 保护后端服务资源
 //
 // 示例：
-//   // 每秒最多10个请求，突发容量20
-//   limiter := NewRateLimiter(10, 20)
-//   
-//   // 每分钟最多60个请求
-//   limiter := NewRateLimiter(rate.Every(time.Second), 60)
+//
+//	// 每秒最多10个请求，突发容量20
+//	limiter := NewRateLimiter(10, 20)
+//
+//	// 每分钟最多60个请求
+//	limiter := NewRateLimiter(rate.Every(time.Second), 60)
 func NewRateLimiter(r rate.Limit, b int) *RateLimiter {
 	return &RateLimiter{
 		limiters: make(map[string]*rate.Limiter),
@@ -157,10 +158,10 @@ func (rl *RateLimiter) CleanupOldLimiters() {
 //   - gin.HandlerFunc: Gin框架中间件函数
 //
 // 限流逻辑：
-//   1. 获取客户端IP地址
-//   2. 获取或创建对应的限流器
-//   3. 检查是否有可用令牌
-//   4. 无令牌时返回429错误，有令牌时继续处理
+//  1. 获取客户端IP地址
+//  2. 获取或创建对应的限流器
+//  3. 检查是否有可用令牌
+//  4. 无令牌时返回429错误，有令牌时继续处理
 //
 // 响应格式：
 //   - 状态码: 429 Too Many Requests
@@ -172,11 +173,12 @@ func (rl *RateLimiter) CleanupOldLimiters() {
 //   - 保护服务器资源不被滥用
 //
 // 示例：
-//   // 每秒最多10个请求，突发容量20
-//   router.Use(middleware.RateLimit(10, 20))
+//
+//	// 每秒最多10个请求，突发容量20
+//	router.Use(middleware.RateLimit(10, 20))
 func RateLimit(r rate.Limit, b int) gin.HandlerFunc {
 	limiter := NewRateLimiter(r, b)
-	
+
 	// 启动清理协程
 	go limiter.CleanupOldLimiters()
 
@@ -226,19 +228,20 @@ func RateLimit(r rate.Limit, b int) gin.HandlerFunc {
 //   - 多维度组合限流策略
 //
 // 示例：
-//   // 基于用户ID限流
-//   keyFunc := func(c *gin.Context) string {
-//       return c.GetString("user_id")
-//   }
-//   router.Use(middleware.RateLimitByKey(5, 10, keyFunc))
-//   
-//   // 基于API密钥限流
-//   keyFunc := func(c *gin.Context) string {
-//       return c.GetHeader("X-API-Key")
-//   }
+//
+//	// 基于用户ID限流
+//	keyFunc := func(c *gin.Context) string {
+//	    return c.GetString("user_id")
+//	}
+//	router.Use(middleware.RateLimitByKey(5, 10, keyFunc))
+//
+//	// 基于API密钥限流
+//	keyFunc := func(c *gin.Context) string {
+//	    return c.GetHeader("X-API-Key")
+//	}
 func RateLimitByKey(r rate.Limit, b int, keyFunc func(*gin.Context) string) gin.HandlerFunc {
 	limiter := NewRateLimiter(r, b)
-	
+
 	// 启动清理协程
 	go limiter.CleanupOldLimiters()
 
@@ -292,9 +295,10 @@ func RateLimitByKey(r rate.Limit, b int, keyFunc func(*gin.Context) string) gin.
 //   - 保证服务稳定性和用户体验
 //
 // 使用示例：
-//   syncGroup := router.Group("/api/v1/sync")
-//   syncGroup.Use(middleware.SyncRateLimit())
-//   syncGroup.POST("/start", syncHandler.StartSync)
+//
+//	syncGroup := router.Group("/api/v1/sync")
+//	syncGroup.Use(middleware.SyncRateLimit())
+//	syncGroup.POST("/start", syncHandler.StartSync)
 func SyncRateLimit() gin.HandlerFunc {
 	// 每分钟最多5次同步请求
 	return RateLimit(rate.Every(time.Minute/5), 1)

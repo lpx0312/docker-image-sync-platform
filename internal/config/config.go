@@ -100,7 +100,7 @@ type GiteeConfig struct {
 	RepoURL  string `mapstructure:"repo_url"`
 	Username string `mapstructure:"username"`
 	Password string `mapstructure:"password"`
-	Token    string `mapstructure:"token"`    // 访问令牌，优先使用Token认证
+	Token    string `mapstructure:"token"` // 访问令牌，优先使用Token认证
 	Email    string `mapstructure:"email"`
 }
 
@@ -148,10 +148,10 @@ func LoadConfig(configPath string) error {
 
 	// 启用环境变量支持
 	viper.AutomaticEnv()
-	
+
 	// 设置环境变量前缀（可选）
 	// viper.SetEnvPrefix("APP")
-	
+
 	// 设置环境变量键名映射
 	setupEnvKeyMapping()
 
@@ -177,7 +177,7 @@ func setupEnvKeyMapping() {
 	viper.BindEnv("server.host", "SERVER_HOST")
 	viper.BindEnv("server.port", "APP_PORT")
 	viper.BindEnv("server.mode", "GIN_MODE")
-	
+
 	// 数据库配置
 	viper.BindEnv("database.host", "DB_HOST")
 	viper.BindEnv("database.port", "DB_PORT")
@@ -187,28 +187,28 @@ func setupEnvKeyMapping() {
 	viper.BindEnv("database.charset", "DB_CHARSET")
 	viper.BindEnv("database.parse_time", "DB_PARSE_TIME")
 	viper.BindEnv("database.loc", "DB_LOC")
-	
+
 	// Git配置 - Gitee
 	viper.BindEnv("git.gitee.repo_url", "GITEE_REPO_URL")
 	viper.BindEnv("git.gitee.username", "GITEE_USERNAME")
 	viper.BindEnv("git.gitee.password", "GITEE_PASSWORD")
 	viper.BindEnv("git.gitee.token", "GITEE_TOKEN")
 	viper.BindEnv("git.gitee.email", "GITEE_EMAIL")
-	
+
 	// Git配置 - GitHub
 	viper.BindEnv("git.github.repo_url", "GITHUB_REPO_URL")
 	viper.BindEnv("git.github.username", "GITHUB_USERNAME")
 	viper.BindEnv("git.github.token", "GITHUB_TOKEN")
-	
+
 	// Git本地路径
 	viper.BindEnv("git.local_repo_path", "GIT_LOCAL_REPO_PATH")
-	
+
 	// 阿里云配置
 	viper.BindEnv("aliyun.registry", "ALIYUN_REGISTRY")
 	viper.BindEnv("aliyun.namespace", "ALIYUN_NAMESPACE")
 	viper.BindEnv("aliyun.username", "ALIYUN_USERNAME")
 	viper.BindEnv("aliyun.password", "ALIYUN_PASSWORD")
-	
+
 	// 日志配置
 	viper.BindEnv("log.level", "LOG_LEVEL")
 	viper.BindEnv("log.file_path", "LOG_FILE_PATH")

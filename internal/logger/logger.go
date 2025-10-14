@@ -21,15 +21,16 @@
 // - MaxAge: 日志文件保留天数
 //
 // 使用方式：
-//   // 初始化日志系统
-//   if err := logger.InitLogger(); err != nil {
-//       log.Fatal(err)
-//   }
-//   defer logger.Sync()
 //
-//   // 获取日志实例
-//   log := logger.GetLogger()
-//   log.Info("应用启动", zap.String("version", "1.0.0"))
+//	// 初始化日志系统
+//	if err := logger.InitLogger(); err != nil {
+//	    log.Fatal(err)
+//	}
+//	defer logger.Sync()
+//
+//	// 获取日志实例
+//	log := logger.GetLogger()
+//	log.Info("应用启动", zap.String("version", "1.0.0"))
 //
 // Author: Docker Image Sync Platform Team
 // Version: 1.0.0
@@ -94,11 +95,11 @@ func InitLogger() error {
 	// 使用Lumberjack库实现日志文件的自动轮转和管理
 	// 轮转策略：基于文件大小、保留数量、保留时间的综合管理
 	lumberjackLogger := &lumberjack.Logger{
-		Filename:   config.AppConfig.Log.FilePath, // 日志文件路径
-		MaxSize:    config.AppConfig.Log.MaxSize,  // 单个文件最大大小（MB），超过后自动轮转
+		Filename:   config.AppConfig.Log.FilePath,   // 日志文件路径
+		MaxSize:    config.AppConfig.Log.MaxSize,    // 单个文件最大大小（MB），超过后自动轮转
 		MaxBackups: config.AppConfig.Log.MaxBackups, // 保留的历史文件数量，超过后删除最旧的
-		MaxAge:     config.AppConfig.Log.MaxAge,   // 文件保留天数，超过后自动删除
-		Compress:   true,                          // 启用压缩，节省磁盘空间
+		MaxAge:     config.AppConfig.Log.MaxAge,     // 文件保留天数，超过后自动删除
+		Compress:   true,                            // 启用压缩，节省磁盘空间
 	}
 
 	// ====================================================================
@@ -111,13 +112,13 @@ func InitLogger() error {
 	case "debug":
 		level = zapcore.DebugLevel // 调试级别：输出所有日志，包括详细的调试信息
 	case "info":
-		level = zapcore.InfoLevel  // 信息级别：输出一般信息、警告和错误
+		level = zapcore.InfoLevel // 信息级别：输出一般信息、警告和错误
 	case "warn":
-		level = zapcore.WarnLevel  // 警告级别：只输出警告和错误信息
+		level = zapcore.WarnLevel // 警告级别：只输出警告和错误信息
 	case "error":
 		level = zapcore.ErrorLevel // 错误级别：只输出错误信息
 	default:
-		level = zapcore.InfoLevel  // 默认级别：当配置无效时使用info级别
+		level = zapcore.InfoLevel // 默认级别：当配置无效时使用info级别
 	}
 
 	// ====================================================================
@@ -125,8 +126,8 @@ func InitLogger() error {
 	// ====================================================================
 	// 基于生产环境配置创建编码器，并自定义时间和级别的编码格式
 	encoderConfig := zap.NewProductionEncoderConfig()
-	encoderConfig.TimeKey = "timestamp"                    // 时间字段名称
-	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder  // 使用ISO8601时间格式（YYYY-MM-DDTHH:mm:ss.sssZ）
+	encoderConfig.TimeKey = "timestamp"                     // 时间字段名称
+	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder   // 使用ISO8601时间格式（YYYY-MM-DDTHH:mm:ss.sssZ）
 	encoderConfig.EncodeLevel = zapcore.CapitalLevelEncoder // 使用大写字母表示日志级别（INFO、ERROR等）
 
 	// ====================================================================
@@ -153,15 +154,15 @@ func InitLogger() error {
 	// 第六步：创建最终的Logger实例
 	// ====================================================================
 	// 基于配置好的核心创建Logger，并添加额外功能
-	Logger = zap.New(core, 
-		zap.AddCaller(),                        // 添加调用者信息（文件名、行号、函数名）
-		zap.AddStacktrace(zapcore.ErrorLevel),  // 在错误级别及以上添加堆栈跟踪
+	Logger = zap.New(core,
+		zap.AddCaller(),                       // 添加调用者信息（文件名、行号、函数名）
+		zap.AddStacktrace(zapcore.ErrorLevel), // 在错误级别及以上添加堆栈跟踪
 	)
 
 	// 记录日志系统初始化完成的信息，包含关键配置参数
 	Logger.Info("日志系统初始化完成",
-		zap.String("level", config.AppConfig.Log.Level),      // 当前日志级别
-		zap.String("file", config.AppConfig.Log.FilePath),    // 日志文件路径
+		zap.String("level", config.AppConfig.Log.Level),   // 当前日志级别
+		zap.String("file", config.AppConfig.Log.FilePath), // 日志文件路径
 	)
 
 	return nil
@@ -188,9 +189,10 @@ func InitLogger() error {
 //   - 建议在包级别获取一次，然后在包内复用
 //
 // 示例：
-//   log := logger.GetLogger()
-//   log.Info("用户登录", zap.String("username", "admin"), zap.String("ip", "192.168.1.1"))
-//   log.Error("数据库连接失败", zap.Error(err), zap.String("dsn", dsn))
+//
+//	log := logger.GetLogger()
+//	log.Info("用户登录", zap.String("username", "admin"), zap.String("ip", "192.168.1.1"))
+//	log.Error("数据库连接失败", zap.Error(err), zap.String("dsn", dsn))
 func GetLogger() *zap.Logger {
 	return Logger
 }
@@ -213,12 +215,13 @@ func GetLogger() *zap.Logger {
 //   - 如果Logger未初始化，函数会安全返回而不执行任何操作
 //
 // 示例：
-//   func main() {
-//       logger.InitLogger()
-//       defer logger.Sync() // 确保程序退出前同步日志
-//       
-//       // 应用逻辑...
-//   }
+//
+//	func main() {
+//	    logger.InitLogger()
+//	    defer logger.Sync() // 确保程序退出前同步日志
+//
+//	    // 应用逻辑...
+//	}
 func Sync() {
 	if Logger != nil {
 		Logger.Sync()

@@ -105,7 +105,7 @@ func (s *GitService) InitRepository() error {
 	// ====================================================================
 	// 目录准备和检查
 	// ====================================================================
-	
+
 	// 确保父目录存在，创建必要的目录结构
 	if err := os.MkdirAll(filepath.Dir(s.repoPath), 0755); err != nil {
 		return fmt.Errorf("创建目录失败: %w", err)
@@ -114,7 +114,7 @@ func (s *GitService) InitRepository() error {
 	// ====================================================================
 	// 检查现有仓库
 	// ====================================================================
-	
+
 	// 检查仓库是否已存在（通过.git目录判断）
 	if _, err := os.Stat(filepath.Join(s.repoPath, ".git")); err == nil {
 		// 仓库已存在，直接打开并使用
@@ -130,7 +130,7 @@ func (s *GitService) InitRepository() error {
 	// ====================================================================
 	// 克隆远程仓库
 	// ====================================================================
-	
+
 	// 开始克隆Gitee仓库
 	logger.Logger.Info("开始克隆Gitee仓库", zap.String("url", config.AppConfig.Git.Gitee.RepoURL))
 
@@ -140,7 +140,7 @@ func (s *GitService) InitRepository() error {
 	if err != nil {
 		return fmt.Errorf("解析Gitee仓库URL失败: %w", err)
 	}
-	
+
 	var authURL string
 	if config.AppConfig.Git.Gitee.Token != "" {
 		// 使用访问令牌认证 (推荐方式)
@@ -171,7 +171,7 @@ func (s *GitService) InitRepository() error {
 	// ====================================================================
 	// 打开克隆的仓库
 	// ====================================================================
-	
+
 	// 使用go-git库打开克隆的仓库以进行后续操作
 	repo, err := git.PlainOpen(s.repoPath)
 	if err != nil {
@@ -217,7 +217,7 @@ func (s *GitService) UpdateImagesFile(newImages []string) (string, error) {
 	// ====================================================================
 	// 仓库状态检查和初始化
 	// ====================================================================
-	
+
 	// 确保仓库已初始化
 	if s.repo == nil {
 		if err := s.InitRepository(); err != nil {
@@ -228,27 +228,27 @@ func (s *GitService) UpdateImagesFile(newImages []string) (string, error) {
 	// ====================================================================
 	// 同步远程代码
 	// ====================================================================
-	
+
 	// 拉取最新代码以避免冲突
 	if err := s.pullLatest(); err != nil {
 		logger.Logger.Error("拉取最新代码失败，尝试重新初始化仓库", zap.Error(err))
-		
+
 		// 如果拉取失败，可能是仓库状态异常，尝试重新初始化
 		if err := s.CleanRepository(); err != nil {
 			logger.Logger.Warn("清理仓库失败", zap.Error(err))
 		}
-		
+
 		if err := s.InitRepository(); err != nil {
 			return "", fmt.Errorf("重新初始化仓库失败: %w", err)
 		}
-		
+
 		logger.Logger.Info("仓库重新初始化成功")
 	}
 
 	// ====================================================================
 	// 文件内容处理
 	// ====================================================================
-	
+
 	imagesFilePath := filepath.Join(s.repoPath, "images.txt")
 
 	// 读取现有的images.txt文件
@@ -282,7 +282,7 @@ func (s *GitService) UpdateImagesFile(newImages []string) (string, error) {
 	// ====================================================================
 	// 文件写入和提交
 	// ====================================================================
-	
+
 	// 写入更新后的文件内容
 	if err := s.writeImagesFile(imagesFilePath, allImages); err != nil {
 		return "", fmt.Errorf("写入images.txt失败: %w", err)
@@ -419,7 +419,7 @@ func (s *GitService) pullLatest() error {
 	// ====================================================================
 	// 尝试正常拉取
 	// ====================================================================
-	
+
 	// 首先尝试正常拉取，使用配置的认证信息
 	var auth *http.BasicAuth
 	if config.AppConfig.Git.Gitee.Token != "" {
@@ -435,7 +435,7 @@ func (s *GitService) pullLatest() error {
 			Password: config.AppConfig.Git.Gitee.Password,
 		}
 	}
-	
+
 	err = worktree.Pull(&git.PullOptions{
 		Auth: auth,
 	})
@@ -448,7 +448,7 @@ func (s *GitService) pullLatest() error {
 	// ====================================================================
 	// 强制同步策略
 	// ====================================================================
-	
+
 	logger.Logger.Warn("正常拉取失败，尝试强制同步", zap.Error(err))
 
 	// 如果正常拉取失败，尝试强制同步
@@ -484,7 +484,7 @@ func (s *GitService) forcePullLatest() error {
 	// ====================================================================
 	// 获取远程引用
 	// ====================================================================
-	
+
 	// 获取远程仓库的引用
 	remote, err := s.repo.Remote("origin")
 	if err != nil {
@@ -505,7 +505,7 @@ func (s *GitService) forcePullLatest() error {
 	// ====================================================================
 	// 强制重置到远程状态
 	// ====================================================================
-	
+
 	// 获取远程main分支的最新提交
 	remoteRef, err := s.repo.Reference("refs/remotes/origin/main", true)
 	if err != nil {
@@ -570,7 +570,7 @@ func (s *GitService) commitAndPush(newImages []string) (string, error) {
 	// ====================================================================
 	// 添加文件到暂存区
 	// ====================================================================
-	
+
 	// 添加images.txt文件到Git暂存区
 	_, err = worktree.Add("images.txt")
 	if err != nil {
@@ -580,7 +580,7 @@ func (s *GitService) commitAndPush(newImages []string) (string, error) {
 	// ====================================================================
 	// 检查文件更改状态
 	// ====================================================================
-	
+
 	// 检查是否有实际的文件更改
 	status, err := worktree.Status()
 	if err != nil {
@@ -601,7 +601,7 @@ func (s *GitService) commitAndPush(newImages []string) (string, error) {
 	// ====================================================================
 	// 创建提交信息
 	// ====================================================================
-	
+
 	// 创建详细的提交信息，包含镜像列表和时间戳
 	commitMsg := fmt.Sprintf("Add %d new images for sync\n\nImages:\n", len(newImages))
 	for _, image := range newImages {
@@ -612,7 +612,7 @@ func (s *GitService) commitAndPush(newImages []string) (string, error) {
 	// ====================================================================
 	// 执行提交操作
 	// ====================================================================
-	
+
 	// 提交更改，使用配置的用户信息
 	commit, err := worktree.Commit(commitMsg, &git.CommitOptions{
 		Author: &object.Signature{
@@ -629,7 +629,7 @@ func (s *GitService) commitAndPush(newImages []string) (string, error) {
 	// ====================================================================
 	// 推送到远程仓库
 	// ====================================================================
-	
+
 	// 推送到Gitee，如果失败则重试
 	err = s.pushWithRetry(commit.String())
 	if err != nil {
@@ -672,12 +672,12 @@ func (s *GitService) commitAndPush(newImages []string) (string, error) {
 //   - 自动化流程中的错误恢复
 func (s *GitService) pushWithRetry(commitSHA string) error {
 	maxRetries := 3
-	
+
 	for i := 0; i < maxRetries; i++ {
 		// ================================================================
 		// 尝试推送
 		// ================================================================
-		
+
 		// 尝试推送到远程仓库
 		var auth *http.BasicAuth
 		if config.AppConfig.Git.Gitee.Token != "" {
@@ -693,56 +693,56 @@ func (s *GitService) pushWithRetry(commitSHA string) error {
 				Password: config.AppConfig.Git.Gitee.Password,
 			}
 		}
-		
+
 		err := s.repo.Push(&git.PushOptions{
 			Auth: auth,
 		})
-		
+
 		// 推送成功，直接返回
 		if err == nil {
 			return nil
 		}
-		
+
 		// ================================================================
 		// 推送失败处理
 		// ================================================================
-		
-		logger.Logger.Warn("推送失败，尝试重新同步", 
-			zap.Int("retry", i+1), 
+
+		logger.Logger.Warn("推送失败，尝试重新同步",
+			zap.Int("retry", i+1),
 			zap.Int("max_retries", maxRetries),
 			zap.Error(err))
-		
+
 		// 如果推送失败，可能是因为远程仓库有新的提交
 		// 尝试重新拉取并合并
 		if err := s.pullLatest(); err != nil {
 			logger.Logger.Error("重新拉取失败", zap.Error(err))
 			continue
 		}
-		
+
 		// ================================================================
 		// 重新准备提交
 		// ================================================================
-		
+
 		// 重新添加文件到暂存区
 		worktree, err := s.repo.Worktree()
 		if err != nil {
 			logger.Logger.Error("获取工作树失败", zap.Error(err))
 			continue
 		}
-		
+
 		_, err = worktree.Add("images.txt")
 		if err != nil {
 			logger.Logger.Error("添加文件到暂存区失败", zap.Error(err))
 			continue
 		}
-		
+
 		// 检查是否还有更改需要提交
 		status, err := worktree.Status()
 		if err != nil {
 			logger.Logger.Error("检查状态失败", zap.Error(err))
 			continue
 		}
-		
+
 		// 如果有更改，重新提交
 		if !status.IsClean() {
 			// 重新提交
@@ -759,15 +759,15 @@ func (s *GitService) pushWithRetry(commitSHA string) error {
 				continue
 			}
 		}
-		
+
 		// ================================================================
 		// 重试间隔
 		// ================================================================
-		
+
 		// 等待一段时间再重试，递增的等待时间
 		time.Sleep(time.Duration(i+1) * time.Second)
 	}
-	
+
 	return fmt.Errorf("推送到Gitee失败，已重试%d次", maxRetries)
 }
 
@@ -805,7 +805,7 @@ func (s *GitService) GetRepoStatus() (map[string]interface{}, error) {
 	// ====================================================================
 	// 仓库状态检查
 	// ====================================================================
-	
+
 	if s.repo == nil {
 		return nil, fmt.Errorf("仓库未初始化")
 	}
@@ -813,7 +813,7 @@ func (s *GitService) GetRepoStatus() (map[string]interface{}, error) {
 	// ====================================================================
 	// 获取工作区状态
 	// ====================================================================
-	
+
 	worktree, err := s.repo.Worktree()
 	if err != nil {
 		return nil, err
@@ -827,7 +827,7 @@ func (s *GitService) GetRepoStatus() (map[string]interface{}, error) {
 	// ====================================================================
 	// 获取最新提交信息
 	// ====================================================================
-	
+
 	// 获取HEAD引用（当前分支的最新提交）
 	ref, err := s.repo.Head()
 	if err != nil {
@@ -843,14 +843,14 @@ func (s *GitService) GetRepoStatus() (map[string]interface{}, error) {
 	// ====================================================================
 	// 构建状态信息
 	// ====================================================================
-	
+
 	return map[string]interface{}{
-		"is_clean":     status.IsClean(),        // 工作区是否干净
-		"last_commit":  commit.Hash.String(),    // 最新提交SHA
-		"last_message": commit.Message,          // 最新提交消息
-		"last_author":  commit.Author.Name,      // 最新提交作者
-		"last_time":    commit.Author.When,      // 最新提交时间
-		"repo_path":    s.repoPath,              // 仓库路径
+		"is_clean":     status.IsClean(),     // 工作区是否干净
+		"last_commit":  commit.Hash.String(), // 最新提交SHA
+		"last_message": commit.Message,       // 最新提交消息
+		"last_author":  commit.Author.Name,   // 最新提交作者
+		"last_time":    commit.Author.When,   // 最新提交时间
+		"repo_path":    s.repoPath,           // 仓库路径
 	}, nil
 }
 

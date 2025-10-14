@@ -1,5 +1,5 @@
 // Package handlers 提供HTTP请求处理器实现
-// 
+//
 // 本包实现了Docker镜像同步平台的核心HTTP处理器，包括：
 // - 镜像同步任务的提交和管理
 // - 批量同步任务的处理和监控
@@ -17,28 +17,28 @@
 package handlers
 
 import (
-	"context"                                                    // 上下文管理
-	"fmt"                                                        // 格式化输出
-	"net/http"                                                   // HTTP状态码和处理
-	"strconv"                                                    // 字符串转换
-	"strings"                                                    // 字符串操作
-	"sync"                                                       // 并发同步原语
-	"time"                                                       // 时间处理
+	"context"  // 上下文管理
+	"fmt"      // 格式化输出
+	"net/http" // HTTP状态码和处理
+	"strconv"  // 字符串转换
+	"strings"  // 字符串操作
+	"sync"     // 并发同步原语
+	"time"     // 时间处理
 
-	"docker-image-sync-platform/internal/database"              // 数据库操作
-	"docker-image-sync-platform/internal/logger"                // 日志记录
-	"docker-image-sync-platform/internal/models"                // 数据模型
-	"docker-image-sync-platform/internal/services"              // 业务服务
+	"docker-image-sync-platform/internal/database" // 数据库操作
+	"docker-image-sync-platform/internal/logger"   // 日志记录
+	"docker-image-sync-platform/internal/models"   // 数据模型
+	"docker-image-sync-platform/internal/services" // 业务服务
 
-	"github.com/gin-gonic/gin"                                   // Web框架
-	"github.com/google/go-containerregistry/pkg/name"           // 容器镜像名称解析
-	"github.com/google/go-containerregistry/pkg/v1/remote"      // 远程镜像操作
-	"github.com/google/uuid"                                    // UUID生成
-	"go.uber.org/zap"                                           // 结构化日志
+	"github.com/gin-gonic/gin"                             // Web框架
+	"github.com/google/go-containerregistry/pkg/name"      // 容器镜像名称解析
+	"github.com/google/go-containerregistry/pkg/v1/remote" // 远程镜像操作
+	"github.com/google/uuid"                               // UUID生成
+	"go.uber.org/zap"                                      // 结构化日志
 )
 
 // SyncHandler 镜像同步处理器
-// 
+//
 // 负责处理所有与Docker镜像同步相关的HTTP请求，包括：
 // - 单个镜像同步任务的提交和管理
 // - 批量镜像同步任务的处理和监控
@@ -65,9 +65,10 @@ type SyncHandler struct {
 //   - *SyncHandler: 初始化完成的同步处理器实例
 //
 // 使用示例:
-//   gitSvc := services.NewGitService(config)
-//   githubSvc := services.NewGitHubService(config)
-//   syncHandler := NewSyncHandler(gitSvc, githubSvc)
+//
+//	gitSvc := services.NewGitService(config)
+//	githubSvc := services.NewGitHubService(config)
+//	syncHandler := NewSyncHandler(gitSvc, githubSvc)
 func NewSyncHandler(gitService *services.GitService, githubService *services.GitHubService) *SyncHandler {
 	return &SyncHandler{
 		gitService:    gitService,
@@ -83,7 +84,7 @@ func NewSyncHandler(gitService *services.GitService, githubService *services.Git
 //
 // HTTP方法: POST
 // 路径: /api/v1/sync/batch
-// 
+//
 // 请求体: models.BatchSyncRequest
 //   - Images: 要同步的镜像列表
 //   - MaxConcurrent: 最大并发数 (1-10，默认3)
@@ -105,7 +106,7 @@ func (h *SyncHandler) SubmitBatchSync(c *gin.Context) {
 	// ====================================================================
 	// 请求参数解析和验证
 	// ====================================================================
-	
+
 	var req models.BatchSyncRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Logger.Error("解析批量同步请求参数失败", zap.Error(err))
@@ -128,19 +129,19 @@ func (h *SyncHandler) SubmitBatchSync(c *gin.Context) {
 	// ====================================================================
 	// 任务创建和初始化
 	// ====================================================================
-	
+
 	// 生成全局唯一的任务ID，用于跟踪和查询任务状态
 	taskID := uuid.New().String()
 
 	// 创建批量同步任务主记录
 	// 包含任务的基本信息和配置参数
 	task := &models.SyncTask{
-		TaskID:        taskID,                    // 唯一任务标识
-		Status:        models.TaskStatusPending,  // 初始状态：等待处理
-		MaxConcurrent: req.MaxConcurrent,         // 最大并发数
-		TotalImages:   len(req.Images),           // 镜像总数
-		AutoRetry:     req.AutoRetry,             // 自动重试开关
-		RetryCount:    req.RetryCount,            // 重试次数限制
+		TaskID:        taskID,                   // 唯一任务标识
+		Status:        models.TaskStatusPending, // 初始状态：等待处理
+		MaxConcurrent: req.MaxConcurrent,        // 最大并发数
+		TotalImages:   len(req.Images),          // 镜像总数
+		AutoRetry:     req.AutoRetry,            // 自动重试开关
+		RetryCount:    req.RetryCount,           // 重试次数限制
 	}
 
 	// 构建镜像信息的JSON字符串，用于任务记录
@@ -166,13 +167,13 @@ func (h *SyncHandler) SubmitBatchSync(c *gin.Context) {
 	// ====================================================================
 	// 创建镜像同步记录
 	// ====================================================================
-	
+
 	// 为批量任务中的每个镜像创建独立的同步记录
 	// 每个记录包含镜像的详细信息和同步配置
 	for i, img := range req.Images {
 		// 解析镜像信息：镜像名、标签、架构
 		originalImage, tag, architecture := parseImageInfo(img.SourceImage)
-		
+
 		// 使用请求中指定的标签和架构，覆盖解析的默认值
 		if img.TargetTag != "" {
 			tag = img.TargetTag // 使用自定义目标标签
@@ -184,31 +185,31 @@ func (h *SyncHandler) SubmitBatchSync(c *gin.Context) {
 		if architecture == "" {
 			architecture = "amd64"
 		}
-		
+
 		// 构建原始输入格式
 		var originalInput string
 		imageWithTag := originalImage
 		if tag != "" {
 			imageWithTag = originalImage + ":" + tag
 		}
-		
+
 		if architecture == "arm64" {
 			originalInput = "--platform=linux/arm64 " + imageWithTag
 		} else {
 			originalInput = imageWithTag
 		}
-		
+
 		// 创建镜像同步记录
 		record := &models.ImageSyncRecord{
-			TaskID:        taskID,                      // 关联的批量任务ID
-			OriginalImage: originalImage,               // 源镜像名称
-			Tag:           tag,                         // 镜像标签
-			Architecture:  architecture,                // 目标架构
-			SyncStatus:    models.SyncStatusPending,    // 初始状态：等待同步
-			InputOrder:    i + 1,                       // 在批量任务中的顺序
-			Priority:      img.Priority,                // 同步优先级
-			MaxRetries:    req.RetryCount,              // 最大重试次数
-			OriginalInput: originalInput,               // 保存用户原始输入（根据架构格式化）
+			TaskID:        taskID,                   // 关联的批量任务ID
+			OriginalImage: originalImage,            // 源镜像名称
+			Tag:           tag,                      // 镜像标签
+			Architecture:  architecture,             // 目标架构
+			SyncStatus:    models.SyncStatusPending, // 初始状态：等待同步
+			InputOrder:    i + 1,                    // 在批量任务中的顺序
+			Priority:      img.Priority,             // 同步优先级
+			MaxRetries:    req.RetryCount,           // 最大重试次数
+			OriginalInput: originalInput,            // 保存用户原始输入（根据架构格式化）
 		}
 
 		// 保存镜像同步记录到数据库
@@ -222,7 +223,7 @@ func (h *SyncHandler) SubmitBatchSync(c *gin.Context) {
 	// ====================================================================
 	// 异步任务处理和响应
 	// ====================================================================
-	
+
 	// 启动异步goroutine处理批量同步任务
 	// 避免阻塞HTTP请求，提供更好的用户体验
 	go h.processSyncTask(taskID)
@@ -235,12 +236,12 @@ func (h *SyncHandler) SubmitBatchSync(c *gin.Context) {
 	// 返回任务提交成功的响应
 	// 包含任务ID、状态信息和预计完成时间
 	c.JSON(http.StatusOK, gin.H{
-		"task_id":              taskID,                                           // 任务唯一标识
-		"status":               models.TaskStatusPending,                         // 当前任务状态
-		"total_images":         len(req.Images),                                  // 镜像总数
-		"max_concurrent":       req.MaxConcurrent,                                // 最大并发数
+		"task_id":              taskID,                                            // 任务唯一标识
+		"status":               models.TaskStatusPending,                          // 当前任务状态
+		"total_images":         len(req.Images),                                   // 镜像总数
+		"max_concurrent":       req.MaxConcurrent,                                 // 最大并发数
 		"estimated_completion": estimatedCompletion.Format("2006-01-02 15:04:05"), // 预计完成时间
-		"message":              "批量同步任务已提交，正在处理中",                      // 提示信息
+		"message":              "批量同步任务已提交，正在处理中",                                 // 提示信息
 	})
 }
 
@@ -271,7 +272,7 @@ func (h *SyncHandler) SubmitSync(c *gin.Context) {
 	// ====================================================================
 	// 请求参数解析和验证
 	// ====================================================================
-	
+
 	var req models.SyncRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Logger.Error("解析同步请求参数失败", zap.Error(err))
@@ -288,18 +289,18 @@ func (h *SyncHandler) SubmitSync(c *gin.Context) {
 	// ====================================================================
 	// 任务创建和初始化
 	// ====================================================================
-	
+
 	// 生成全局唯一的任务ID
 	taskID := uuid.New().String()
 
 	// 创建单个同步任务记录
 	// 与批量同步不同，这里MaxConcurrent固定为1，按顺序处理
 	task := &models.SyncTask{
-		TaskID:        taskID,                    // 唯一任务标识
-		Status:        models.TaskStatusPending,  // 初始状态：等待处理
-		MaxConcurrent: 1,                         // 单个同步，顺序处理
-		TotalImages:   len(req.Images),           // 镜像总数
-		Description:   req.Description,           // 任务描述
+		TaskID:        taskID,                   // 唯一任务标识
+		Status:        models.TaskStatusPending, // 初始状态：等待处理
+		MaxConcurrent: 1,                        // 单个同步，顺序处理
+		TotalImages:   len(req.Images),          // 镜像总数
+		Description:   req.Description,          // 任务描述
 	}
 
 	// 构建镜像信息的JSON字符串
@@ -320,13 +321,13 @@ func (h *SyncHandler) SubmitSync(c *gin.Context) {
 	// ====================================================================
 	// 创建镜像同步记录
 	// ====================================================================
-	
+
 	// 为任务中的每个镜像创建独立的同步记录
 	for i, imageStr := range req.Images {
 		// 解析镜像名称和标签
 		// 支持格式：image:tag 或 image（默认latest）
 		originalImage, tag := h.parseImageNameAndTag(imageStr)
-		
+
 		// 构建原始输入格式
 		var originalInput string
 		if req.Architecture == "arm64" {
@@ -334,16 +335,16 @@ func (h *SyncHandler) SubmitSync(c *gin.Context) {
 		} else {
 			originalInput = imageStr
 		}
-		
+
 		// 创建镜像同步记录
 		record := &models.ImageSyncRecord{
-			TaskID:        taskID,                      // 关联的任务ID
-			OriginalImage: originalImage,               // 源镜像名称
-			Tag:           tag,                         // 镜像标签
-			Architecture:  req.Architecture,            // 目标架构
-			SyncStatus:    models.SyncStatusPending,    // 初始状态：等待同步
-			InputOrder:    i + 1,                       // 在任务中的顺序
-			OriginalInput: originalInput,               // 保存用户原始输入（根据架构格式化）
+			TaskID:        taskID,                   // 关联的任务ID
+			OriginalImage: originalImage,            // 源镜像名称
+			Tag:           tag,                      // 镜像标签
+			Architecture:  req.Architecture,         // 目标架构
+			SyncStatus:    models.SyncStatusPending, // 初始状态：等待同步
+			InputOrder:    i + 1,                    // 在任务中的顺序
+			OriginalInput: originalInput,            // 保存用户原始输入（根据架构格式化）
 		}
 
 		// 保存镜像同步记录到数据库
@@ -357,7 +358,7 @@ func (h *SyncHandler) SubmitSync(c *gin.Context) {
 	// ====================================================================
 	// 异步任务处理和响应
 	// ====================================================================
-	
+
 	// 启动异步goroutine处理同步任务
 	// 避免阻塞HTTP请求，提供更好的用户体验
 	go h.processSyncTask(taskID)
@@ -402,7 +403,7 @@ func (h *SyncHandler) GetSyncStatus(c *gin.Context) {
 	// ====================================================================
 	// 参数验证
 	// ====================================================================
-	
+
 	// 从URL路径中获取任务ID
 	taskID := c.Param("taskId")
 	if taskID == "" {
@@ -413,7 +414,7 @@ func (h *SyncHandler) GetSyncStatus(c *gin.Context) {
 	// ====================================================================
 	// 查询任务基本信息
 	// ====================================================================
-	
+
 	// 查询同步任务的基本信息
 	// 包含任务状态、进度、GitHub Actions信息等
 	var task models.SyncTask
@@ -426,7 +427,7 @@ func (h *SyncHandler) GetSyncStatus(c *gin.Context) {
 	// ====================================================================
 	// 查询镜像同步记录
 	// ====================================================================
-	
+
 	// 查询任务下所有镜像的同步记录
 	// 按输入顺序排序，保持与提交时的顺序一致
 	var records []models.ImageSyncRecord
@@ -441,59 +442,59 @@ func (h *SyncHandler) GetSyncStatus(c *gin.Context) {
 	// ====================================================================
 	// 统计各状态的镜像数量
 	// ====================================================================
-	
+
 	// 统计不同状态的镜像数量，用于前端展示进度
 	var pendingCount, syncingCount, successCount, failedCount int
 	for _, record := range records {
 		switch record.SyncStatus {
 		case models.SyncStatusPending:
-			pendingCount++    // 等待同步
+			pendingCount++ // 等待同步
 		case models.SyncStatusSyncing:
-			syncingCount++    // 正在同步
+			syncingCount++ // 正在同步
 		case models.SyncStatusSuccess:
-			successCount++    // 同步成功
+			successCount++ // 同步成功
 		case models.SyncStatusFailed:
-			failedCount++     // 同步失败
+			failedCount++ // 同步失败
 		}
 	}
 
 	// ====================================================================
 	// 构建响应数据
 	// ====================================================================
-	
+
 	// 构建完整的任务状态响应
 	// 包含任务信息、统计数据和详细记录
 	response := gin.H{
 		// 任务基本信息
-		"task_id":           task.TaskID,          // 任务唯一标识
-		"status":            task.Status,          // 任务状态（pending/running/completed/failed）
-		"total_images":      task.TotalImages,     // 总镜像数量
-		"completed_images":  task.CompletedImages, // 已完成镜像数量
-		"failed_images":     task.FailedImages,    // 失败镜像数量
-		"progress":          task.Progress,        // 进度百分比
-		
+		"task_id":          task.TaskID,          // 任务唯一标识
+		"status":           task.Status,          // 任务状态（pending/running/completed/failed）
+		"total_images":     task.TotalImages,     // 总镜像数量
+		"completed_images": task.CompletedImages, // 已完成镜像数量
+		"failed_images":    task.FailedImages,    // 失败镜像数量
+		"progress":         task.Progress,        // 进度百分比
+
 		// GitHub Actions集成信息
 		"github_action_url": task.GitHubActionURL, // GitHub Actions工作流URL
 		"github_run_id":     task.GitHubRunID,     // GitHub Actions运行ID
 		"commit_sha":        task.CommitSHA,       // 提交SHA值
-		
+
 		// 时间信息
-		"started_at":        task.StartedAt,       // 任务开始时间
-		"completed_at":      task.CompletedAt,     // 任务完成时间
-		"created_at":        task.CreatedAt,       // 任务创建时间
-		"updated_at":        task.UpdatedAt,       // 任务更新时间
-		
+		"started_at":   task.StartedAt,   // 任务开始时间
+		"completed_at": task.CompletedAt, // 任务完成时间
+		"created_at":   task.CreatedAt,   // 任务创建时间
+		"updated_at":   task.UpdatedAt,   // 任务更新时间
+
 		// 错误和描述信息
-		"error_message":     task.ErrorMessage,    // 错误信息（如果有）
-		"description":       task.Description,     // 任务描述
-		
+		"error_message": task.ErrorMessage, // 错误信息（如果有）
+		"description":   task.Description,  // 任务描述
+
 		// 镜像详细信息
 		"images": gin.H{
-			"pending": pendingCount,  // 等待同步的镜像数量
-			"syncing": syncingCount,  // 正在同步的镜像数量
-			"success": successCount,  // 同步成功的镜像数量
-			"failed":  failedCount,   // 同步失败的镜像数量
-			"records": records,       // 所有镜像的详细记录
+			"pending": pendingCount, // 等待同步的镜像数量
+			"syncing": syncingCount, // 正在同步的镜像数量
+			"success": successCount, // 同步成功的镜像数量
+			"failed":  failedCount,  // 同步失败的镜像数量
+			"records": records,      // 所有镜像的详细记录
 		},
 	}
 
@@ -519,7 +520,7 @@ func (h *SyncHandler) GetSyncStatus(c *gin.Context) {
 func (h *SyncHandler) GetBatchSyncStatus(c *gin.Context) {
 	// 记录废弃API的调用日志
 	logger.Logger.Warn("尝试调用已废弃的批量同步状态查询API")
-	
+
 	// 返回410 Gone状态码，表示资源已永久移除
 	c.JSON(http.StatusGone, gin.H{
 		"error": "批量同步功能已废弃，请使用模拟同步功能进行测试",
@@ -553,18 +554,18 @@ func (h *SyncHandler) GetSyncHistory(c *gin.Context) {
 	// ====================================================================
 	// 解析分页参数
 	// ====================================================================
-	
+
 	// 默认分页参数
 	page := 1
 	pageSize := 20
-	
+
 	// 解析页码参数
 	if p := c.Query("page"); p != "" {
 		if parsed, err := strconv.Atoi(p); err == nil && parsed > 0 {
 			page = parsed
 		}
 	}
-	
+
 	// 解析每页大小参数，限制最大值为100
 	if ps := c.Query("page_size"); ps != "" {
 		if parsed, err := strconv.Atoi(ps); err == nil && parsed > 0 && parsed <= 100 {
@@ -575,17 +576,17 @@ func (h *SyncHandler) GetSyncHistory(c *gin.Context) {
 	// ====================================================================
 	// 解析过滤参数
 	// ====================================================================
-	
+
 	// 状态过滤参数（可选）
 	status := c.Query("status")
-	
+
 	// ====================================================================
 	// 构建数据库查询
 	// ====================================================================
-	
+
 	// 构建基础查询，指定SyncTask模型
 	query := database.DB.Model(&models.SyncTask{})
-	
+
 	// 如果指定了状态过滤，添加WHERE条件
 	if status != "" {
 		query = query.Where("status = ?", status)
@@ -594,7 +595,7 @@ func (h *SyncHandler) GetSyncHistory(c *gin.Context) {
 	// ====================================================================
 	// 查询总记录数
 	// ====================================================================
-	
+
 	// 获取符合条件的总记录数，用于分页计算
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -606,15 +607,15 @@ func (h *SyncHandler) GetSyncHistory(c *gin.Context) {
 	// ====================================================================
 	// 查询分页数据
 	// ====================================================================
-	
+
 	// 查询指定页的任务数据
 	var tasks []models.SyncTask
-	offset := (page - 1) * pageSize  // 计算偏移量
-	
-	if err := query.Order("created_at DESC").  // 按创建时间倒序排列
-		Limit(pageSize).                       // 限制返回数量
-		Offset(offset).                        // 设置偏移量
-		Find(&tasks).Error; err != nil {
+	offset := (page - 1) * pageSize // 计算偏移量
+
+	if err := query.Order("created_at DESC"). // 按创建时间倒序排列
+							Limit(pageSize). // 限制返回数量
+							Offset(offset).  // 设置偏移量
+							Find(&tasks).Error; err != nil {
 		logger.Logger.Error("查询同步历史失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
 		return
@@ -623,7 +624,7 @@ func (h *SyncHandler) GetSyncHistory(c *gin.Context) {
 	// ====================================================================
 	// 构建响应数据
 	// ====================================================================
-	
+
 	// 返回分页结果，包含总数、分页信息和数据列表
 	c.JSON(http.StatusOK, gin.H{
 		"total":     total,    // 总记录数
@@ -645,11 +646,11 @@ func (h *SyncHandler) GetSyncHistory(c *gin.Context) {
 //   - taskID: 要处理的任务ID
 //
 // 处理流程:
-//   1. 将任务状态更新为"运行中"
-//   2. 查询任务和镜像记录信息
-//   3. 更新所有镜像状态为"同步中"
-//   4. 生成并提交images.txt文件
-//   5. 启动GitHub Actions监控
+//  1. 将任务状态更新为"运行中"
+//  2. 查询任务和镜像记录信息
+//  3. 更新所有镜像状态为"同步中"
+//  4. 生成并提交images.txt文件
+//  5. 启动GitHub Actions监控
 //
 // 注意: 该方法通过goroutine异步调用，不返回错误给调用方
 func (h *SyncHandler) processSyncTask(taskID string) {
@@ -659,10 +660,10 @@ func (h *SyncHandler) processSyncTask(taskID string) {
 	// ====================================================================
 	// 更新任务状态为运行中
 	// ====================================================================
-	
+
 	// 记录任务开始时间
 	now := time.Now()
-	
+
 	// 更新数据库中的任务状态和开始时间
 	if err := database.DB.Model(&models.SyncTask{}).
 		Where("task_id = ?", taskID).
@@ -677,7 +678,7 @@ func (h *SyncHandler) processSyncTask(taskID string) {
 	// ====================================================================
 	// 查询任务基本信息
 	// ====================================================================
-	
+
 	// 获取任务的详细信息，用于后续处理
 	var task models.SyncTask
 	if err := database.DB.Where("task_id = ?", taskID).First(&task).Error; err != nil {
@@ -689,7 +690,7 @@ func (h *SyncHandler) processSyncTask(taskID string) {
 	// ====================================================================
 	// 查询待同步的镜像记录
 	// ====================================================================
-	
+
 	// 获取所有状态为"待同步"的镜像记录
 	// 按输入顺序排序，确保处理顺序与提交顺序一致
 	var records []models.ImageSyncRecord
@@ -703,7 +704,7 @@ func (h *SyncHandler) processSyncTask(taskID string) {
 	// ====================================================================
 	// 更新镜像状态为同步中
 	// ====================================================================
-	
+
 	// 批量更新所有镜像记录的状态为"同步中"
 	// 并记录开始同步的时间
 	for _, record := range records {
@@ -720,7 +721,7 @@ func (h *SyncHandler) processSyncTask(taskID string) {
 	// ====================================================================
 	// 生成并提交images.txt文件
 	// ====================================================================
-	
+
 	// 根据镜像记录生成images.txt文件内容并提交到Git仓库
 	// 这将触发GitHub Actions工作流开始执行镜像同步
 	commitSHA, err := h.updateImagesFile(records)
@@ -732,7 +733,7 @@ func (h *SyncHandler) processSyncTask(taskID string) {
 	// ====================================================================
 	// 更新任务的Git提交信息
 	// ====================================================================
-	
+
 	// 将Git提交的SHA值保存到任务记录中
 	// 用于后续的GitHub Actions监控和状态追踪
 	if err := database.DB.Model(&models.SyncTask{}).
@@ -744,7 +745,7 @@ func (h *SyncHandler) processSyncTask(taskID string) {
 	// ====================================================================
 	// 启动GitHub Actions监控
 	// ====================================================================
-	
+
 	// 异步启动GitHub Actions工作流监控
 	// 监控同步进度并更新数据库中的状态信息
 	go h.monitorGitHubActions(taskID, commitSHA)
@@ -774,13 +775,13 @@ func (h *SyncHandler) updateImagesFile(records []models.ImageSyncRecord) (string
 	// ====================================================================
 	// 初始化镜像列表
 	// ====================================================================
-	
+
 	var imageLines []string
-	
+
 	// ====================================================================
 	// 查询任务信息（用于扩展功能）
 	// ====================================================================
-	
+
 	// 获取任务基本信息，为后续功能扩展预留
 	var task models.SyncTask
 	if len(records) > 0 {
@@ -789,27 +790,27 @@ func (h *SyncHandler) updateImagesFile(records []models.ImageSyncRecord) (string
 			return "", err
 		}
 	}
-	
+
 	// ====================================================================
 	// 格式化镜像信息
 	// ====================================================================
-	
+
 	// 遍历所有镜像记录，生成符合GitHub Actions要求的格式
 	for _, record := range records {
 		// 构建基础镜像名称
 		imageLine := record.OriginalImage
-		
+
 		// 添加标签（如果指定）
 		if record.Tag != "" {
 			imageLine = imageLine + ":" + record.Tag
 		}
-		
+
 		// 添加平台架构前缀（非AMD64架构）
 		// AMD64是默认架构，不需要显式指定platform参数
 		if record.Architecture != "" && record.Architecture != "amd64" {
 			imageLine = "--platform=linux/" + record.Architecture + " " + imageLine
 		}
-		
+
 		// 添加到镜像列表
 		imageLines = append(imageLines, imageLine)
 	}
@@ -817,7 +818,7 @@ func (h *SyncHandler) updateImagesFile(records []models.ImageSyncRecord) (string
 	// ====================================================================
 	// 提交到Git仓库
 	// ====================================================================
-	
+
 	// 调用Git服务更新images.txt文件并推送到远程仓库
 	// 这将触发GitHub Actions工作流开始执行
 	return h.gitService.UpdateImagesFile(imageLines)
@@ -833,11 +834,11 @@ func (h *SyncHandler) updateImagesFile(records []models.ImageSyncRecord) (string
 //   - commitSHA: Git提交的SHA值，用于查找对应的工作流运行
 //
 // 监控流程:
-//   1. 等待GitHub Actions工作流启动
-//   2. 获取工作流运行ID和URL
-//   3. 定期检查工作流执行状态
-//   4. 根据执行结果更新任务状态
-//   5. 处理超时情况
+//  1. 等待GitHub Actions工作流启动
+//  2. 获取工作流运行ID和URL
+//  3. 定期检查工作流执行状态
+//  4. 根据执行结果更新任务状态
+//  5. 处理超时情况
 //
 // 监控配置:
 //   - 最大等待时间: 30分钟
@@ -850,7 +851,7 @@ func (h *SyncHandler) monitorGitHubActions(taskID, commitSHA string) {
 	// ====================================================================
 	// 等待GitHub Actions工作流启动
 	// ====================================================================
-	
+
 	// GitHub Actions需要一定时间来检测提交并启动工作流
 	// 等待30秒确保工作流已经开始执行
 	time.Sleep(30 * time.Second)
@@ -858,7 +859,7 @@ func (h *SyncHandler) monitorGitHubActions(taskID, commitSHA string) {
 	// ====================================================================
 	// 获取GitHub Actions运行信息
 	// ====================================================================
-	
+
 	// 根据提交SHA查找对应的工作流运行
 	runID, runURL, err := h.githubService.GetWorkflowRun(commitSHA)
 	if err != nil {
@@ -870,7 +871,7 @@ func (h *SyncHandler) monitorGitHubActions(taskID, commitSHA string) {
 	// ====================================================================
 	// 更新任务的GitHub集成信息
 	// ====================================================================
-	
+
 	// 将GitHub Actions的运行ID和URL保存到数据库
 	// 用于前端展示和后续状态追踪
 	if err := database.DB.Model(&models.SyncTask{}).
@@ -885,16 +886,16 @@ func (h *SyncHandler) monitorGitHubActions(taskID, commitSHA string) {
 	// ====================================================================
 	// 配置监控参数
 	// ====================================================================
-	
+
 	// 设置监控的时间限制和检查间隔
-	maxWaitTime := 30 * time.Minute  // 最大等待时间：30分钟
+	maxWaitTime := 30 * time.Minute   // 最大等待时间：30分钟
 	checkInterval := 30 * time.Second // 检查间隔：30秒
 	startTime := time.Now()           // 记录开始时间
 
 	// ====================================================================
 	// 循环监控工作流执行状态
 	// ====================================================================
-	
+
 	// 在最大等待时间内持续检查工作流状态
 	for time.Since(startTime) < maxWaitTime {
 		// 获取当前工作流运行状态
@@ -906,7 +907,7 @@ func (h *SyncHandler) monitorGitHubActions(taskID, commitSHA string) {
 		}
 
 		// 记录当前状态到日志
-		logger.Logger.Info("GitHub Actions状态", 
+		logger.Logger.Info("GitHub Actions状态",
 			zap.String("task_id", taskID),
 			zap.String("run_id", runID),
 			zap.String("status", status))
@@ -914,7 +915,7 @@ func (h *SyncHandler) monitorGitHubActions(taskID, commitSHA string) {
 		// ================================================================
 		// 处理工作流完成状态
 		// ================================================================
-		
+
 		if status == "completed" {
 			// 获取工作流执行结论（成功/失败）
 			conclusion, err := h.githubService.GetWorkflowRunConclusion(runID)
@@ -936,7 +937,7 @@ func (h *SyncHandler) monitorGitHubActions(taskID, commitSHA string) {
 		// ================================================================
 		// 处理工作流失败或取消状态
 		// ================================================================
-		
+
 		if status == "cancelled" || status == "failure" {
 			h.handleSyncError(taskID, fmt.Sprintf("GitHub Actions执行失败，状态: %s", status))
 			return
@@ -949,7 +950,7 @@ func (h *SyncHandler) monitorGitHubActions(taskID, commitSHA string) {
 	// ====================================================================
 	// 处理监控超时
 	// ====================================================================
-	
+
 	// 如果在最大等待时间内工作流仍未完成，标记为超时错误
 	h.handleSyncError(taskID, "GitHub Actions执行超时")
 }
@@ -963,11 +964,11 @@ func (h *SyncHandler) monitorGitHubActions(taskID, commitSHA string) {
 //   - taskID: 同步任务ID
 //
 // 处理流程:
-//   1. 查询任务下的所有镜像记录
-//   2. 逐个验证镜像是否存在于ACR
-//   3. 更新每个镜像的同步状态和结果
-//   4. 更新任务的整体状态和统计信息
-//   5. 记录详细的执行日志
+//  1. 查询任务下的所有镜像记录
+//  2. 逐个验证镜像是否存在于ACR
+//  3. 更新每个镜像的同步状态和结果
+//  4. 更新任务的整体状态和统计信息
+//  5. 记录详细的执行日志
 //
 // 验证机制:
 //   - 生成ACR镜像地址
@@ -981,7 +982,7 @@ func (h *SyncHandler) handleSyncSuccess(taskID string) {
 	// ====================================================================
 	// 查询任务的镜像记录
 	// ====================================================================
-	
+
 	// 获取任务下所有的镜像同步记录
 	var records []models.ImageSyncRecord
 	if err := database.DB.Where("task_id = ?", taskID).Find(&records).Error; err != nil {
@@ -992,18 +993,18 @@ func (h *SyncHandler) handleSyncSuccess(taskID string) {
 	// ====================================================================
 	// 验证镜像同步结果
 	// ====================================================================
-	
+
 	// 统计成功同步的镜像数量
 	successCount := 0
-	
+
 	// 逐个验证每个镜像是否成功同步到ACR
 	for _, record := range records {
 		// 生成目标ACR镜像地址（包含架构信息）
 		acrImage := h.generateACRImageWithArchitecture(record.OriginalImage, record.Tag, record.Architecture)
-		
+
 		// 检查镜像是否真正存在于ACR中
 		exists := h.checkImageExistsInRegistry(acrImage)
-		
+
 		// 计算同步耗时
 		completedTime := time.Now()
 		var duration int64
@@ -1014,7 +1015,7 @@ func (h *SyncHandler) handleSyncSuccess(taskID string) {
 		// ================================================================
 		// 处理镜像验证成功的情况
 		// ================================================================
-		
+
 		if exists {
 			// 镜像存在，标记为成功
 			if err := database.DB.Model(&models.ImageSyncRecord{}).
@@ -1067,7 +1068,7 @@ func (h *SyncHandler) handleSyncSuccess(taskID string) {
 		logger.Logger.Error("更新任务完成状态失败", zap.Error(err))
 	}
 
-	logger.Logger.Info("同步任务处理完成", 
+	logger.Logger.Info("同步任务处理完成",
 		zap.String("task_id", taskID),
 		zap.String("status", taskStatus),
 		zap.Int("success_count", successCount),
@@ -1076,7 +1077,7 @@ func (h *SyncHandler) handleSyncSuccess(taskID string) {
 
 // handleSyncError 处理同步错误
 func (h *SyncHandler) handleSyncError(taskID, errorMessage string) {
-	logger.Logger.Error("同步任务失败", 
+	logger.Logger.Error("同步任务失败",
 		zap.String("task_id", taskID),
 		zap.String("error", errorMessage))
 
@@ -1117,7 +1118,7 @@ func (h *SyncHandler) generateACRImageWithArchitecture(originalImage, tag, archi
 	// 从配置中获取阿里云信息
 	var registryConfig models.SystemConfig
 	database.DB.Where("config_key = ?", "aliyun_registry_prefix").First(&registryConfig)
-	
+
 	registry := registryConfig.ConfigValue
 	if registry == "" {
 		registry = "registry.cn-hangzhou.aliyuncs.com"
@@ -1126,7 +1127,7 @@ func (h *SyncHandler) generateACRImageWithArchitecture(originalImage, tag, archi
 	// 从配置中获取阿里云命名空间
 	var namespaceConfig models.SystemConfig
 	database.DB.Where("config_key = ?", "aliyun_namespace").First(&namespaceConfig)
-	
+
 	namespace := namespaceConfig.ConfigValue
 	if namespace == "" {
 		namespace = "lpx03" // 使用与GitHub Action一致的命名空间
@@ -1138,7 +1139,7 @@ func (h *SyncHandler) generateACRImageWithArchitecture(originalImage, tag, archi
 		parts := strings.Split(imageName, "/")
 		imageName = parts[len(parts)-1]
 	}
-	
+
 	// 生成架构后缀，将架构信息添加到tag后面
 	architectureSuffix := ""
 	if architecture != "" && architecture != "amd64" {
@@ -1162,16 +1163,16 @@ func (h *SyncHandler) generateACRImageWithArchitecture(originalImage, tag, archi
 		// 将 linux/arm64 转换为 -linux-arm64
 		architectureSuffix = "-" + strings.ReplaceAll(platform, "/", "-")
 	}
-	
+
 	// 构建最终的镜像名称和标签
 	finalTag := tag
 	if finalTag == "" {
 		finalTag = "latest"
 	}
-	
+
 	// 构建标签：tag + architectureSuffix
 	finalTagWithArch := finalTag + architectureSuffix
-	
+
 	return fmt.Sprintf("%s/%s/%s:%s", registry, namespace, imageName, finalTagWithArch)
 }
 
@@ -1219,13 +1220,13 @@ func (h *SyncHandler) checkImageExistsInRegistry(imageRef string) bool {
 	// ====================================================================
 	// 解析镜像引用
 	// ====================================================================
-	
+
 	// 使用go-containerregistry库解析镜像引用
 	ref, err := name.ParseReference(imageRef)
 	if err != nil {
 		// 记录解析失败的错误日志
-		logger.Logger.Error("解析镜像引用失败", 
-			zap.Error(err), 
+		logger.Logger.Error("解析镜像引用失败",
+			zap.Error(err),
 			zap.String("image_ref", imageRef))
 		return false
 	}
@@ -1233,7 +1234,7 @@ func (h *SyncHandler) checkImageExistsInRegistry(imageRef string) bool {
 	// ====================================================================
 	// 创建超时上下文
 	// ====================================================================
-	
+
 	// 创建30秒超时的上下文，避免长时间等待
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -1241,7 +1242,7 @@ func (h *SyncHandler) checkImageExistsInRegistry(imageRef string) bool {
 	// ====================================================================
 	// 检查镜像存在性
 	// ====================================================================
-	
+
 	// 尝试获取镜像的manifest头信息
 	// 使用HEAD请求，不下载实际内容，提高效率
 	_, err = remote.Head(ref, remote.WithContext(ctx))
@@ -1249,18 +1250,18 @@ func (h *SyncHandler) checkImageExistsInRegistry(imageRef string) bool {
 		// ================================================================
 		// 处理各种错误情况
 		// ================================================================
-		
+
 		// 检查是否为404错误（镜像不存在）
 		if strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "not found") {
-			logger.Logger.Debug("镜像不存在", 
+			logger.Logger.Debug("镜像不存在",
 				zap.String("image_ref", imageRef))
 			return false
 		}
-		
+
 		// 其他错误也认为镜像不存在
 		// 包括网络错误、超时错误、认证错误等
-		logger.Logger.Warn("检测镜像存在性失败", 
-			zap.Error(err), 
+		logger.Logger.Warn("检测镜像存在性失败",
+			zap.Error(err),
 			zap.String("image_ref", imageRef))
 		return false
 	}
@@ -1268,9 +1269,9 @@ func (h *SyncHandler) checkImageExistsInRegistry(imageRef string) bool {
 	// ====================================================================
 	// 镜像存在确认
 	// ====================================================================
-	
+
 	// 记录镜像存在的调试日志
-	logger.Logger.Debug("镜像存在", 
+	logger.Logger.Debug("镜像存在",
 		zap.String("image_ref", imageRef))
 	return true
 }
@@ -1327,7 +1328,7 @@ func (h *SyncHandler) SubmitMockBatchSync(c *gin.Context) {
 	// 为每个镜像创建同步记录
 	for i, img := range req.Images {
 		originalImage, tag, architecture := parseImageInfo(img.SourceImage)
-		
+
 		// 使用请求中的标签和架构
 		if img.TargetTag != "" {
 			tag = img.TargetTag
@@ -1338,20 +1339,20 @@ func (h *SyncHandler) SubmitMockBatchSync(c *gin.Context) {
 		if architecture == "" {
 			architecture = "amd64"
 		}
-		
+
 		// 构建原始输入格式
 		var originalInput string
 		imageWithTag := originalImage
 		if tag != "" {
 			imageWithTag = originalImage + ":" + tag
 		}
-		
+
 		if architecture == "arm64" {
 			originalInput = "--platform=linux/arm64 " + imageWithTag
 		} else {
 			originalInput = imageWithTag
 		}
-		
+
 		record := &models.ImageSyncRecord{
 			OriginalImage: originalImage,
 			Tag:           tag,
@@ -1365,8 +1366,8 @@ func (h *SyncHandler) SubmitMockBatchSync(c *gin.Context) {
 		}
 
 		if err := database.DB.Create(record).Error; err != nil {
-			logger.Logger.Error("创建镜像同步记录失败", 
-				zap.Error(err), 
+			logger.Logger.Error("创建镜像同步记录失败",
+				zap.Error(err),
 				zap.String("image", originalImage))
 		}
 	}
@@ -1377,7 +1378,7 @@ func (h *SyncHandler) SubmitMockBatchSync(c *gin.Context) {
 	// 计算预估时间
 	estimatedTime := h.calculateEstimatedTime(len(req.Images), req.MaxConcurrent)
 
-	logger.Logger.Info("模拟批量同步任务已提交", 
+	logger.Logger.Info("模拟批量同步任务已提交",
 		zap.String("task_id", taskID),
 		zap.Int("image_count", len(req.Images)),
 		zap.Int("max_concurrent", req.MaxConcurrent))
@@ -1431,11 +1432,11 @@ func (h *SyncHandler) processMockBatchSyncTask(taskID string) {
 		wg.Add(1)
 		go func(r models.ImageSyncRecord) {
 			defer wg.Done()
-			
+
 			// 获取信号量
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()
-			
+
 			// 处理单个镜像的模拟同步
 			h.processSingleMockImage(taskID, r)
 		}(record)
@@ -1452,12 +1453,12 @@ func (h *SyncHandler) processMockBatchSyncTask(taskID string) {
 
 // processSingleMockImage 处理单个镜像的模拟同步
 func (h *SyncHandler) processSingleMockImage(taskID string, record models.ImageSyncRecord) {
-	logger.Logger.Info("开始模拟镜像同步", 
+	logger.Logger.Info("开始模拟镜像同步",
 		zap.String("task_id", taskID),
 		zap.String("image", record.OriginalImage))
 
 	startTime := time.Now()
-	
+
 	// 更新镜像状态为同步中
 	if err := database.DB.Model(&models.ImageSyncRecord{}).
 		Where("id = ?", record.ID).
@@ -1478,10 +1479,10 @@ func (h *SyncHandler) processSingleMockImage(taskID string, record models.ImageS
 
 	// 检测目标镜像是否存在
 	exists := h.checkImageExistsInRegistry(acrImage)
-	
+
 	completedTime := time.Now()
 	duration := int64(completedTime.Sub(startTime).Seconds())
-	
+
 	if exists {
 		// 目标镜像存在，设置为成功
 		if err := database.DB.Model(&models.ImageSyncRecord{}).
@@ -1495,7 +1496,7 @@ func (h *SyncHandler) processSingleMockImage(taskID string, record models.ImageS
 			logger.Logger.Error("更新镜像完成状态失败", zap.Error(err))
 		}
 
-		logger.Logger.Info("模拟镜像同步完成", 
+		logger.Logger.Info("模拟镜像同步完成",
 			zap.String("task_id", taskID),
 			zap.String("image", record.OriginalImage),
 			zap.String("acr_image", acrImage),
@@ -1515,7 +1516,7 @@ func (h *SyncHandler) processSingleMockImage(taskID string, record models.ImageS
 			logger.Logger.Error("更新镜像失败状态失败", zap.Error(err))
 		}
 
-		logger.Logger.Warn("模拟镜像同步失败", 
+		logger.Logger.Warn("模拟镜像同步失败",
 			zap.String("task_id", taskID),
 			zap.String("image", record.OriginalImage),
 			zap.String("acr_image", acrImage),
@@ -1541,7 +1542,7 @@ func (h *SyncHandler) calculateEstimatedTime(imageCount, maxConcurrent int) int 
 
 // handleBatchSyncError 处理批量同步错误
 func (h *SyncHandler) handleBatchSyncError(taskID, errorMessage string) {
-	logger.Logger.Error("批量同步任务失败", 
+	logger.Logger.Error("批量同步任务失败",
 		zap.String("task_id", taskID),
 		zap.String("error", errorMessage))
 
@@ -1562,10 +1563,10 @@ func (h *SyncHandler) handleBatchSyncError(taskID, errorMessage string) {
 func (h *SyncHandler) updateBatchTaskFinalStatus(taskID string) {
 	// 统计各状态的镜像数量
 	var stats struct {
-		Total     int64
-		Success   int64
-		Failed    int64
-		Pending   int64
+		Total   int64
+		Success int64
+		Failed  int64
+		Pending int64
 	}
 
 	database.DB.Model(&models.ImageSyncRecord{}).
@@ -1605,10 +1606,10 @@ func (h *SyncHandler) updateBatchTaskFinalStatus(taskID string) {
 	// 更新任务状态
 	now := time.Now()
 	updates := map[string]interface{}{
-		"status":          finalStatus,
+		"status":           finalStatus,
 		"completed_images": stats.Success,
-		"failed_images":   stats.Failed,
-		"progress":        float64(stats.Success+stats.Failed) / float64(stats.Total) * 100,
+		"failed_images":    stats.Failed,
+		"progress":         float64(stats.Success+stats.Failed) / float64(stats.Total) * 100,
 	}
 
 	if finalStatus != models.TaskStatusRunning {
@@ -1625,7 +1626,7 @@ func (h *SyncHandler) updateBatchTaskFinalStatus(taskID string) {
 		logger.Logger.Error("更新任务最终状态失败", zap.Error(err))
 	}
 
-	logger.Logger.Info("批量任务状态已更新", 
+	logger.Logger.Info("批量任务状态已更新",
 		zap.String("task_id", taskID),
 		zap.String("status", string(finalStatus)),
 		zap.Int64("success", stats.Success),
@@ -1666,7 +1667,7 @@ func (h *SyncHandler) updateTaskStatus(taskID, status, errorMessage string) {
 	updates := map[string]interface{}{
 		"status": status,
 	}
-	
+
 	if status == "completed" {
 		now := time.Now()
 		updates["completed_at"] = &now
@@ -1677,7 +1678,7 @@ func (h *SyncHandler) updateTaskStatus(taskID, status, errorMessage string) {
 			updates["error_message"] = errorMessage
 		}
 	}
-	
+
 	if err := database.DB.Model(&models.SyncTask{}).
 		Where("task_id = ?", taskID).
 		Updates(updates).Error; err != nil {

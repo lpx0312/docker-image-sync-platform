@@ -8,10 +8,11 @@
 //   - RateLimit: 请求频率限制和防护
 //
 // 使用示例：
-//   router := gin.New()
-//   router.Use(middleware.CORS())
-//   router.Use(middleware.Logger())
-//   router.Use(middleware.ErrorHandler())
+//
+//	router := gin.New()
+//	router.Use(middleware.CORS())
+//	router.Use(middleware.Logger())
+//	router.Use(middleware.ErrorHandler())
 package middleware
 
 import (
@@ -40,7 +41,8 @@ import (
 //   - 生产环境建议使用CORSWithConfig指定具体允许的来源
 //
 // 示例：
-//   router.Use(middleware.CORS())
+//
+//	router.Use(middleware.CORS())
 func CORS() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		method := c.Request.Method
@@ -95,10 +97,11 @@ func CORS() gin.HandlerFunc {
 //   - 需要精确控制允许的HTTP方法和头部
 //
 // 示例：
-//   origins := []string{"https://example.com", "https://app.example.com"}
-//   methods := []string{"GET", "POST", "PUT", "DELETE"}
-//   headers := []string{"Content-Type", "Authorization", "X-API-Key"}
-//   router.Use(middleware.CORSWithConfig(origins, methods, headers))
+//
+//	origins := []string{"https://example.com", "https://app.example.com"}
+//	methods := []string{"GET", "POST", "PUT", "DELETE"}
+//	headers := []string{"Content-Type", "Authorization", "X-API-Key"}
+//	router.Use(middleware.CORSWithConfig(origins, methods, headers))
 func CORSWithConfig(allowOrigins []string, allowMethods []string, allowHeaders []string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		method := c.Request.Method

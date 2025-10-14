@@ -38,7 +38,8 @@ import (
 //   - 访问日志记录
 //
 // 示例：
-//   router.Use(middleware.RequestLogger(logger))
+//
+//	router.Use(middleware.RequestLogger(logger))
 func RequestLogger(logger *zap.Logger) gin.HandlerFunc {
 	return gin.LoggerWithFormatter(func(param gin.LogFormatterParams) string {
 		// 记录请求日志
@@ -95,7 +96,8 @@ func RequestLogger(logger *zap.Logger) gin.HandlerFunc {
 //   - 请求体大小限制为1KB，避免日志过大
 //
 // 示例：
-//   router.Use(middleware.DetailedRequestLogger(logger))
+//
+//	router.Use(middleware.DetailedRequestLogger(logger))
 func DetailedRequestLogger(logger *zap.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
@@ -156,9 +158,9 @@ func DetailedRequestLogger(logger *zap.Logger) gin.HandlerFunc {
 //   - gin.HandlerFunc: Gin框架中间件函数
 //
 // 工作原理：
-//   1. 将传入的路径列表构建为快速查找的map
-//   2. 对每个请求检查路径是否在跳过列表中
-//   3. 如果匹配则直接跳过，否则继续处理
+//  1. 将传入的路径列表构建为快速查找的map
+//  2. 对每个请求检查路径是否在跳过列表中
+//  3. 如果匹配则直接跳过，否则继续处理
 //
 // 使用场景：
 //   - 跳过健康检查接口的日志记录
@@ -170,8 +172,9 @@ func DetailedRequestLogger(logger *zap.Logger) gin.HandlerFunc {
 //   - 建议与其他日志中间件配合使用
 //
 // 示例：
-//   router.Use(middleware.SkipPaths("/health", "/metrics", "/favicon.ico"))
-//   router.Use(middleware.RequestLogger(logger))
+//
+//	router.Use(middleware.SkipPaths("/health", "/metrics", "/favicon.ico"))
+//	router.Use(middleware.RequestLogger(logger))
 func SkipPaths(paths ...string) gin.HandlerFunc {
 	skipMap := make(map[string]bool)
 	for _, path := range paths {
