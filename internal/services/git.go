@@ -144,9 +144,10 @@ func (s *GitService) InitRepository() error {
 	var authURL string
 	if config.AppConfig.Git.Gitee.Token != "" {
 		// 使用访问令牌认证 (推荐方式)
-		// 格式: https://token@gitee.com/username/repo.git
+		// Gitee格式: https://username:token@gitee.com/username/repo.git
+		encodedUsername := url.QueryEscape(config.AppConfig.Git.Gitee.Username)
 		encodedToken := url.QueryEscape(config.AppConfig.Git.Gitee.Token)
-		parsedURL.User = url.User(encodedToken)
+		parsedURL.User = url.UserPassword(encodedUsername, encodedToken)
 		authURL = parsedURL.String()
 		logger.Logger.Info("使用Gitee访问令牌进行认证")
 	} else {
@@ -422,10 +423,10 @@ func (s *GitService) pullLatest() error {
 	// 首先尝试正常拉取，使用配置的认证信息
 	var auth *http.BasicAuth
 	if config.AppConfig.Git.Gitee.Token != "" {
-		// 使用访问令牌认证
+		// 使用访问令牌认证 - Gitee需要用户名和token
 		auth = &http.BasicAuth{
-			Username: config.AppConfig.Git.Gitee.Token,
-			Password: "", // Token认证时密码为空
+			Username: config.AppConfig.Git.Gitee.Username,
+			Password: config.AppConfig.Git.Gitee.Token,
 		}
 	} else {
 		// 使用用户名密码认证
@@ -680,10 +681,10 @@ func (s *GitService) pushWithRetry(commitSHA string) error {
 		// 尝试推送到远程仓库
 		var auth *http.BasicAuth
 		if config.AppConfig.Git.Gitee.Token != "" {
-			// 使用访问令牌认证
+			// 使用访问令牌认证 - Gitee需要用户名和token
 			auth = &http.BasicAuth{
-				Username: config.AppConfig.Git.Gitee.Token,
-				Password: "", // Token认证时密码为空
+				Username: config.AppConfig.Git.Gitee.Username,
+				Password: config.AppConfig.Git.Gitee.Token,
 			}
 		} else {
 			// 使用用户名密码认证
