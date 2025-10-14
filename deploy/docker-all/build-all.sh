@@ -34,7 +34,7 @@ echo "    启动 app-all 服务并部署Mysql"
 echo "        docker-compose -f docker-compose-all-mysql.yml  up -d"
 echo 
 echo "或者直接运行镜像："
-echo "  docker run -d -p 80:80 -p 8080:8080 --name docker-sync-all docker-image-sync-platform:all"
+echo "  docker run -d -p 80:80 -p 8080:8080 --name docker-sync-all docker-image-sync-platform:all-latest"
 echo
 echo "访问地址："
 echo "  前端界面: http://localhost"

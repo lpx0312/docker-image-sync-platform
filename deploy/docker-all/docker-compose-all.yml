@@ -34,7 +34,7 @@ services:
       - DB_LOC=${DB_LOC:-Local}
       
       # Git配置 (Gitee)
-      - GITEE_REPO_URL=${GITEE_REPO_URL:-https://gitee.com/lpx03/docker-image-sync-platform.git}
+      - GITEE_REPO_URL=${GITEE_REPO_URL:-https://gitee.com/lpx03/docker_image_pusher.git}
       - GITEE_USERNAME=${GITEE_USERNAME:-13297049661}
       - GITEE_PASSWORD=${GITEE_PASSWORD:-Abc2020##}
       - GITEE_TOKEN=${GITEE_TOKEN:-63fde4aa0198d257ea4d8f25af2077a9}
