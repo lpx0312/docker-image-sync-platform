@@ -29,6 +29,9 @@ GITEE_REPO_URL=https://gitee.com/lpx03/docker_image_pusher.git
 # Gitee认证信息 (必填)
 GITEE_USERNAME=13297049661
 GITEE_PASSWORD="Abc2020##"
+# Gitee访问令牌 (推荐使用，优先于密码认证)
+# 在 https://gitee.com/profile/personal_access_tokens 创建
+GITEE_TOKEN=63fde4aa0198d257ea4d8f25af2077a9
 GITEE_EMAIL=lpx_0312@163.com
 
 # ----------------------------------------------------------------------------
@@ -44,7 +47,7 @@ GITHUB_TOKEN=REDACTED_GITHUB_TOKEN
 # ----------------------------------------------------------------------------
 # 阿里云容器镜像服务 (ACR) 配置
 # ----------------------------------------------------------------------------
-ALIYUN_REGISTRY=-registry.cn-hangzhou.aliyuncs.com
+ALIYUN_REGISTRY=registry.cn-hangzhou.aliyuncs.com
 # 阿里云镜像命名空间 (在阿里云控制台创建)
 ALIYUN_NAMESPACE=lpx03
 # 阿里云容器镜像服务认证信息
@@ -70,7 +73,7 @@ APP_PORT=8080
 # 数据库连接配置
 DB_HOST=mysql
 DB_PORT=3306
-DB_USERNAME=docker_sync
+DB_USERNAME=root
 DB_PASSWORD=Ab123456
 DB_DATABASE=docker_sync
 DB_CHARSET=utf8mb4
@@ -78,27 +81,6 @@ DB_PARSE_TIME=true
 DB_LOC=Local
 
 # Git本地仓库路径
-GIT_LOCAL_REPO_PATH=${GIT_LOCAL_REPO_PATH:-/app/data/repos}
+GIT_LOCAL_REPO_PATH=/app/data/repos
 # 日志文件路径
-LOG_FILE_PATH=${LOG_FILE_PATH:-/app/logs/app.log}
-
-# ============================================================================
-# 配置验证清单
-# ============================================================================
-# 
-# 在启动服务前，请确认以下配置已正确设置：
-# 
-# ✅ 数据库配置
-#    - MYSQL_ROOT_PASSWORD: 已设置强密码
-#    - MYSQL_PASSWORD: 已设置应用数据库密码
-# 
-# ✅ Git仓库配置 (至少配置一个)
-#    - Gitee: GITEE_REPO_URL, GITEE_USERNAME, GITEE_PASSWORD
-#    - GitHub: GITHUB_REPO_URL, GITHUB_USERNAME, GITHUB_TOKEN
-# 
-# ✅ 阿里云配置 (如果使用阿里云镜像仓库)
-#    - ALIYUN_REGISTRY: 选择合适的地域
-#    - ALIYUN_NAMESPACE: 在阿里云控制台创建的命名空间
-#    - ALIYUN_USERNAME, ALIYUN_PASSWORD: 容器镜像服务认证信息
-# 
-# ============================================================================
+LOG_FILE_PATH=/app/logs/app.log

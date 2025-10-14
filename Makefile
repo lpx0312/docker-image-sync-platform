@@ -272,6 +272,54 @@ docker-rebuild: docker-stop docker-build docker-run
 	@echo "✅ Docker环境重建完成！"
 
 # ============================================================================
+# 完整版部署相关 (deploy/docker-all/)
+# ============================================================================
+
+# 构建完整版Docker镜像 (前端+后端)
+# 使用 deploy/docker-all/ 目录下的配置
+deploy-all-build:
+	@echo "🐳 构建完整版Docker镜像..."
+	@cd deploy/docker-all && chmod +x build-all.sh && ./build-all.sh
+	@echo "✅ 完整版Docker镜像构建完成！"
+
+# 启动完整版服务 (不包含MySQL)
+# 使用外部MySQL数据库
+deploy-all-up:
+	@echo "🐳 启动完整版服务..."
+	@cd deploy/docker-all && docker-compose -f docker-compose-all.yml up -d
+	@echo "✅ 完整版服务启动完成！"
+	@echo "前端界面: http://localhost"
+	@echo "后端API: http://localhost:8080/api"
+	@echo "健康检查: http://localhost/health"
+
+# 启动完整版服务 (包含MySQL)
+# 包含本地MySQL数据库
+deploy-all-up-with-mysql:
+	@echo "🐳 启动完整版服务 (包含MySQL)..."
+	@cd deploy/docker-all && docker-compose -f docker-compose-all.yml --profile local-mysql up -d
+	@echo "✅ 完整版服务启动完成！"
+	@echo "前端界面: http://localhost"
+	@echo "后端API: http://localhost:8080/api"
+	@echo "健康检查: http://localhost/health"
+	@echo "MySQL: localhost:3306"
+
+# 停止完整版服务 (智能停止，同时处理有/无MySQL的情况)
+deploy-all-down:
+	@echo "🐳 停止完整版服务..."
+	@cd deploy/docker-all && docker-compose -f docker-compose-all.yml down 2>/dev/null || true
+	@cd deploy/docker-all && docker-compose -f docker-compose-all.yml --profile local-mysql down 2>/dev/null || true
+	@echo "✅ 完整版服务已停止！"
+
+# 查看完整版服务日志
+deploy-all-logs:
+	@echo "🐳 查看完整版服务日志..."
+	@cd deploy/docker-all && docker-compose -f docker-compose-all.yml logs -f
+
+# 重新构建并启动完整版服务
+deploy-all-rebuild: deploy-all-down deploy-all-build deploy-all-up
+	@echo "✅ 完整版服务重建完成！"
+
+# ============================================================================
 # 测试相关
 # ============================================================================
 

@@ -92,6 +92,15 @@
 - **Go** 1.21+ (开发环境)
 - **MySQL** 8.0+ (如不使用Docker)
 
+### 🎯 部署选项
+
+本项目提供两种 Docker 部署方式：
+
+| 部署方式 | 目录 | 特点 | 适用场景 |
+|---------|------|------|----------|
+| **分离式部署** | `deploy/docker-signal/` | 前后端分离，独立容器 | 开发环境、微服务架构 |
+| **完整版部署** | `deploy/docker-all/` | 前后端一体，单容器 | 生产环境、简化部署 |
+
 ### 🐳 方式一：Docker一键部署（推荐）
 
 这是最简单的部署方式，适合生产环境和快速体验。
@@ -131,13 +140,26 @@ MYSQL_DATABASE=docker_sync
 ```
 
 3. **一键启动**
+
+**方式A：分离式部署（推荐）**
 ```bash
 # Linux/macOS
+cd deploy/docker-signal
 chmod +x deploy.sh
 ./deploy.sh
+```
 
-# Windows PowerShell
-.\deploy.bat
+**方式B：完整版部署（前端+后端一体）**
+```bash
+# 使用 Makefile（推荐）
+make deploy-all-build
+make deploy-all-up
+
+# 或手动执行
+cd deploy/docker-all
+chmod +x build-all.sh
+./build-all.sh
+docker-compose -f docker-compose-all.yml up -d
 ```
 
 4. **验证部署**

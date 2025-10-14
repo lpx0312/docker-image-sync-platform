@@ -10,7 +10,7 @@ docker builder prune -f
 
 echo
 echo "[2/4] 构建 Docker 镜像..."
-docker build -f Dockerfile-all -t docker-image-sync-platform:all .
+docker build -f Dockerfile-all -t docker-image-sync-platform:all ../../
 
 if [ $? -ne 0 ]; then
     echo
@@ -31,7 +31,7 @@ echo "使用以下命令启动服务："
 echo "    只启动 app-all 服务(不部署Mysql)"
 echo "        docker-compose -f docker-compose-all.yml up -d"
 echo "    启动 app-all 服务并部署Mysql"
-echo "        docker-compose -f docker-compose-all.yml --profile local-mysql up -d"
+echo "        docker-compose -f docker-compose-all-mysql.yml  up -d"
 echo 
 echo "或者直接运行镜像："
 echo "  docker run -d -p 80:80 -p 8080:8080 --name docker-sync-all docker-image-sync-platform:all"

@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  app-all:
+    build:
+      context: ../../
+      dockerfile: Dockerfile-all
+      args:
+        - BUILDKIT_INLINE_CACHE=1
+    image: docker-image-sync-platform:all
+    container_name: docker-sync-all
+    ports:
+      - "80:80"      # Nginx 前端服务
+      - "8080:8080"  # 后端 API 服务 (可选，用于直接访问)
+    environment:
+      # 基础配置
+      - TZ=Asia/Shanghai
+      - GIN_MODE=${GIN_MODE:-release}
+      - APP_ENV=${APP_ENV:-production}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      
+      # 服务器配置
+      - SERVER_HOST=${SERVER_HOST:-0.0.0.0}
+      - APP_PORT=${APP_PORT:-8080}
+      
+      # 数据库配置 (连接到同一网络的MySQL服务)
+      - DB_HOST=${DB_HOST:-192.168.0.180}
+      - DB_PORT=${DB_PORT:-3307} 
+      - DB_USERNAME=${DB_USERNAME:-root}
+      - DB_PASSWORD=${DB_PASSWORD:-Lipanxiang@1102}
+      - DB_DATABASE=${DB_DATABASE:-docker_sync}
+      - DB_CHARSET=${DB_CHARSET:-utf8mb4}
+      - DB_PARSE_TIME=${DB_PARSE_TIME:-true}
+      - DB_LOC=${DB_LOC:-Local}
+      
+      # Git配置 (Gitee)
+      - GITEE_REPO_URL=${GITEE_REPO_URL:-https://gitee.com/lpx03/docker-image-sync-platform.git}
+      - GITEE_USERNAME=${GITEE_USERNAME:-13297049661}
+      - GITEE_PASSWORD=${GITEE_PASSWORD:-Abc2020##}
+      - GITEE_TOKEN=${GITEE_TOKEN:-63fde4aa0198d257ea4d8f25af2077a9}
+      - GITEE_EMAIL=${GITEE_EMAIL:-lpx_0312@163.com}
+      
+      # Git配置 (GitHub)
+      - GITHUB_REPO_URL=${GITHUB_REPO_URL:-https://github.com/lpx0312/docker_image_pusher.git}
+      - GITHUB_USERNAME=${GITHUB_USERNAME:-lpx_0312@163.com}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-REDACTED_GITHUB_TOKEN}
+
+      # 阿里云配置
+      - ALIYUN_REGISTRY=${ALIYUN_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}
+      - ALIYUN_NAMESPACE=${ALIYUN_NAMESPACE:-lpx03}
+      - ALIYUN_USERNAME=${ALIYUN_USERNAME:-lipanx}
+      - ALIYUN_PASSWORD=${ALIYUN_PASSWORD:-Lipanxiang1102}
+      
+      # 本地仓库路径
+      - GIT_LOCAL_REPO_PATH=${GIT_LOCAL_REPO_PATH:-/app/data/repo}
+    volumes:
+      # 持久化日志
+      - ./logs:/app/logs
+      - ./data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  mysql_data:

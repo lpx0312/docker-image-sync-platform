@@ -1,0 +1,149 @@
+# ============================================================================
+# Docker镜像同步平台 - Docker Compose配置文件
+# ============================================================================
+# 
+# 本文件定义了完整的应用程序栈，包括：
+# - MySQL数据库服务
+# - Go后端应用服务  
+# - Nginx前端服务
+# 
+# 使用方法：
+# 1. 开发环境：docker-compose up -d
+# 2. 生产环境：docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# 3. 停止服务：docker-compose down
+# 4. 查看日志：docker-compose logs -f [service_name]
+# 
+# 环境变量：
+# 请在 .env 文件中设置相关环境变量，或通过系统环境变量传递
+# 
+# ============================================================================
+
+version: '3.8'
+
+services:
+  # ============================================================================
+  # Go后端应用服务
+  # ============================================================================
+  backend:
+    # 构建配置
+    build:
+      # 构建上下文：当前目录
+      context: ../../
+      # Dockerfile路径
+      dockerfile: Dockerfile-backend
+      args:
+        - BUILDKIT_INLINE_CACHE=1
+      # 构建参数（可选）
+      # args:
+      #   GO_VERSION: 1.21
+      #   BUILD_ENV: production
+    image: docker-image-sync-platform:backend
+    container_name: docker-sync-backend
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    environment:
+      # 基础配置
+      - TZ=Asia/Shanghai
+      - GIN_MODE=${GIN_MODE:-release}
+      - APP_ENV=${APP_ENV:-production}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      # 服务器配置
+      - SERVER_HOST=${SERVER_HOST:-0.0.0.0}
+      - APP_PORT=${APP_PORT:-8080}
+      # 数据库配置 (连接到同一网络的MySQL服务)
+      - DB_HOST=${DB_HOST:-192.168.0.180}
+      - DB_PORT=${DB_PORT:-3307} 
+      - DB_USERNAME=${DB_USERNAME:-root}
+      - DB_PASSWORD=${DB_PASSWORD:-Lipanxiang@1102}
+      - DB_DATABASE=${DB_DATABASE:-docker_sync}
+      - DB_CHARSET=${DB_CHARSET:-utf8mb4}
+      - DB_PARSE_TIME=${DB_PARSE_TIME:-true}
+      - DB_LOC=${DB_LOC:-Local}
+      # Git配置 (Gitee)
+      - GITEE_REPO_URL=${GITEE_REPO_URL:-https://gitee.com/lpx03/docker-image-sync-platform.git}
+      - GITEE_USERNAME=${GITEE_USERNAME:-13297049661}
+      - GITEE_PASSWORD=${GITEE_PASSWORD:-Abc2020##}
+      - GITEE_EMAIL=${GITEE_EMAIL:-lpx_0312@163.com}
+      - GITEE_TOKEN=${GITEE_TOKEN:-63fde4aa0198d257ea4d8f25af2077a9}
+      # Git配置 (GitHub)
+      - GITHUB_REPO_URL=${GITHUB_REPO_URL:-https://github.com/lpx0312/docker_image_pusher.git}
+      - GITHUB_USERNAME=${GITHUB_USERNAME:-lpx_0312@163.com}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-REDACTED_GITHUB_TOKEN}
+      # 阿里云配置
+      - ALIYUN_REGISTRY=${ALIYUN_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}
+      - ALIYUN_NAMESPACE=${ALIYUN_NAMESPACE:-lpx03}
+      - ALIYUN_USERNAME=${ALIYUN_USERNAME:-lipanx}
+      - ALIYUN_PASSWORD=${ALIYUN_PASSWORD:-Lipanxiang1102}
+      # 本地仓库路径
+      - GIT_LOCAL_REPO_PATH=${GIT_LOCAL_REPO_PATH:-/app/data/repo}
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./logs:/app/logs
+      - ./data:/app/data
+    networks:
+      - docker-sync-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/v1/health"]
+      interval: 30s      # 检查间隔
+      timeout: 10s       # 超时时间
+      retries: 3         # 重试次数
+      start_period: 40s  # 启动等待时间
+    
+    # 资源限制（生产环境推荐）
+    # deploy:
+    #   resources:
+    #     limits:
+    #       memory: 512M
+    #       cpus: '0.5'
+
+  # ============================================================================
+  # Nginx前端服务
+  # ============================================================================
+  frontend:
+    build:
+      context: ../../
+      dockerfile: Dockerfile-frontend
+      args:
+        - BUILDKIT_INLINE_CACHE=1
+    # 使用轻量级的Alpine Linux版本
+    image: docker-image-sync-platform:frontend
+    container_name: docker-sync-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+      - "${FRONTEND_HTTPS_PORT:-443}:443"  # HTTPS端口（如需要）
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      # - ./ssl:/etc/nginx/ssl:ro
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      - backend
+    networks:
+      - docker-sync-network
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  mysql_data:
+    driver: local
+    # driver_opts:
+    #   type: none
+    #   o: bind
+    #   device: /data/mysql  # 自定义数据存储路径
+
+
+# ============================================================================
+# 网络定义
+# ============================================================================
+networks:
+  docker-sync-network:
+    driver: bridge
+    # 自定义网络配置（可选）
+    # ipam:
+    #   config:
+    #     - subnet: 172.20.0.0/16

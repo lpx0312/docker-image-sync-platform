@@ -100,6 +100,7 @@ type GiteeConfig struct {
 	RepoURL  string `mapstructure:"repo_url"`
 	Username string `mapstructure:"username"`
 	Password string `mapstructure:"password"`
+	Token    string `mapstructure:"token"`    // 访问令牌，优先使用Token认证
 	Email    string `mapstructure:"email"`
 }
 
@@ -191,6 +192,7 @@ func setupEnvKeyMapping() {
 	viper.BindEnv("git.gitee.repo_url", "GITEE_REPO_URL")
 	viper.BindEnv("git.gitee.username", "GITEE_USERNAME")
 	viper.BindEnv("git.gitee.password", "GITEE_PASSWORD")
+	viper.BindEnv("git.gitee.token", "GITEE_TOKEN")
 	viper.BindEnv("git.gitee.email", "GITEE_EMAIL")
 	
 	// Git配置 - GitHub

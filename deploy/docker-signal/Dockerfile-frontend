@@ -1,0 +1,43 @@
+# ================================
+# 多阶段构建 Dockerfile
+# 包含前端构建、后端构建和最终运行环境
+# ================================
+
+# ================================
+# 阶段1: 前端构建
+# ================================
+FROM registry.cn-hangzhou.aliyuncs.com/lpx03/node:18-alpine AS frontend-builder
+# 设置工作目录
+WORKDIR /app/web
+# 配置国内 npm 镜像源
+RUN npm config set registry https://registry.npmmirror.com/ && \
+    npm config set cache /tmp/.npm
+# 复制前端项目文件
+COPY web/package*.json ./
+# 安装依赖
+RUN npm ci --no-audit --no-fund
+# 复制前端源代码
+COPY web/ ./
+# 构建前端项目
+RUN npm run build
+
+# ================================
+# 阶段2: 最终运行环境
+# ================================
+FROM registry.cn-hangzhou.aliyuncs.com/lpx03/nginx:1.25-alpine
+# 使用apk的国内镜像
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apk/repositories 
+# 安装必要的包
+RUN apk add --no-cache \
+    ca-certificates \
+    tzdata \
+    && rm -rf /var/cache/apk/*
+# 设置时区
+ENV TZ=Asia/Shanghai
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+COPY --from=frontend-builder /app/web/dist /usr/share/nginx/html
+COPY deploy/docker-signal/nginx.conf /etc/nginx/nginx.conf
+EXPOSE 80 443
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost/ || exit 1

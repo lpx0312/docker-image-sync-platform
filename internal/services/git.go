@@ -135,17 +135,28 @@ func (s *GitService) InitRepository() error {
 	logger.Logger.Info("开始克隆Gitee仓库", zap.String("url", config.AppConfig.Git.Gitee.RepoURL))
 
 	// 构建带有认证信息的URL
-	// 将用户名和密码嵌入到URL中以支持自动认证
+	// 优先使用Token认证，如果没有Token则使用用户名密码认证
 	parsedURL, err := url.Parse(config.AppConfig.Git.Gitee.RepoURL)
 	if err != nil {
 		return fmt.Errorf("解析Gitee仓库URL失败: %w", err)
 	}
 	
-	// 对用户名和密码进行URL编码以处理特殊字符
-	encodedUsername := url.QueryEscape(config.AppConfig.Git.Gitee.Username)
-	encodedPassword := url.QueryEscape(config.AppConfig.Git.Gitee.Password)
-	parsedURL.User = url.UserPassword(encodedUsername, encodedPassword)
-	authURL := parsedURL.String()
+	var authURL string
+	if config.AppConfig.Git.Gitee.Token != "" {
+		// 使用访问令牌认证 (推荐方式)
+		// 格式: https://token@gitee.com/username/repo.git
+		encodedToken := url.QueryEscape(config.AppConfig.Git.Gitee.Token)
+		parsedURL.User = url.User(encodedToken)
+		authURL = parsedURL.String()
+		logger.Logger.Info("使用Gitee访问令牌进行认证")
+	} else {
+		// 使用用户名密码认证 (传统方式)
+		encodedUsername := url.QueryEscape(config.AppConfig.Git.Gitee.Username)
+		encodedPassword := url.QueryEscape(config.AppConfig.Git.Gitee.Password)
+		parsedURL.User = url.UserPassword(encodedUsername, encodedPassword)
+		authURL = parsedURL.String()
+		logger.Logger.Info("使用Gitee用户名密码进行认证")
+	}
 
 	// 使用系统git命令执行克隆操作
 	// 这种方式比go-git库更稳定，特别是对于大型仓库
@@ -409,11 +420,23 @@ func (s *GitService) pullLatest() error {
 	// ====================================================================
 	
 	// 首先尝试正常拉取，使用配置的认证信息
-	err = worktree.Pull(&git.PullOptions{
-		Auth: &http.BasicAuth{
+	var auth *http.BasicAuth
+	if config.AppConfig.Git.Gitee.Token != "" {
+		// 使用访问令牌认证
+		auth = &http.BasicAuth{
+			Username: config.AppConfig.Git.Gitee.Token,
+			Password: "", // Token认证时密码为空
+		}
+	} else {
+		// 使用用户名密码认证
+		auth = &http.BasicAuth{
 			Username: config.AppConfig.Git.Gitee.Username,
 			Password: config.AppConfig.Git.Gitee.Password,
-		},
+		}
+	}
+	
+	err = worktree.Pull(&git.PullOptions{
+		Auth: auth,
 	})
 
 	// 拉取成功或已是最新状态
@@ -655,11 +678,23 @@ func (s *GitService) pushWithRetry(commitSHA string) error {
 		// ================================================================
 		
 		// 尝试推送到远程仓库
-		err := s.repo.Push(&git.PushOptions{
-			Auth: &http.BasicAuth{
+		var auth *http.BasicAuth
+		if config.AppConfig.Git.Gitee.Token != "" {
+			// 使用访问令牌认证
+			auth = &http.BasicAuth{
+				Username: config.AppConfig.Git.Gitee.Token,
+				Password: "", // Token认证时密码为空
+			}
+		} else {
+			// 使用用户名密码认证
+			auth = &http.BasicAuth{
 				Username: config.AppConfig.Git.Gitee.Username,
 				Password: config.AppConfig.Git.Gitee.Password,
-			},
+			}
+		}
+		
+		err := s.repo.Push(&git.PushOptions{
+			Auth: auth,
 		})
 		
 		// 推送成功，直接返回
