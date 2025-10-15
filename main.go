@@ -361,6 +361,9 @@ func main() {
 			// PUT /api/v1/config/aliyun-db - 更新阿里云配置（数据库版本）
 			config.PUT("/aliyun-db", configHandler.UpdateAliyunConfig)
 
+			// POST /api/v1/config/aliyun/test - 测试阿里云镜像仓库连接
+			config.POST("/aliyun/test", configHandler.TestAliyunConnection)
+
 			// ====================================================================
 			// 通用配置管理API
 			// ====================================================================

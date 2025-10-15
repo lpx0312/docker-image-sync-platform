@@ -6,15 +6,26 @@
         <div class="card-header">
           <el-icon class="header-icon"><Monitor /></el-icon>
           <span class="header-title">阿里云镜像仓库配置</span>
-          <el-button 
-            type="primary" 
-            size="small" 
-            @click="testConnection"
-            :loading="testingConnection"
-            :disabled="!aliyunConfig.registry_url || !aliyunConfig.username"
-          >
-            测试连接
-          </el-button>
+          <div class="header-actions">
+            <el-button 
+              type="success" 
+              size="small" 
+              @click="saveConfig"
+              :loading="savingConfig"
+              :disabled="!isConfigChanged"
+            >
+              保存配置
+            </el-button>
+            <el-button 
+              type="primary" 
+              size="small" 
+              @click="testConnection"
+              :loading="testingConnection"
+              :disabled="!aliyunConfig.registry_url || !aliyunConfig.username"
+            >
+              测试连接
+            </el-button>
+          </div>
         </div>
       </template>
 
@@ -28,7 +39,7 @@
             <el-input
               v-model="aliyunConfig.registry_url"
               placeholder="registry.cn-hangzhou.aliyuncs.com"
-              @blur="saveConfig"
+              @input="markConfigChanged"
             >
               <template #prefix>
                 <el-icon><Link /></el-icon>
@@ -45,7 +56,7 @@
             <el-input
               v-model="aliyunConfig.namespace"
               placeholder="your-namespace"
-              @blur="saveConfig"
+              @input="markConfigChanged"
             >
               <template #prefix>
                 <el-icon><Location /></el-icon>
@@ -61,8 +72,8 @@
           <el-form-item label="用户名" required>
             <el-input
               v-model="aliyunConfig.username"
-              placeholder="阿里云账号用户名"
-              @blur="saveConfig"
+              placeholder="阿里云用户名"
+              @input="markConfigChanged"
             >
               <template #prefix>
                 <el-icon><User /></el-icon>
@@ -74,9 +85,9 @@
             <el-input
               v-model="aliyunConfig.password"
               type="password"
-              placeholder="阿里云镜像仓库密码"
+              placeholder="阿里云密码"
               show-password
-              @blur="saveConfig"
+              @input="markConfigChanged"
             >
               <template #prefix>
                 <el-icon><Lock /></el-icon>
@@ -93,7 +104,7 @@
             <el-select
               v-model="aliyunConfig.region"
               placeholder="选择阿里云地域"
-              @change="saveConfig"
+              @change="markConfigChanged"
               style="width: 100%"
             >
               <el-option
@@ -146,6 +157,9 @@ const loading = ref(false)
 const lastSaved = ref('')
 const testingConnection = ref(false)
 const connectionStatus = ref(null)
+const savingConfig = ref(false)
+const isConfigChanged = ref(false)
+const originalConfig = ref({})
 
 // 阿里云配置数据
 const aliyunConfig = ref({
@@ -204,13 +218,16 @@ const loadConfig = async () => {
     
     const response = await systemAPI.getAliyunConfig()
     if (response.status === 'success' && response.data) {
-      aliyunConfig.value = {
+      const configData = {
         registry_url: response.data.registry_url || '',
         namespace: response.data.namespace || '',
         username: response.data.username || '',
         password: response.data.password || '',
         region: response.data.region || ''
       }
+      aliyunConfig.value = { ...configData }
+      originalConfig.value = { ...configData }
+      isConfigChanged.value = false
     }
   } catch (error) {
     console.error('加载阿里云配置失败:', error)
@@ -225,9 +242,27 @@ const loadConfig = async () => {
  */
 const saveConfig = async () => {
   try {
-    const response = await systemAPI.updateAliyunConfig(aliyunConfig.value)
+    savingConfig.value = true
+    
+    // 准备配置数据，映射字段名并处理占位符密码
+    const configData = {
+      registry: aliyunConfig.value.registry_url,
+      namespace: aliyunConfig.value.namespace,
+      username: aliyunConfig.value.username,
+      password: aliyunConfig.value.password,
+      region: aliyunConfig.value.region
+    }
+    
+    // 如果密码是占位符则不发送
+    if (configData.password === '***') {
+      delete configData.password // 不发送占位符密码
+    }
+    
+    const response = await systemAPI.updateAliyunConfig(configData)
     
     if (response.status === 'success') {
+      originalConfig.value = { ...aliyunConfig.value }
+      isConfigChanged.value = false
       updateLastSaved()
       ElMessage.success('阿里云配置已保存')
     } else {
@@ -236,7 +271,16 @@ const saveConfig = async () => {
   } catch (error) {
     console.error('保存阿里云配置失败:', error)
     ElMessage.error('保存配置失败：' + (error.response?.data?.message || error.message || '未知错误'))
+  } finally {
+    savingConfig.value = false
   }
+}
+
+/**
+ * 标记配置已变更
+ */
+const markConfigChanged = () => {
+  isConfigChanged.value = true
 }
 
 /**
@@ -246,10 +290,6 @@ const testConnection = async () => {
   try {
     testingConnection.value = true
     connectionStatus.value = null
-    
-    // 这里可以调用后端API测试阿里云连接
-    // 暂时模拟测试结果
-    await new Promise(resolve => setTimeout(resolve, 2000))
     
     // 简单验证配置完整性
     if (!aliyunConfig.value.registry_url || !aliyunConfig.value.username || 
@@ -262,10 +302,39 @@ const testConnection = async () => {
       return
     }
     
-    connectionStatus.value = {
-      title: '连接成功',
-      type: 'success',
-      message: '阿里云镜像仓库连接测试通过，配置正确'
+    // 检查密码是否为占位符
+    if (aliyunConfig.value.password === '***') {
+      connectionStatus.value = {
+        title: '需要输入密码',
+        type: 'warning',
+        message: '请输入新的阿里云密码以进行连接测试'
+      }
+      return
+    }
+    
+    // 调用后端API测试连接
+    const testConfig = {
+      registry_url: aliyunConfig.value.registry_url,
+      namespace: aliyunConfig.value.namespace,
+      username: aliyunConfig.value.username,
+      password: aliyunConfig.value.password,
+      region: aliyunConfig.value.region || 'cn-hangzhou'
+    }
+
+    const response = await systemAPI.testAliyunConnection(testConfig)
+    
+    if (response.status === 'success') {
+      connectionStatus.value = {
+        title: '连接成功',
+        type: 'success',
+        message: response.message || '阿里云镜像仓库连接测试通过，配置正确'
+      }
+    } else {
+      connectionStatus.value = {
+        title: '连接失败',
+        type: 'error',
+        message: response.message || '阿里云镜像仓库连接测试失败'
+      }
     }
   } catch (error) {
     console.error('测试阿里云连接失败:', error)
@@ -337,6 +406,11 @@ const updateLastSaved = () => {
 .header-title {
   font-size: 16px;
   flex: 1;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .config-section {

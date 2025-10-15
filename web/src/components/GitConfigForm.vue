@@ -26,14 +26,25 @@
       <template #header>
         <div class="card-header">
           <span class="header-title">Gitee配置</span>
-          <el-button 
-            type="primary" 
-            size="small" 
-            @click="testConnection('gitee')"
-            :loading="testingConnection.gitee"
-          >
-            测试连接
-          </el-button>
+          <div class="header-actions">
+            <el-button 
+              type="success" 
+              size="small" 
+              @click="saveGiteeConfig"
+              :loading="savingConfig.gitee"
+              :disabled="!isGiteeConfigChanged"
+            >
+              保存配置
+            </el-button>
+            <el-button 
+              type="primary" 
+              size="small" 
+              @click="testConnection('gitee')"
+              :loading="testingConnection.gitee"
+            >
+              测试连接
+            </el-button>
+          </div>
         </div>
       </template>
 
@@ -42,7 +53,7 @@
           <el-input
             v-model="giteeConfig.repo_url"
             placeholder="https://gitee.com/username/repository.git"
-            @blur="saveGiteeConfig"
+            @input="markGiteeConfigChanged"
           />
         </el-form-item>
 
@@ -50,7 +61,7 @@
           <el-input
             v-model="giteeConfig.username"
             placeholder="Gitee用户名"
-            @blur="saveGiteeConfig"
+            @input="markGiteeConfigChanged"
           />
         </el-form-item>
 
@@ -60,7 +71,7 @@
             type="password"
             placeholder="Gitee密码或访问令牌"
             show-password
-            @blur="saveGiteeConfig"
+            @input="markGiteeConfigChanged"
           />
         </el-form-item>
 
@@ -68,7 +79,7 @@
           <el-input
             v-model="giteeConfig.email"
             placeholder="Git提交邮箱"
-            @blur="saveGiteeConfig"
+            @input="markGiteeConfigChanged"
           />
         </el-form-item>
       </el-form>
@@ -89,14 +100,25 @@
       <template #header>
         <div class="card-header">
           <span class="header-title">GitHub配置</span>
-          <el-button 
-            type="primary" 
-            size="small" 
-            @click="testConnection('github')"
-            :loading="testingConnection.github"
-          >
-            测试连接
-          </el-button>
+          <div class="header-actions">
+            <el-button 
+              type="success" 
+              size="small" 
+              @click="saveGitHubConfig"
+              :loading="savingConfig.github"
+              :disabled="!isGitHubConfigChanged"
+            >
+              保存配置
+            </el-button>
+            <el-button 
+              type="primary" 
+              size="small" 
+              @click="testConnection('github')"
+              :loading="testingConnection.github"
+            >
+              测试连接
+            </el-button>
+          </div>
         </div>
       </template>
 
@@ -105,7 +127,7 @@
           <el-input
             v-model="githubConfig.repo_url"
             placeholder="https://github.com/username/repository.git"
-            @blur="saveGitHubConfig"
+            @input="markGitHubConfigChanged"
           />
         </el-form-item>
 
@@ -113,7 +135,7 @@
           <el-input
             v-model="githubConfig.username"
             placeholder="GitHub用户名"
-            @blur="saveGitHubConfig"
+            @input="markGitHubConfigChanged"
           />
         </el-form-item>
 
@@ -123,7 +145,15 @@
             type="password"
             placeholder="GitHub Personal Access Token"
             show-password
-            @blur="saveGitHubConfig"
+            @input="markGitHubConfigChanged"
+          />
+        </el-form-item>
+
+        <el-form-item label="邮箱" required>
+          <el-input
+            v-model="githubConfig.email"
+            placeholder="Git提交邮箱"
+            @input="markGitHubConfigChanged"
           />
         </el-form-item>
       </el-form>
@@ -155,6 +185,20 @@ const loading = ref(false)
 const lastSaved = ref('')
 const gitRepositoryType = ref('gitee')
 
+// 保存状态管理
+const savingConfig = ref({
+  gitee: false,
+  github: false
+})
+
+// 配置变更状态管理
+const isGiteeConfigChanged = ref(false)
+const isGitHubConfigChanged = ref(false)
+
+// 原始配置备份，用于检测变更和密码处理
+const originalGiteeConfig = ref({})
+const originalGitHubConfig = ref({})
+
 const giteeConfig = ref({
   repo_url: '',
   username: '',
@@ -165,7 +209,8 @@ const giteeConfig = ref({
 const githubConfig = ref({
   repo_url: '',
   username: '',
-  token: ''
+  token: '',
+  email: ''
 })
 
 const testingConnection = ref({
@@ -196,6 +241,14 @@ const loadConfigs = async () => {
       const data = gitResponse.data
       
       if (data.gitee) {
+        // 保存原始配置用于测试连接
+        originalGiteeConfig.value = {
+          repo_url: data.gitee.repo_url || '',
+          username: data.gitee.username || '',
+          password: data.gitee.password || '',
+          email: data.gitee.email || ''
+        }
+        
         giteeConfig.value = {
           repo_url: data.gitee.repo_url || '',
           username: data.gitee.username || '',
@@ -205,13 +258,26 @@ const loadConfigs = async () => {
       }
       
       if (data.github) {
+        // 保存原始配置用于测试连接
+        originalGitHubConfig.value = {
+          repo_url: data.github.repo_url || '',
+          username: data.github.username || '',
+          token: data.github.token || '',
+          email: data.github.email || ''
+        }
+        
         githubConfig.value = {
           repo_url: data.github.repo_url || '',
           username: data.github.username || '',
-          token: data.github.token || ''
+          token: data.github.token || '',
+          email: data.github.email || ''
         }
       }
     }
+    
+    // 重置变更状态
+    isGiteeConfigChanged.value = false
+    isGitHubConfigChanged.value = false
   } catch (error) {
     console.error('加载配置失败:', error)
     ElMessage.error('加载配置失败：' + (error.response?.data?.message || error.message || '未知错误'))
@@ -241,11 +307,24 @@ const handleRepositoryTypeChange = async (newType) => {
   }
 }
 
+// 标记配置变更
+const markGiteeConfigChanged = () => {
+  isGiteeConfigChanged.value = true
+}
+
+const markGitHubConfigChanged = () => {
+  isGitHubConfigChanged.value = true
+}
+
 const saveGiteeConfig = async () => {
   try {
+    savingConfig.value.gitee = true
     const response = await systemAPI.updateGiteeConfig(giteeConfig.value)
     
     if (response.status === 'success') {
+      // 更新原始配置
+      originalGiteeConfig.value = { ...giteeConfig.value }
+      isGiteeConfigChanged.value = false
       updateLastSaved()
       ElMessage.success('Gitee配置已保存')
     } else {
@@ -254,14 +333,20 @@ const saveGiteeConfig = async () => {
   } catch (error) {
     console.error('保存Gitee配置失败:', error)
     ElMessage.error('保存配置失败：' + (error.response?.data?.message || error.message || '未知错误'))
+  } finally {
+    savingConfig.value.gitee = false
   }
 }
 
 const saveGitHubConfig = async () => {
   try {
+    savingConfig.value.github = true
     const response = await systemAPI.updateGitHubConfig(githubConfig.value)
     
     if (response.status === 'success') {
+      // 更新原始配置
+      originalGitHubConfig.value = { ...githubConfig.value }
+      isGitHubConfigChanged.value = false
       updateLastSaved()
       ElMessage.success('GitHub配置已保存')
     } else {
@@ -270,6 +355,8 @@ const saveGitHubConfig = async () => {
   } catch (error) {
     console.error('保存GitHub配置失败:', error)
     ElMessage.error('保存配置失败：' + (error.response?.data?.message || error.message || '未知错误'))
+  } finally {
+    savingConfig.value.github = false
   }
 }
 
@@ -278,7 +365,55 @@ const testConnection = async (type) => {
     testingConnection.value[type] = true
     connectionStatus.value[type] = null
     
-    const response = await systemAPI.testGitConnection(type)
+    // 获取当前表单配置
+    const config = type === 'gitee' ? giteeConfig.value : githubConfig.value
+    
+    // 验证必填字段
+    if (!config.repo_url || !config.username) {
+      connectionStatus.value[type] = {
+        title: '连接失败',
+        type: 'error',
+        message: '请填写仓库地址和用户名'
+      }
+      ElMessage.error('请填写仓库地址和用户名')
+      return
+    }
+    
+    if (type === 'gitee' && !config.password) {
+      connectionStatus.value[type] = {
+        title: '连接失败',
+        type: 'error',
+        message: '请填写Gitee密码'
+      }
+      ElMessage.error('请填写Gitee密码')
+      return
+    }
+    
+    if (type === 'github' && !config.token) {
+      connectionStatus.value[type] = {
+        title: '连接失败',
+        type: 'error',
+        message: '请填写GitHub访问令牌'
+      }
+      ElMessage.error('请填写GitHub访问令牌')
+      return
+    }
+    
+    // 构建测试请求数据
+    const testData = {
+      type: type,
+      repo_url: config.repo_url,
+      username: config.username,
+      email: config.email || ''
+    }
+    
+    if (type === 'gitee') {
+      testData.password = config.password
+    } else {
+      testData.token = config.token
+    }
+    
+    const response = await systemAPI.testGitConnection(testData)
     
     if (response.status === 'success') {
       connectionStatus.value[type] = {
@@ -339,9 +474,15 @@ const updateLastSaved = () => {
 .card-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
   font-weight: 600;
   color: #303133;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .header-icon {

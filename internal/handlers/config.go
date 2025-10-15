@@ -19,15 +19,25 @@
 package handlers
 
 import (
+	"context"  // 上下文控制
+	"encoding/base64" // Base64编码
+	"encoding/json"   // JSON处理
 	"fmt"      // 字符串格式化
+	"io"       // IO操作
 	"net/http" // HTTP状态码和处理
 	"os"       // 环境变量操作
+	"strings"  // 字符串操作
+	"time"     // 时间操作
 
 	"docker-image-sync-platform/internal/config"   // 配置管理
 	"docker-image-sync-platform/internal/database" // 数据库操作
 	"docker-image-sync-platform/internal/models"   // 数据模型
 	"docker-image-sync-platform/internal/services" // 业务服务
 	"github.com/gin-gonic/gin"                     // Gin Web框架
+	"github.com/go-git/go-git/v5"                  // Git操作
+	gitconfig "github.com/go-git/go-git/v5/config" // Git配置
+	githttp "github.com/go-git/go-git/v5/plumbing/transport/http" // Git HTTP认证
+	"github.com/go-git/go-git/v5/storage/memory"   // Git内存存储
 )
 
 // ConfigHandler 配置处理器
@@ -626,7 +636,25 @@ func (h *ConfigHandler) UpdateGitHubConfig(c *gin.Context) {
 //   - 400: 请求参数错误
 //   - 500: 连接测试失败
 func (h *ConfigHandler) TestGitConnection(c *gin.Context) {
-	gitType := c.Param("type")
+	var request struct {
+		Type     string `json:"type" binding:"required"`
+		RepoURL  string `json:"repo_url" binding:"required"`
+		Username string `json:"username" binding:"required"`
+		Password string `json:"password"`
+		Token    string `json:"token"`
+		Email    string `json:"email"`
+	}
+	
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": "Invalid request format",
+			"error":   err.Error(),
+		})
+		return
+	}
+	
+	gitType := request.Type
 	if gitType != "gitee" && gitType != "github" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"status":  "error",
@@ -635,26 +663,48 @@ func (h *ConfigHandler) TestGitConnection(c *gin.Context) {
 		return
 	}
 
-	// 获取配置
-	gitConfig, err := h.configService.GetGitConfig(gitType)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
+	// 验证必填字段
+	if request.RepoURL == "" || request.Username == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
 			"status":  "error",
-			"message": "Failed to get git configuration",
-			"error":   err.Error(),
+			"message": "repo_url and username are required",
 		})
 		return
 	}
 
-	// 这里可以添加实际的连接测试逻辑
-	// 例如：尝试克隆仓库或验证认证信息
+	// 根据类型验证认证字段
+	if gitType == "gitee" && request.Password == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": "password is required for Gitee",
+		})
+		return
+	}
+	
+	if gitType == "github" && request.Token == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": "token is required for GitHub",
+		})
+		return
+	}
+
+	// 实际的连接测试逻辑
+	err := h.testGitRepositoryConnection(request.RepoURL, request.Username, request.Password, request.Token, gitType)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": fmt.Sprintf("Git connection test failed: %s", err.Error()),
+		})
+		return
+	}
 	
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "success",
 		"message": fmt.Sprintf("%s connection test successful", gitType),
 		"data": gin.H{
-			"repo_url": gitConfig.RepoURL,
-			"username": gitConfig.Username,
+			"repo_url": request.RepoURL,
+			"username": request.Username,
 		},
 	})
 }
@@ -692,11 +742,18 @@ func (h *ConfigHandler) GetAliyunConfigNew(c *gin.Context) {
 		return
 	}
 
-	// 移除敏感信息
+	// 处理敏感信息 - 密码用占位符替代
+	password := ""
+	if aliyunConfig.Password != "" {
+		password = "***" // 如果有密码，显示占位符
+	}
+	
 	response := gin.H{
-		"registry":  aliyunConfig.Registry,
-		"namespace": aliyunConfig.Namespace,
-		"username":  aliyunConfig.Username,
+		"registry_url": aliyunConfig.Registry,
+		"namespace":    aliyunConfig.Namespace,
+		"username":     aliyunConfig.Username,
+		"password":     password,
+		"region":       aliyunConfig.Region,
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -754,6 +811,62 @@ func (h *ConfigHandler) UpdateAliyunConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "success",
 		"message": "Aliyun configuration updated successfully",
+	})
+}
+
+// TestAliyunConnection 测试阿里云镜像仓库连接
+//
+// HTTP方法: POST
+// 路径: /api/v1/config/aliyun/test
+//
+// 请求体:
+//   - registry_url: 镜像仓库地址
+//   - namespace: 命名空间
+//   - username: 用户名
+//   - password: 密码
+//   - region: 地域
+//
+// 响应码:
+//   - 200: 连接测试成功
+//   - 400: 请求参数错误
+//   - 500: 连接测试失败
+//
+// 功能说明:
+//   - 验证阿里云镜像仓库的连接配置
+//   - 检查认证信息是否正确
+//   - 验证仓库访问权限
+func (h *ConfigHandler) TestAliyunConnection(c *gin.Context) {
+	var request struct {
+		RegistryURL string `json:"registry_url" binding:"required"`
+		Namespace   string `json:"namespace" binding:"required"`
+		Username    string `json:"username" binding:"required"`
+		Password    string `json:"password" binding:"required"`
+		Region      string `json:"region"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": "Invalid request format",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	// 测试阿里云镜像仓库连接
+	err := h.testAliyunRegistryConnection(request.RegistryURL, request.Namespace, request.Username, request.Password)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "阿里云镜像仓库连接失败",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "阿里云镜像仓库连接测试成功，配置正确",
 	})
 }
 
@@ -837,4 +950,179 @@ func (h *ConfigHandler) GetAllConfigs(c *gin.Context) {
 		"message": "All configurations retrieved successfully",
 		"data":    response,
 	})
+}
+
+// testGitRepositoryConnection 测试Git仓库连接
+//
+// 使用go-git库尝试连接到指定的Git仓库，验证认证信息是否正确
+//
+// 参数：
+//   - repoURL: 仓库URL
+//   - username: 用户名
+//   - password: 密码（用于Gitee）
+//   - token: 访问令牌（用于GitHub）
+//   - gitType: Git类型（gitee或github）
+//
+// 返回：
+//   - error: 连接错误，nil表示连接成功
+func (h *ConfigHandler) testGitRepositoryConnection(repoURL, username, password, token, gitType string) error {
+	// 创建内存存储，用于测试连接而不实际克隆仓库
+	storage := memory.NewStorage()
+	
+	// 准备认证信息
+	var auth *githttp.BasicAuth
+	if gitType == "gitee" {
+		auth = &githttp.BasicAuth{
+			Username: username,
+			Password: password,
+		}
+	} else if gitType == "github" {
+		auth = &githttp.BasicAuth{
+			Username: username,
+			Password: token,
+		}
+	}
+	
+	// 尝试列出远程引用来测试连接
+	remote := git.NewRemote(storage, &gitconfig.RemoteConfig{
+		Name: "origin",
+		URLs: []string{repoURL},
+	})
+	
+	// 创建一个通道来接收结果
+	resultChan := make(chan error, 1)
+	done := make(chan bool, 1)
+	
+	// 在goroutine中执行Git操作
+	go func() {
+		defer func() {
+			done <- true
+		}()
+		
+		_, err := remote.List(&git.ListOptions{
+			Auth: auth,
+		})
+		
+		select {
+		case resultChan <- err:
+		case <-done:
+			// 如果已经超时，不发送结果
+		}
+	}()
+	
+	// 设置15秒超时（减少超时时间以更快响应）
+	timeout := time.After(15 * time.Second)
+	
+	// 等待结果或超时
+	select {
+	case err := <-resultChan:
+		if err != nil {
+			// 检查是否是超时相关的错误
+			errStr := err.Error()
+			if context.DeadlineExceeded.Error() == errStr || 
+			   fmt.Sprintf("context deadline exceeded") == errStr ||
+			   fmt.Sprintf("timeout") == errStr {
+				return fmt.Errorf("连接超时：无法连接到%s仓库。请检查网络连接或稍后重试", gitType)
+			}
+			
+			// 提供更详细的错误信息
+			if gitType == "github" {
+				return fmt.Errorf("GitHub连接失败: %s。请检查仓库URL、用户名和访问令牌是否正确，以及网络连接是否正常", err.Error())
+			} else {
+				return fmt.Errorf("Gitee连接失败: %s。请检查仓库URL、用户名和密码是否正确，以及网络连接是否正常", err.Error())
+			}
+		}
+		return nil
+	case <-timeout:
+		// 发送停止信号
+		done <- true
+		return fmt.Errorf("连接超时：无法在15秒内连接到%s仓库。请检查网络连接或稍后重试", gitType)
+	}
+}
+
+// testAliyunRegistryConnection 测试阿里云镜像仓库连接
+//
+// 通过调用阿里云容器镜像服务API来验证认证信息和仓库访问权限
+//
+// 参数：
+//   - registryURL: 镜像仓库地址
+//   - namespace: 命名空间
+//   - username: 用户名
+//   - password: 密码
+//
+// 返回：
+//   - error: 连接错误，nil表示连接成功
+func (h *ConfigHandler) testAliyunRegistryConnection(registryURL, namespace, username, password string) error {
+	// 构建Docker Registry API的认证URL
+	// 阿里云容器镜像服务使用标准的Docker Registry v2 API
+	authURL := fmt.Sprintf("https://%s/v2/", strings.TrimPrefix(registryURL, "https://"))
+	
+	// 创建HTTP客户端
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+	
+	// 创建请求
+	req, err := http.NewRequest("GET", authURL, nil)
+	if err != nil {
+		return fmt.Errorf("创建请求失败: %v", err)
+	}
+	
+	// 添加Basic认证头
+	auth := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
+	req.Header.Set("Authorization", "Basic "+auth)
+	req.Header.Set("User-Agent", "Docker-Image-Sync-Platform/1.0")
+	
+	// 发送请求
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("连接阿里云镜像仓库失败: %v", err)
+	}
+	defer resp.Body.Close()
+	
+	// 读取响应体
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("读取响应失败: %v", err)
+	}
+	
+	// 检查响应状态码
+	switch resp.StatusCode {
+	case http.StatusOK:
+		// 连接成功
+		return nil
+	case http.StatusUnauthorized:
+		// 认证失败
+		return fmt.Errorf("认证失败：用户名或密码错误")
+	case http.StatusForbidden:
+		// 权限不足
+		return fmt.Errorf("权限不足：用户没有访问该镜像仓库的权限")
+	case http.StatusNotFound:
+		// 仓库不存在
+		return fmt.Errorf("镜像仓库不存在或地址错误")
+	default:
+		// 其他错误
+		var errorMsg string
+		if len(body) > 0 {
+			// 尝试解析错误响应
+			var errorResp map[string]interface{}
+			if json.Unmarshal(body, &errorResp) == nil {
+				if msg, ok := errorResp["message"].(string); ok {
+					errorMsg = msg
+				} else if errors, ok := errorResp["errors"].([]interface{}); ok && len(errors) > 0 {
+					if errorMap, ok := errors[0].(map[string]interface{}); ok {
+						if msg, ok := errorMap["message"].(string); ok {
+							errorMsg = msg
+						}
+					}
+				}
+			}
+		}
+		
+		if errorMsg == "" {
+			errorMsg = fmt.Sprintf("HTTP %d", resp.StatusCode)
+		}
+		
+		return fmt.Errorf("连接失败: %s", errorMsg)
+	}
 }

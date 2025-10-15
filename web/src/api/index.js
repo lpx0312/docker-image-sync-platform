@@ -351,10 +351,16 @@ export const systemAPI = {
    * 
    * 测试指定Git仓库的连接状态
    * 
-   * @param {string} type - 仓库类型 ('gitee' | 'github')
+   * @param {Object} config - 测试配置数据
+   * @param {string} config.type - 仓库类型 ('gitee' | 'github')
+   * @param {string} config.repo_url - 仓库URL
+   * @param {string} config.username - 用户名
+   * @param {string} config.password - 密码（Gitee）
+   * @param {string} config.token - 访问令牌（GitHub）
+   * @param {string} config.email - 邮箱
    * @returns {Promise} 返回连接测试结果
    */
-  testGitConnection: (type) => api.post('/config/git/test', { type }),
+  testGitConnection: (config) => api.post('/config/git/test', config),
 
   // ====================================================================
   // 阿里云配置管理接口
@@ -380,6 +386,21 @@ export const systemAPI = {
    * @returns {Promise} 返回更新结果
    */
   updateAliyunConfig: (config) => api.put('/config/aliyun', config),
+
+  /**
+   * 测试阿里云连接
+   * 
+   * 测试阿里云镜像仓库的连接状态
+   * 
+   * @param {Object} config - 测试配置数据
+   * @param {string} config.registry_url - 镜像仓库地址
+   * @param {string} config.namespace - 命名空间
+   * @param {string} config.username - 用户名
+   * @param {string} config.password - 密码
+   * @param {string} config.region - 地域
+   * @returns {Promise} 返回连接测试结果
+   */
+  testAliyunConnection: (config) => api.post('/config/aliyun/test', config),
 
   // ====================================================================
   // 通用配置管理接口
