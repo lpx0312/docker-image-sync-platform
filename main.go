@@ -44,7 +44,6 @@ import (
 	"syscall"
 	"time"
 
-	// 内部包导入
 	"docker-image-sync-platform/internal/config"
 	"docker-image-sync-platform/internal/database"
 	"docker-image-sync-platform/internal/handlers"
@@ -52,8 +51,8 @@ import (
 	"docker-image-sync-platform/internal/middleware"
 	"docker-image-sync-platform/internal/services"
 
-	// 第三方包导入
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 	"go.uber.org/zap"
 	"golang.org/x/time/rate"
 )
@@ -97,19 +96,35 @@ func main() {
 	// 第二阶段：业务服务初始化
 	// ========================================================================
 
+	// 创建logrus logger用于配置服务
+	// 配置服务需要logrus.Logger，这里创建一个简单的实例
+	logrusLogger := logrus.New()
+	logrusLogger.SetLevel(logrus.InfoLevel)
+
+	// 初始化加密服务
+	// 负责敏感信息的加密解密
+	encryptionService, err := services.NewEncryptionService(logrusLogger)
+	if err != nil {
+		logger.Logger.Fatal("初始化加密服务失败", zap.Error(err))
+	}
+
 	// 初始化Git服务工厂
 	// 负责根据配置动态选择Git服务（Gitee/GitHub）
-	gitServiceFactory := services.NewGitServiceFactory()
+	gitServiceFactory := services.NewGitServiceFactory(encryptionService)
 
 	// 初始化GitHub服务
 	// 负责GitHub Actions工作流的监控和管理
 	githubService := services.NewGitHubService()
 
+	// 初始化配置服务
+	// 负责数据库配置的CRUD操作和加密解密
+	configService := services.NewConfigService(database.DB, encryptionService, logrusLogger)
+
 	// 初始化HTTP请求处理器
 	// 每个处理器负责特定的业务逻辑
-	syncHandler := handlers.NewSyncHandler(gitServiceFactory, githubService) // 同步操作处理器
-	imageHandler := handlers.NewImageHandler()                               // 镜像管理处理器
-	configHandler := handlers.NewConfigHandler(gitServiceFactory)            // 配置管理处理器
+	syncHandler := handlers.NewSyncHandler(gitServiceFactory, githubService)    // 同步操作处理器
+	imageHandler := handlers.NewImageHandler()                                  // 镜像管理处理器
+	configHandler := handlers.NewConfigHandler(gitServiceFactory, configService) // 配置管理处理器
 
 	// TODO: 定时任务初始化
 	// 可以在这里添加定时任务，用于：
@@ -321,6 +336,36 @@ func main() {
 			// PUT /api/v1/config/git-repository - 更新Git仓库配置
 			// 更新Git仓库类型选择（gitee或github）
 			config.PUT("/git-repository", configHandler.UpdateGitRepositoryConfig)
+
+			// ====================================================================
+			// 数据库配置管理API - Git配置
+			// ====================================================================
+			// GET /api/v1/config/git - 获取Git配置
+			config.GET("/git", configHandler.GetGitConfig)
+
+			// PUT /api/v1/config/git/gitee - 更新Gitee配置
+			config.PUT("/git/gitee", configHandler.UpdateGiteeConfig)
+
+			// PUT /api/v1/config/git/github - 更新GitHub配置
+			config.PUT("/git/github", configHandler.UpdateGitHubConfig)
+
+			// POST /api/v1/config/git/test - 测试Git连接
+			config.POST("/git/test", configHandler.TestGitConnection)
+
+			// ====================================================================
+			// 数据库配置管理API - 阿里云配置
+			// ====================================================================
+			// GET /api/v1/config/aliyun-db - 获取阿里云配置（数据库版本）
+			config.GET("/aliyun-db", configHandler.GetAliyunConfigNew)
+
+			// PUT /api/v1/config/aliyun-db - 更新阿里云配置（数据库版本）
+			config.PUT("/aliyun-db", configHandler.UpdateAliyunConfig)
+
+			// ====================================================================
+			// 通用配置管理API
+			// ====================================================================
+			// GET /api/v1/config/all - 获取所有配置
+			config.GET("/all", configHandler.GetAllConfigs)
 		}
 
 		// ====================================================================

@@ -51,43 +51,51 @@ import (
 // - 镜像列表文件(images.txt)的版本控制
 // - 与Gitee远程仓库的同步和推送
 // - 冲突解决和错误恢复机制
+// - 从数据库动态加载Git配置
 //
 // 核心功能：
 //   - 自动化的仓库管理和同步
 //   - 智能的冲突解决策略
 //   - 镜像列表的增量更新和历史保留
 //   - 与CI/CD流水线的集成支持
+//   - 支持加密配置的安全存储和读取
 type GitService struct {
-	repoPath string          // 本地仓库路径
-	repo     *git.Repository // Git仓库实例
+	repoPath          string             // 本地仓库路径
+	repo              *git.Repository    // Git仓库实例
+	encryptionService *EncryptionService // 加密服务，用于解密敏感配置
 }
 
 // NewGitService 创建Git服务实例
 //
 // 功能说明:
 //   - 初始化Git服务，配置本地仓库路径
-//   - 从应用配置中读取Git相关设置
+//   - 注入加密服务以支持敏感配置的解密
 //   - 为后续的Git操作做准备
 //
+// 参数:
+//   - encryptionService: 加密服务实例，用于解密数据库中的敏感配置
+//
 // 返回值:
-//   - *GitService: Git服务实例，包含配置的仓库路径
+//   - *GitService: Git服务实例，包含配置的仓库路径和加密服务
 //
 // 使用场景:
 //   - 系统启动时初始化Git服务
 //   - 镜像同步任务需要版本控制时
 //   - 需要与远程仓库交互时
-func NewGitService() *GitService {
+func NewGitService(encryptionService *EncryptionService) *GitService {
 	return &GitService{
-		repoPath: config.AppConfig.Git.LocalRepoPath,
+		repoPath:          config.AppConfig.Git.LocalRepoPath,
+		encryptionService: encryptionService,
 	}
 }
 
 // getCurrentGitConfig 获取当前配置的Git仓库信息
 //
 // 功能说明:
-//   - 从数据库中读取当前配置的Git仓库类型
+//   - 从数据库中读取当前配置的Git仓库类型和详细配置
 //   - 根据仓库类型返回对应的配置信息
 //   - 支持Gitee和GitHub两种仓库类型
+//   - 优先使用数据库配置，如果不存在则回退到config.yaml
 //
 // 返回值:
 //   - repoURL: Git仓库URL
@@ -109,27 +117,103 @@ func (s *GitService) getCurrentGitConfig() (repoURL, username, token, email, rep
 		logger.Logger.Info("获取Git仓库类型配置", zap.String("repo_type", repoType))
 	}
 
-	// 根据仓库类型返回对应的配置
+	// 根据仓库类型从数据库获取对应的配置
 	switch repoType {
 	case "github":
-		logger.Logger.Info("使用GitHub配置", zap.String("repo_url", config.AppConfig.Git.GitHub.RepoURL))
-		return config.AppConfig.Git.GitHub.RepoURL,
-			config.AppConfig.Git.GitHub.Username,
-			config.AppConfig.Git.GitHub.Token,
-			"", // GitHub配置中没有email字段
-			"github",
-			nil
+		// 从数据库获取GitHub配置
+		repoURL, err = s.getConfigValue("github_repo_url")
+		if err != nil {
+			// 回退到config.yaml配置
+			logger.Logger.Warn("从数据库获取GitHub仓库URL失败，使用config.yaml配置", zap.Error(err))
+			repoURL = config.AppConfig.Git.GitHub.RepoURL
+		}
+
+		username, err = s.getConfigValue("github_username")
+		if err != nil {
+			logger.Logger.Warn("从数据库获取GitHub用户名失败，使用config.yaml配置", zap.Error(err))
+			username = config.AppConfig.Git.GitHub.Username
+		}
+
+		token, err = s.getConfigValue("github_token")
+		if err != nil {
+			logger.Logger.Warn("从数据库获取GitHub令牌失败，使用config.yaml配置", zap.Error(err))
+			token = config.AppConfig.Git.GitHub.Token
+		}
+
+		email = "" // GitHub配置中没有email字段
+		logger.Logger.Info("使用GitHub配置", zap.String("repo_url", repoURL), zap.String("username", username))
+		return repoURL, username, token, email, "github", nil
+
 	case "gitee":
 		fallthrough
 	default:
-		logger.Logger.Info("使用Gitee配置", zap.String("repo_url", config.AppConfig.Git.Gitee.RepoURL))
-		return config.AppConfig.Git.Gitee.RepoURL,
-			config.AppConfig.Git.Gitee.Username,
-			config.AppConfig.Git.Gitee.Token,
-			config.AppConfig.Git.Gitee.Email,
-			"gitee",
-			nil
+		// 从数据库获取Gitee配置
+		repoURL, err = s.getConfigValue("gitee_repo_url")
+		if err != nil {
+			// 回退到config.yaml配置
+			logger.Logger.Warn("从数据库获取Gitee仓库URL失败，使用config.yaml配置", zap.Error(err))
+			repoURL = config.AppConfig.Git.Gitee.RepoURL
+		}
+
+		username, err = s.getConfigValue("gitee_username")
+		if err != nil {
+			logger.Logger.Warn("从数据库获取Gitee用户名失败，使用config.yaml配置", zap.Error(err))
+			username = config.AppConfig.Git.Gitee.Username
+		}
+
+		token, err = s.getConfigValue("gitee_token")
+		if err != nil {
+			logger.Logger.Warn("从数据库获取Gitee令牌失败，使用config.yaml配置", zap.Error(err))
+			token = config.AppConfig.Git.Gitee.Token
+		}
+
+		email, err = s.getConfigValue("gitee_email")
+		if err != nil {
+			logger.Logger.Warn("从数据库获取Gitee邮箱失败，使用config.yaml配置", zap.Error(err))
+			email = config.AppConfig.Git.Gitee.Email
+		}
+
+		logger.Logger.Info("使用Gitee配置", zap.String("repo_url", repoURL), zap.String("username", username))
+		return repoURL, username, token, email, "gitee", nil
 	}
+}
+
+// getConfigValue 从数据库获取配置值
+//
+// 功能说明:
+//   - 从system_configs表中查询指定的配置项
+//   - 如果配置项被加密，自动解密后返回
+//   - 提供统一的配置获取接口
+//
+// 参数:
+//   - configKey: 配置项的键名
+//
+// 返回值:
+//   - string: 配置项的值（已解密）
+//   - error: 查询或解密过程中的错误
+func (s *GitService) getConfigValue(configKey string) (string, error) {
+	var systemConfig models.SystemConfig
+	err := database.DB.Where("config_key = ?", configKey).First(&systemConfig).Error
+	if err != nil {
+		return "", fmt.Errorf("配置项 %s 不存在: %w", configKey, err)
+	}
+
+	// 如果配置值被加密，需要解密
+	if systemConfig.IsEncrypted {
+		if s.encryptionService == nil {
+			return "", fmt.Errorf("配置项 %s 已加密但加密服务未初始化", configKey)
+		}
+
+		decryptedValue, err := s.encryptionService.Decrypt(systemConfig.ConfigValue)
+		if err != nil {
+			return "", fmt.Errorf("解密配置项 %s 失败: %w", configKey, err)
+		}
+
+		logger.Logger.Debug("成功解密配置项", zap.String("config_key", configKey))
+		return decryptedValue, nil
+	}
+
+	return systemConfig.ConfigValue, nil
 }
 
 // InitRepository 初始化Git仓库

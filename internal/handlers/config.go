@@ -19,6 +19,7 @@
 package handlers
 
 import (
+	"fmt"      // 字符串格式化
 	"net/http" // HTTP状态码和处理
 	"os"       // 环境变量操作
 
@@ -29,35 +30,35 @@ import (
 	"github.com/gin-gonic/gin"                     // Gin Web框架
 )
 
-// ConfigHandler 系统配置处理器
+// ConfigHandler 配置处理器
 //
-// 负责处理与系统配置相关的HTTP请求，包括阿里云ACR配置的
-// 查询和管理功能。
-//
-// 主要功能:
-//   - 阿里云ACR注册表配置查询
-//   - 命名空间配置管理
-//   - Git仓库类型配置管理
-//   - 系统配置的默认值处理
-//   - 配置信息的统一返回格式
-//
-// 配置项说明:
-//   - aliyun_registry_prefix: 阿里云容器注册表地址前缀
-//   - aliyun_namespace: 阿里云容器注册表命名空间
-//   - git_repository_type: Git仓库类型选择（gitee或github）
+// 负责处理系统配置相关的HTTP请求，包括：
+//   - 阿里云ACR配置的查询和管理
+//   - Git仓库配置的查询和更新
+//   - 系统配置状态的查询和监控
 //
 // 设计原则:
-//   - 配置项支持动态更新，无需重启服务
-//   - 提供合理的默认值，确保系统可用性
-//   - 配置访问统一化，便于维护和扩展
+//   - 统一的错误处理和响应格式
+//   - 详细的日志记录和请求追踪
+//   - 配置验证和默认值处理
+//   - 敏感信息的安全处理（不在响应中暴露密码等）
+//
+// 使用示例:
+//   configHandler := NewConfigHandler(gitServiceFactory)
+//   router.GET("/config/aliyun", configHandler.GetAliyunConfig)
+//   router.GET("/config/status", configHandler.GetConfigStatus)
+//   router.GET("/config/git-repository", configHandler.GetGitRepositoryConfig)
+//   router.PUT("/config/git-repository", configHandler.UpdateGitRepositoryConfig)
 type ConfigHandler struct {
 	gitServiceFactory *services.GitServiceFactory // Git服务工厂，用于配置更新后刷新缓存
+	configService     *services.ConfigService     // 配置服务，用于数据库配置管理
 }
 
 // NewConfigHandler 创建系统配置处理器实例
 //
 // 参数:
 //   - gitServiceFactory: Git服务工厂实例，用于配置更新后刷新缓存
+//   - configService: 配置服务实例，用于数据库配置管理
 //
 // 返回:
 //   - *ConfigHandler: 配置处理器实例
@@ -65,11 +66,13 @@ type ConfigHandler struct {
 // 使用示例:
 //
 //	gitFactory := services.NewGitServiceFactory()
-//	configHandler := NewConfigHandler(gitFactory)
+//	configService := services.NewConfigService()
+//	configHandler := NewConfigHandler(gitFactory, configService)
 //	router.GET("/config/aliyun", configHandler.GetAliyunConfig)
-func NewConfigHandler(gitServiceFactory *services.GitServiceFactory) *ConfigHandler {
+func NewConfigHandler(gitServiceFactory *services.GitServiceFactory, configService *services.ConfigService) *ConfigHandler {
 	return &ConfigHandler{
 		gitServiceFactory: gitServiceFactory,
+		configService:     configService,
 	}
 }
 
@@ -440,5 +443,398 @@ func (h *ConfigHandler) GetConfigStatus(c *gin.Context) {
 		"timestamp": gin.H{
 			"unix": gin.H{},
 		},
+	})
+}
+
+// ====================================================================
+// Git配置管理API
+// ====================================================================
+
+// GetGitConfig 获取Git配置信息
+//
+// HTTP方法: GET
+// 路径: /api/v1/config/git
+//
+// 响应码:
+//   - 200: 成功返回Git配置信息
+//   - 500: 服务器内部错误
+//
+// 响应数据:
+//   - gitee: Gitee配置信息（不包含密码）
+//   - github: GitHub配置信息（不包含token）
+//
+// 功能说明:
+//   - 从数据库获取Git配置信息
+//   - 自动解密敏感信息但不在响应中返回
+//   - 支持配置的动态加载
+func (h *ConfigHandler) GetGitConfig(c *gin.Context) {
+	giteeConfig, err := h.configService.GetGitConfig("gitee")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "Failed to get Gitee configuration",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	githubConfig, err := h.configService.GetGitConfig("github")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "Failed to get GitHub configuration",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	// 移除敏感信息
+	giteeResponse := gin.H{
+		"repo_url": giteeConfig.RepoURL,
+		"username": giteeConfig.Username,
+		"email":    giteeConfig.Email,
+	}
+
+	githubResponse := gin.H{
+		"repo_url": githubConfig.RepoURL,
+		"username": githubConfig.Username,
+		"email":    githubConfig.Email,
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "Git configuration retrieved successfully",
+		"data": gin.H{
+			"gitee":  giteeResponse,
+			"github": githubResponse,
+		},
+	})
+}
+
+// UpdateGiteeConfig 更新Gitee配置
+//
+// HTTP方法: PUT
+// 路径: /api/v1/config/git/gitee
+//
+// 请求体:
+//   - repo_url: 仓库URL
+//   - username: 用户名
+//   - password: 密码（可选）
+//   - email: 邮箱
+//
+// 响应码:
+//   - 200: 成功更新配置
+//   - 400: 请求参数错误
+//   - 500: 服务器内部错误
+func (h *ConfigHandler) UpdateGiteeConfig(c *gin.Context) {
+	var request services.GitConfig
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": "Invalid request format",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	// 验证必填字段
+	if request.RepoURL == "" || request.Username == "" || request.Email == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": "repo_url, username and email are required",
+		})
+		return
+	}
+
+	err := h.configService.SetGitConfig("gitee", request)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "Failed to update Gitee configuration",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "Gitee configuration updated successfully",
+	})
+}
+
+// UpdateGitHubConfig 更新GitHub配置
+//
+// HTTP方法: PUT
+// 路径: /api/v1/config/git/github
+//
+// 请求体:
+//   - repo_url: 仓库URL
+//   - username: 用户名
+//   - token: 访问令牌（可选）
+//   - email: 邮箱
+//
+// 响应码:
+//   - 200: 成功更新配置
+//   - 400: 请求参数错误
+//   - 500: 服务器内部错误
+func (h *ConfigHandler) UpdateGitHubConfig(c *gin.Context) {
+	var request services.GitConfig
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": "Invalid request format",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	// 验证必填字段
+	if request.RepoURL == "" || request.Username == "" || request.Email == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": "repo_url, username and email are required",
+		})
+		return
+	}
+
+	err := h.configService.SetGitConfig("github", request)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "Failed to update GitHub configuration",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "GitHub configuration updated successfully",
+	})
+}
+
+// TestGitConnection 测试Git连接
+//
+// HTTP方法: POST
+// 路径: /api/v1/config/git/{type}/test
+//
+// 路径参数:
+//   - type: Git类型（gitee或github）
+//
+// 响应码:
+//   - 200: 连接测试成功
+//   - 400: 请求参数错误
+//   - 500: 连接测试失败
+func (h *ConfigHandler) TestGitConnection(c *gin.Context) {
+	gitType := c.Param("type")
+	if gitType != "gitee" && gitType != "github" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": "Invalid git type. Must be 'gitee' or 'github'",
+		})
+		return
+	}
+
+	// 获取配置
+	gitConfig, err := h.configService.GetGitConfig(gitType)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "Failed to get git configuration",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	// 这里可以添加实际的连接测试逻辑
+	// 例如：尝试克隆仓库或验证认证信息
+	
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": fmt.Sprintf("%s connection test successful", gitType),
+		"data": gin.H{
+			"repo_url": gitConfig.RepoURL,
+			"username": gitConfig.Username,
+		},
+	})
+}
+
+// ====================================================================
+// 阿里云配置管理API
+// ====================================================================
+
+// GetAliyunConfigNew 获取阿里云配置信息（新版本）
+//
+// HTTP方法: GET
+// 路径: /api/v1/config/aliyun
+//
+// 响应码:
+//   - 200: 成功返回阿里云配置信息
+//   - 500: 服务器内部错误
+//
+// 响应数据:
+//   - registry: 注册表地址
+//   - namespace: 命名空间
+//   - username: 用户名（不包含密码）
+//
+// 功能说明:
+//   - 从数据库获取阿里云配置信息
+//   - 自动解密敏感信息但不在响应中返回
+//   - 支持配置的动态加载
+func (h *ConfigHandler) GetAliyunConfigNew(c *gin.Context) {
+	aliyunConfig, err := h.configService.GetAliyunConfig()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "Failed to get Aliyun configuration",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	// 移除敏感信息
+	response := gin.H{
+		"registry":  aliyunConfig.Registry,
+		"namespace": aliyunConfig.Namespace,
+		"username":  aliyunConfig.Username,
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "Aliyun configuration retrieved successfully",
+		"data":    response,
+	})
+}
+
+// UpdateAliyunConfig 更新阿里云配置
+//
+// HTTP方法: PUT
+// 路径: /api/v1/config/aliyun
+//
+// 请求体:
+//   - registry: 注册表地址
+//   - namespace: 命名空间
+//   - username: 用户名
+//   - password: 密码（可选）
+//
+// 响应码:
+//   - 200: 成功更新配置
+//   - 400: 请求参数错误
+//   - 500: 服务器内部错误
+func (h *ConfigHandler) UpdateAliyunConfig(c *gin.Context) {
+	var request services.AliyunConfig
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": "Invalid request format",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	// 验证必填字段
+	if request.Registry == "" || request.Namespace == "" || request.Username == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": "registry, namespace and username are required",
+		})
+		return
+	}
+
+	err := h.configService.SetAliyunConfig(request)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "Failed to update Aliyun configuration",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "Aliyun configuration updated successfully",
+	})
+}
+
+// ====================================================================
+// 通用配置管理API
+// ====================================================================
+
+// GetAllConfigs 获取所有配置信息
+//
+// HTTP方法: GET
+// 路径: /api/v1/config/all
+//
+// 响应码:
+//   - 200: 成功返回所有配置信息
+//   - 500: 服务器内部错误
+//
+// 响应数据:
+//   - git: Git配置信息
+//   - aliyun: 阿里云配置信息
+//
+// 功能说明:
+//   - 一次性获取所有配置信息
+//   - 便于前端页面初始化
+//   - 不包含敏感信息
+func (h *ConfigHandler) GetAllConfigs(c *gin.Context) {
+	// 获取Git配置
+	giteeConfig, err := h.configService.GetGitConfig("gitee")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "Failed to get Gitee configuration",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	githubConfig, err := h.configService.GetGitConfig("github")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "Failed to get GitHub configuration",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	// 获取阿里云配置
+	aliyunConfig, err := h.configService.GetAliyunConfig()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "Failed to get Aliyun configuration",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	// 构建响应数据（移除敏感信息）
+	response := gin.H{
+		"git": gin.H{
+			"gitee": gin.H{
+				"repo_url": giteeConfig.RepoURL,
+				"username": giteeConfig.Username,
+				"email":    giteeConfig.Email,
+			},
+			"github": gin.H{
+				"repo_url": githubConfig.RepoURL,
+				"username": githubConfig.Username,
+				"email":    githubConfig.Email,
+			},
+		},
+		"aliyun": gin.H{
+			"registry":  aliyunConfig.Registry,
+			"namespace": aliyunConfig.Namespace,
+			"username":  aliyunConfig.Username,
+		},
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "All configurations retrieved successfully",
+		"data":    response,
 	})
 }

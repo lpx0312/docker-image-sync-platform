@@ -10,17 +10,19 @@ import (
 // GitServiceFactory Git服务工厂
 // 根据配置动态创建和管理Git服务实例
 type GitServiceFactory struct {
-	giteeService  *GitService    // Gitee服务实例
-	githubService *GitService    // GitHub服务实例（如果需要的话）
-	mutex         sync.RWMutex   // 读写锁，保护服务实例
-	configCache   string         // 配置缓存，避免频繁查询数据库
-	cacheMutex    sync.RWMutex   // 配置缓存锁
+	giteeService      *GitService        // Gitee服务实例
+	githubService     *GitService        // GitHub服务实例（如果需要的话）
+	encryptionService *EncryptionService // 加密服务，用于创建GitService时传入
+	mutex             sync.RWMutex       // 读写锁，保护服务实例
+	configCache       string             // 配置缓存，避免频繁查询数据库
+	cacheMutex        sync.RWMutex       // 配置缓存锁
 }
 
 // NewGitServiceFactory 创建Git服务工厂
-func NewGitServiceFactory() *GitServiceFactory {
+func NewGitServiceFactory(encryptionService *EncryptionService) *GitServiceFactory {
 	return &GitServiceFactory{
-		giteeService: NewGitService(), // 默认创建Gitee服务
+		encryptionService: encryptionService,
+		giteeService:      NewGitService(encryptionService), // 默认创建Gitee服务
 	}
 }
 
@@ -38,7 +40,7 @@ func (f *GitServiceFactory) GetGitService() (*GitService, error) {
 	switch repoType {
 	case "gitee":
 		if f.giteeService == nil {
-			f.giteeService = NewGitService()
+			f.giteeService = NewGitService(f.encryptionService)
 		}
 		return f.giteeService, nil
 	case "github":
@@ -49,7 +51,7 @@ func (f *GitServiceFactory) GetGitService() (*GitService, error) {
 		if f.githubService == nil {
 			// 这里可以创建专门的GitHub Git服务
 			// 目前先返回默认的GitService
-			f.githubService = NewGitService()
+			f.githubService = NewGitService(f.encryptionService)
 		}
 		return f.githubService, nil
 	default:

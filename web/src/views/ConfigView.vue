@@ -19,102 +19,67 @@
 
 <template>
   <div class="config-container">
-    <!-- 页面标题区域 -->
-    <div class="page-header">
-      <h1 class="page-title">
-        <el-icon><Setting /></el-icon>
-        系统配置
-      </h1>
-      <p class="page-description">
-        配置系统的基本参数和行为设置
-      </p>
+    <div class="config-header">
+      <h1 class="page-title">系统配置</h1>
+      <p class="page-description">管理系统的Git仓库和镜像同步配置</p>
     </div>
 
-    <!-- 配置内容区域 -->
     <div class="config-content">
-      <!-- Git仓库配置卡片 -->
-      <el-card class="config-card" shadow="hover">
-        <template #header>
-          <div class="card-header">
-            <el-icon class="header-icon"><Connection /></el-icon>
-            <span class="header-title">Git仓库配置</span>
-          </div>
-        </template>
-
-        <div class="config-section">
-          <div class="section-description">
-            <p>选择系统使用的Git仓库类型。更改此设置将影响所有新的镜像同步任务。</p>
-          </div>
-
-          <div class="config-item">
-            <label class="config-label">Git仓库类型</label>
-            <el-radio-group 
-              v-model="gitRepositoryType" 
-              class="repository-radio-group"
-              @change="handleRepositoryTypeChange"
-              :disabled="loading"
-            >
-              <el-radio value="gitee" class="repository-radio">
-                <div class="radio-content">
-                  <div class="radio-header">
-                    <span class="radio-title">Gitee</span>
-                    <el-tag v-if="gitRepositoryType === 'gitee'" type="success" size="small">当前选择</el-tag>
-                  </div>
-                  <div class="radio-description">
-                    使用Gitee作为Git仓库，适合国内用户，访问速度更快
-                  </div>
+      <!-- 配置导航标签 -->
+      <el-tabs v-model="activeTab" class="config-tabs">
+        <el-tab-pane label="Git配置" name="git">
+          <GitConfigForm />
+        </el-tab-pane>
+        
+        <el-tab-pane label="阿里云配置" name="aliyun">
+          <AliyunConfigForm />
+        </el-tab-pane>
+        
+        <el-tab-pane label="系统设置" name="system">
+          <div class="system-config">
+            <el-card class="config-card" shadow="hover">
+              <template #header>
+                <div class="card-header">
+                  <el-icon class="header-icon"><Setting /></el-icon>
+                  <span class="header-title">系统设置</span>
                 </div>
-              </el-radio>
+              </template>
               
-              <el-radio value="github" class="repository-radio">
-                <div class="radio-content">
-                  <div class="radio-header">
-                    <span class="radio-title">GitHub</span>
-                    <el-tag v-if="gitRepositoryType === 'github'" type="success" size="small">当前选择</el-tag>
-                  </div>
-                  <div class="radio-description">
-                    使用GitHub作为Git仓库，全球最大的代码托管平台
-                  </div>
-                </div>
-              </el-radio>
-            </el-radio-group>
+              <div class="config-section">
+                <el-form label-width="120px">
+                  <el-form-item label="日志级别">
+                    <el-select v-model="systemConfig.logLevel" placeholder="选择日志级别">
+                      <el-option label="DEBUG" value="debug" />
+                      <el-option label="INFO" value="info" />
+                      <el-option label="WARN" value="warn" />
+                      <el-option label="ERROR" value="error" />
+                    </el-select>
+                  </el-form-item>
+                  
+                  <el-form-item label="同步间隔">
+                    <el-input-number 
+                      v-model="systemConfig.syncInterval" 
+                      :min="1" 
+                      :max="1440"
+                      controls-position="right"
+                    />
+                    <span style="margin-left: 8px; color: #606266;">分钟</span>
+                  </el-form-item>
+                  
+                  <el-form-item label="最大并发数">
+                    <el-input-number 
+                      v-model="systemConfig.maxConcurrency" 
+                      :min="1" 
+                      :max="10"
+                      controls-position="right"
+                    />
+                  </el-form-item>
+                </el-form>
+              </div>
+            </el-card>
           </div>
-
-          <!-- 配置状态显示 -->
-          <div class="config-status" v-if="lastSaved">
-            <el-icon class="status-icon"><CircleCheck /></el-icon>
-            <span class="status-text">配置已保存 - {{ lastSaved }}</span>
-          </div>
-        </div>
-      </el-card>
-
-      <!-- 其他配置卡片可以在这里添加 -->
-      <el-card class="config-card" shadow="hover">
-        <template #header>
-          <div class="card-header">
-            <el-icon class="header-icon"><InfoFilled /></el-icon>
-            <span class="header-title">配置说明</span>
-          </div>
-        </template>
-
-        <div class="config-section">
-          <el-alert
-            title="重要提示"
-            type="info"
-            :closable="false"
-            show-icon
-          >
-            <template #default>
-              <ul class="alert-list">
-                <li>更改Git仓库类型后，新的同步任务将使用新的仓库类型</li>
-                <li>正在进行的同步任务不会受到影响</li>
-                <li>请确保目标仓库已正确配置访问权限</li>
-                <li>配置更改会立即生效，无需重启服务</li>
-              </ul>
-            </template>
-          </el-alert>
-        </div>
-      </el-card>
+        </el-tab-pane>
+      </el-tabs>
     </div>
   </div>
 </template>
@@ -122,24 +87,30 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Setting, Connection, CircleCheck, InfoFilled } from '@element-plus/icons-vue'
+import { Setting, Monitor, Tools } from '@element-plus/icons-vue'
+import GitConfigForm from '@/components/GitConfigForm.vue'
+import AliyunConfigForm from '@/components/AliyunConfigForm.vue'
 import { systemAPI } from '@/api'
 
 // ====================================================================
 // 响应式数据定义
 // ====================================================================
 
-const gitRepositoryType = ref('gitee') // Git仓库类型
-const loading = ref(false) // 加载状态
-const lastSaved = ref('') // 最后保存时间
+const loading = ref(false)
+const lastSaved = ref('')
+const gitRepositoryType = ref('gitee')
+const activeTab = ref('git')
+
+const systemConfig = ref({
+  logLevel: 'info',
+  syncInterval: 60,
+  maxConcurrency: 3
+})
 
 // ====================================================================
 // 生命周期钩子
 // ====================================================================
 
-/**
- * 组件挂载时加载配置
- */
 onMounted(() => {
   loadGitRepositoryConfig()
 })
@@ -150,7 +121,6 @@ onMounted(() => {
 
 /**
  * 加载Git仓库配置
- * 从后端API获取当前的Git仓库类型设置
  */
 const loadGitRepositoryConfig = async () => {
   try {
@@ -172,9 +142,6 @@ const loadGitRepositoryConfig = async () => {
 
 /**
  * 处理仓库类型变更
- * 当用户选择不同的仓库类型时，自动保存到后端
- * 
- * @param {string} newType - 新选择的仓库类型
  */
 const handleRepositoryTypeChange = async (newType) => {
   try {
@@ -182,31 +149,36 @@ const handleRepositoryTypeChange = async (newType) => {
     const response = await systemAPI.updateGitRepositoryConfig(newType)
     
     if (response.status === 'success') {
-      // 更新最后保存时间
-      const now = new Date()
-      lastSaved.value = now.toLocaleString('zh-CN', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
-      })
-      
+      updateLastSaved()
       ElMessage.success(`Git仓库类型已更新为 ${newType === 'gitee' ? 'Gitee' : 'GitHub'}`)
     } else {
       ElMessage.error('保存配置失败：' + response.message)
-      // 恢复原来的值
+      // 恢复原值
       await loadGitRepositoryConfig()
     }
   } catch (error) {
     console.error('更新Git仓库配置失败:', error)
     ElMessage.error('保存配置失败：' + (error.response?.data?.message || error.message || '未知错误'))
-    // 恢复原来的值
+    // 恢复原值
     await loadGitRepositoryConfig()
   } finally {
     loading.value = false
   }
+}
+
+/**
+ * 更新最后保存时间
+ */
+const updateLastSaved = () => {
+  const now = new Date()
+  lastSaved.value = now.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  })
 }
 </script>
 
@@ -218,17 +190,14 @@ const handleRepositoryTypeChange = async (newType) => {
 .config-container {
   padding: 24px;
   background-color: #f5f7fa;
-  min-height: calc(100vh - 60px);
+  min-height: 100vh;
 }
 
-.page-header {
+.config-header {
   margin-bottom: 24px;
 }
 
 .page-title {
-  display: flex;
-  align-items: center;
-  gap: 12px;
   font-size: 28px;
   font-weight: 600;
   color: #303133;
@@ -236,20 +205,65 @@ const handleRepositoryTypeChange = async (newType) => {
 }
 
 .page-description {
-  color: #606266;
   font-size: 14px;
+  color: #606266;
   margin: 0;
-}
-
-.config-content {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
+  line-height: 1.6;
 }
 
 /* ====================================================================
-   配置卡片样式
+   配置内容区域样式
    ==================================================================== */
+
+.config-content {
+  background-color: #fff;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+}
+
+.config-tabs {
+  --el-tabs-header-height: 48px;
+}
+
+.config-tabs :deep(.el-tabs__header) {
+  margin-bottom: 24px;
+}
+
+.config-tabs :deep(.el-tabs__nav-wrap) {
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.config-tabs :deep(.el-tabs__item) {
+  border-radius: 6px;
+  margin: 0 2px;
+  transition: all 0.3s ease;
+}
+
+.config-tabs :deep(.el-tabs__item.is-active) {
+  background-color: #409eff;
+  color: #fff;
+}
+
+.config-tabs :deep(.el-tabs__item:hover) {
+  background-color: #ecf5ff;
+  color: #409eff;
+}
+
+.config-tabs :deep(.el-tabs__item.is-active:hover) {
+  background-color: #337ecc;
+  color: #fff;
+}
+
+/* ====================================================================
+   系统配置样式
+   ==================================================================== */
+
+.system-config {
+  max-width: 600px;
+}
 
 .config-card {
   border-radius: 12px;
@@ -283,125 +297,6 @@ const handleRepositoryTypeChange = async (newType) => {
   padding: 4px 0;
 }
 
-.section-description {
-  margin-bottom: 20px;
-}
-
-.section-description p {
-  color: #606266;
-  font-size: 14px;
-  line-height: 1.6;
-  margin: 0;
-}
-
-/* ====================================================================
-   配置项样式
-   ==================================================================== */
-
-.config-item {
-  margin-bottom: 24px;
-}
-
-.config-label {
-  display: block;
-  font-weight: 600;
-  color: #303133;
-  margin-bottom: 12px;
-  font-size: 14px;
-}
-
-.repository-radio-group {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.repository-radio {
-  border: 2px solid #e4e7ed;
-  border-radius: 8px;
-  padding: 16px;
-  margin: 0;
-  transition: all 0.3s ease;
-  background-color: #fff;
-}
-
-.repository-radio:hover {
-  border-color: #409eff;
-  background-color: #f0f9ff;
-}
-
-.repository-radio.is-checked {
-  border-color: #409eff;
-  background-color: #f0f9ff;
-}
-
-.radio-content {
-  margin-left: 8px;
-}
-
-.radio-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-
-.radio-title {
-  font-weight: 600;
-  color: #303133;
-  font-size: 16px;
-}
-
-.radio-description {
-  color: #606266;
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-/* ====================================================================
-   配置状态样式
-   ==================================================================== */
-
-.config-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  background-color: #f0f9ff;
-  border: 1px solid #b3d8ff;
-  border-radius: 6px;
-  margin-top: 16px;
-}
-
-.status-icon {
-  color: #67c23a;
-  font-size: 16px;
-}
-
-.status-text {
-  color: #409eff;
-  font-size: 13px;
-}
-
-/* ====================================================================
-   提示信息样式
-   ==================================================================== */
-
-.alert-list {
-  margin: 0;
-  padding-left: 20px;
-  color: #606266;
-}
-
-.alert-list li {
-  margin-bottom: 8px;
-  line-height: 1.6;
-}
-
-.alert-list li:last-child {
-  margin-bottom: 0;
-}
-
 /* ====================================================================
    响应式设计
    ==================================================================== */
@@ -411,20 +306,35 @@ const handleRepositoryTypeChange = async (newType) => {
     padding: 16px;
   }
   
+  .config-content {
+    padding: 16px;
+  }
+  
   .page-title {
     font-size: 24px;
   }
   
-  .repository-radio {
+  .config-tabs :deep(.el-tabs__nav-wrap) {
+    padding: 2px;
+  }
+  
+  .config-tabs :deep(.el-tabs__item) {
+    font-size: 14px;
+    padding: 0 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .config-container {
     padding: 12px;
   }
   
-  .radio-title {
-    font-size: 15px;
+  .config-content {
+    padding: 12px;
   }
   
-  .radio-description {
-    font-size: 12px;
+  .page-title {
+    font-size: 20px;
   }
 }
 </style>

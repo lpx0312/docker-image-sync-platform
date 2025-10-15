@@ -147,6 +147,9 @@ type SyncTask struct {
 //   - 配置描述，便于管理和维护
 //   - 软删除支持，保留配置历史
 //   - 唯一键约束，防止配置冲突
+//   - 加密存储支持，保护敏感信息安全
+//   - 配置分组管理，便于组织和展示
+//   - 显示顺序控制，支持自定义排序
 //
 // 常用配置项：
 //   - ACR注册表配置（地址、命名空间、认证）
@@ -160,13 +163,16 @@ type SyncTask struct {
 //   - 运行时配置热更新
 //   - 配置变更历史追踪
 type SystemConfig struct {
-	ID          uint           `json:"id" gorm:"primaryKey"`                                     // 主键ID
-	ConfigKey   string         `json:"config_key" gorm:"type:varchar(100);uniqueIndex;not null"` // 配置键，建立唯一索引确保键的唯一性
-	ConfigValue string         `json:"config_value" gorm:"type:text"`                            // 配置值，支持长文本存储复杂配置
-	Description string         `json:"description" gorm:"type:varchar(500)"`                     // 配置描述，便于理解配置用途
-	CreatedAt   time.Time      `json:"created_at"`                                               // 创建时间
-	UpdatedAt   time.Time      `json:"updated_at"`                                               // 更新时间
-	DeletedAt   gorm.DeletedAt `json:"-" gorm:"index"`                                           // 软删除时间，建立索引以提高软删除查询性能
+	ID           uint           `json:"id" gorm:"primaryKey"`                                     // 主键ID
+	ConfigKey    string         `json:"config_key" gorm:"type:varchar(100);uniqueIndex;not null"` // 配置键，建立唯一索引确保键的唯一性
+	ConfigValue  string         `json:"config_value" gorm:"type:text"`                            // 配置值，支持长文本存储复杂配置
+	Description  string         `json:"description" gorm:"type:varchar(500)"`                     // 配置描述，便于理解配置用途
+	IsEncrypted  bool           `json:"is_encrypted" gorm:"default:false"`                        // 是否加密存储，用于标识敏感信息
+	ConfigGroup  string         `json:"config_group" gorm:"type:varchar(50);default:'default'"`   // 配置分组，用于组织和分类配置项
+	DisplayOrder int            `json:"display_order" gorm:"default:0"`                           // 显示顺序，用于前端展示时的排序
+	CreatedAt    time.Time      `json:"created_at"`                                               // 创建时间
+	UpdatedAt    time.Time      `json:"updated_at"`                                               // 更新时间
+	DeletedAt    gorm.DeletedAt `json:"-" gorm:"index"`                                           // 软删除时间，建立索引以提高软删除查询性能
 }
 
 // TableName 设置数据库表名

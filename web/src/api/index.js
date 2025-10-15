@@ -273,7 +273,7 @@ export const githubAPI = {
 /**
  * 系统相关API接口
  * 
- * 提供系统状态和健康检查功能
+ * 提供系统状态、健康检查和配置管理功能
  */
 export const systemAPI = {
   /**
@@ -308,7 +308,100 @@ export const systemAPI = {
    */
   updateGitRepositoryConfig: (repositoryType) => api.put('/config/git-repository', {
     repository_type: repositoryType
-  })
+  }),
+
+  // ====================================================================
+  // Git配置管理接口
+  // ====================================================================
+
+  /**
+   * 获取Git配置
+   * 
+   * 获取完整的Git配置信息，包括Gitee和GitHub配置
+   * 
+   * @returns {Promise} 返回Git配置数据
+   */
+  getGitConfig: () => api.get('/config/git'),
+
+  /**
+   * 更新Gitee配置
+   * 
+   * @param {Object} config - Gitee配置数据
+   * @param {string} config.repo_url - 仓库URL
+   * @param {string} config.username - 用户名
+   * @param {string} config.password - 密码
+   * @param {string} config.email - 邮箱
+   * @returns {Promise} 返回更新结果
+   */
+  updateGiteeConfig: (config) => api.put('/config/git/gitee', config),
+
+  /**
+   * 更新GitHub配置
+   * 
+   * @param {Object} config - GitHub配置数据
+   * @param {string} config.repo_url - 仓库URL
+   * @param {string} config.username - 用户名
+   * @param {string} config.token - 访问令牌
+   * @returns {Promise} 返回更新结果
+   */
+  updateGitHubConfig: (config) => api.put('/config/git/github', config),
+
+  /**
+   * 测试Git连接
+   * 
+   * 测试指定Git仓库的连接状态
+   * 
+   * @param {string} type - 仓库类型 ('gitee' | 'github')
+   * @returns {Promise} 返回连接测试结果
+   */
+  testGitConnection: (type) => api.post('/config/git/test', { type }),
+
+  // ====================================================================
+  // 阿里云配置管理接口
+  // ====================================================================
+
+  /**
+   * 获取阿里云配置
+   * 
+   * 获取阿里云容器镜像服务配置
+   * 
+   * @returns {Promise} 返回阿里云配置数据
+   */
+  getAliyunConfig: () => api.get('/config/aliyun'),
+
+  /**
+   * 更新阿里云配置
+   * 
+   * @param {Object} config - 阿里云配置数据
+   * @param {string} config.registry - 镜像仓库地址
+   * @param {string} config.namespace - 命名空间
+   * @param {string} config.username - 用户名
+   * @param {string} config.password - 密码
+   * @returns {Promise} 返回更新结果
+   */
+  updateAliyunConfig: (config) => api.put('/config/aliyun', config),
+
+  // ====================================================================
+  // 通用配置管理接口
+  // ====================================================================
+
+  /**
+   * 获取所有配置
+   * 
+   * 获取系统所有配置项，按组分类
+   * 
+   * @returns {Promise} 返回所有配置数据
+   */
+  getAllConfigs: () => api.get('/config/all'),
+
+  /**
+   * 获取配置状态
+   * 
+   * 获取配置的完整性和有效性状态
+   * 
+   * @returns {Promise} 返回配置状态信息
+   */
+  getConfigStatus: () => api.get('/config/status')
 }
 
 export default api
