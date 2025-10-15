@@ -46,6 +46,7 @@
           >
             <el-menu-item index="/sync">镜像同步</el-menu-item>
             <el-menu-item index="/github">GitHub Actions</el-menu-item>
+            <el-menu-item index="/config">系统配置</el-menu-item>
           </el-menu>
         </div>
       </el-header>

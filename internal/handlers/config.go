@@ -25,6 +25,7 @@ import (
 	"docker-image-sync-platform/internal/config"   // 配置管理
 	"docker-image-sync-platform/internal/database" // 数据库操作
 	"docker-image-sync-platform/internal/models"   // 数据模型
+	"docker-image-sync-platform/internal/services" // 业务服务
 	"github.com/gin-gonic/gin"                     // Gin Web框架
 )
 
@@ -36,30 +37,40 @@ import (
 // 主要功能:
 //   - 阿里云ACR注册表配置查询
 //   - 命名空间配置管理
+//   - Git仓库类型配置管理
 //   - 系统配置的默认值处理
 //   - 配置信息的统一返回格式
 //
 // 配置项说明:
 //   - aliyun_registry_prefix: 阿里云容器注册表地址前缀
 //   - aliyun_namespace: 阿里云容器注册表命名空间
+//   - git_repository_type: Git仓库类型选择（gitee或github）
 //
 // 设计原则:
 //   - 配置项支持动态更新，无需重启服务
 //   - 提供合理的默认值，确保系统可用性
 //   - 配置访问统一化，便于维护和扩展
-type ConfigHandler struct{}
+type ConfigHandler struct {
+	gitServiceFactory *services.GitServiceFactory // Git服务工厂，用于配置更新后刷新缓存
+}
 
 // NewConfigHandler 创建系统配置处理器实例
+//
+// 参数:
+//   - gitServiceFactory: Git服务工厂实例，用于配置更新后刷新缓存
 //
 // 返回:
 //   - *ConfigHandler: 配置处理器实例
 //
 // 使用示例:
 //
-//	configHandler := NewConfigHandler()
+//	gitFactory := services.NewGitServiceFactory()
+//	configHandler := NewConfigHandler(gitFactory)
 //	router.GET("/config/aliyun", configHandler.GetAliyunConfig)
-func NewConfigHandler() *ConfigHandler {
-	return &ConfigHandler{}
+func NewConfigHandler(gitServiceFactory *services.GitServiceFactory) *ConfigHandler {
+	return &ConfigHandler{
+		gitServiceFactory: gitServiceFactory,
+	}
 }
 
 // GetAliyunConfig 获取阿里云ACR配置信息
@@ -148,6 +159,150 @@ func (h *ConfigHandler) GetAliyunConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"registry":  registry,  // 阿里云容器注册表地址
 		"namespace": namespace, // 阿里云容器注册表命名空间
+	})
+}
+
+// GetGitRepositoryConfig 获取Git仓库配置信息
+//
+// HTTP方法: GET
+// 路径: /api/v1/config/git-repository
+//
+// 响应码:
+//   - 200: 成功返回Git仓库配置信息
+//   - 500: 服务器内部错误（数据库查询失败）
+//
+// 响应数据:
+//   - repository_type: Git仓库类型（gitee 或 github）
+//
+// 默认值处理:
+//   - repository_type默认值: gitee（保持向下兼容）
+//
+// 功能说明:
+//   - 从系统配置表中读取Git仓库类型配置
+//   - 提供配置的默认值机制，确保系统正常运行
+//   - 用于前端显示当前的Git仓库配置信息
+//   - 支持同步服务的动态仓库选择
+func (h *ConfigHandler) GetGitRepositoryConfig(c *gin.Context) {
+	// ====================================================================
+	// 日志记录和请求追踪
+	// ====================================================================
+	
+	// 记录API调用日志，便于调试和监控
+	// 包含请求方法、路径、客户端IP等关键信息
+	c.Header("Content-Type", "application/json")
+
+	// ====================================================================
+	// 获取Git仓库配置
+	// ====================================================================
+
+	// 使用Git服务工厂获取当前配置
+	repositoryType, err := h.gitServiceFactory.GetGitRepositoryConfig()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "Failed to get git repository configuration",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	// ====================================================================
+	// 返回配置信息
+	// ====================================================================
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "Git repository configuration retrieved successfully",
+		"data": gin.H{
+			"repository_type": repositoryType,
+		},
+	})
+}
+
+// UpdateGitRepositoryConfig 更新Git仓库配置信息
+//
+// HTTP方法: PUT
+// 路径: /api/v1/config/git-repository
+//
+// 请求体:
+//   - repository_type: Git仓库类型（gitee 或 github）
+//
+// 响应码:
+//   - 200: 成功更新Git仓库配置信息
+//   - 400: 请求参数错误（无效的仓库类型）
+//   - 500: 服务器内部错误（数据库更新失败）
+//
+// 功能说明:
+//   - 更新系统配置表中的Git仓库类型配置
+//   - 验证配置值的有效性
+//   - 支持动态切换Git仓库，无需重启服务
+//   - 记录配置变更日志
+func (h *ConfigHandler) UpdateGitRepositoryConfig(c *gin.Context) {
+	// ====================================================================
+	// 请求参数解析
+	// ====================================================================
+
+	var request struct {
+		RepositoryType string `json:"repository_type" binding:"required"`
+	}
+
+	// 解析JSON请求体
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": "Invalid request format",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	// ====================================================================
+	// 配置值验证
+	// ====================================================================
+
+	// 验证仓库类型是否有效
+	validTypes := []string{"gitee", "github"}
+	isValid := false
+	for _, validType := range validTypes {
+		if request.RepositoryType == validType {
+			isValid = true
+			break
+		}
+	}
+
+	if !isValid {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": "Invalid repository type. Must be 'gitee' or 'github'",
+		})
+		return
+	}
+
+	// ====================================================================
+	// 更新Git仓库配置
+	// ====================================================================
+
+	// 使用Git服务工厂更新配置
+	err := h.gitServiceFactory.UpdateGitRepositoryConfig(request.RepositoryType)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": "Failed to update git repository configuration",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	// ====================================================================
+	// 返回成功响应
+	// ====================================================================
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "Git repository configuration updated successfully",
+		"data": gin.H{
+			"repository_type": request.RepositoryType,
+		},
 	})
 }
 

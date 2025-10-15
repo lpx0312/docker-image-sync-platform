@@ -24,6 +24,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import SyncView from '@/views/SyncView.vue'
 import GitHubView from '@/views/GitHubView.vue'
+import ConfigView from '@/views/ConfigView.vue'
 
 /**
  * 路由配置数组
@@ -48,6 +49,14 @@ const routes = [
     component: GitHubView,
     meta: {
       title: 'GitHub Actions'
+    }
+  },
+  {
+    path: '/config',
+    name: 'Config',
+    component: ConfigView,
+    meta: {
+      title: '系统配置'
     }
   }
 ]

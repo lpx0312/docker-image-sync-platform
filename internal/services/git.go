@@ -34,7 +34,9 @@ import (
 	"time"
 
 	"docker-image-sync-platform/internal/config"
+	"docker-image-sync-platform/internal/database"
 	"docker-image-sync-platform/internal/logger"
+	"docker-image-sync-platform/internal/models"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -77,6 +79,56 @@ type GitService struct {
 func NewGitService() *GitService {
 	return &GitService{
 		repoPath: config.AppConfig.Git.LocalRepoPath,
+	}
+}
+
+// getCurrentGitConfig 获取当前配置的Git仓库信息
+//
+// 功能说明:
+//   - 从数据库中读取当前配置的Git仓库类型
+//   - 根据仓库类型返回对应的配置信息
+//   - 支持Gitee和GitHub两种仓库类型
+//
+// 返回值:
+//   - repoURL: Git仓库URL
+//   - username: 用户名
+//   - token: 访问令牌
+//   - email: 邮箱地址
+//   - repoType: 仓库类型（gitee或github）
+//   - error: 错误信息
+func (s *GitService) getCurrentGitConfig() (repoURL, username, token, email, repoType string, err error) {
+	// 从数据库查询当前配置的Git仓库类型
+	var systemConfig models.SystemConfig
+	err = database.DB.Where("config_key = ?", "git_repository_type").First(&systemConfig).Error
+	if err != nil {
+		// 如果配置不存在，默认使用gitee
+		repoType = "gitee"
+		logger.Logger.Warn("Git仓库类型配置不存在，使用默认配置", zap.Error(err))
+	} else {
+		repoType = systemConfig.ConfigValue
+		logger.Logger.Info("获取Git仓库类型配置", zap.String("repo_type", repoType))
+	}
+
+	// 根据仓库类型返回对应的配置
+	switch repoType {
+	case "github":
+		logger.Logger.Info("使用GitHub配置", zap.String("repo_url", config.AppConfig.Git.GitHub.RepoURL))
+		return config.AppConfig.Git.GitHub.RepoURL,
+			config.AppConfig.Git.GitHub.Username,
+			config.AppConfig.Git.GitHub.Token,
+			"", // GitHub配置中没有email字段
+			"github",
+			nil
+	case "gitee":
+		fallthrough
+	default:
+		logger.Logger.Info("使用Gitee配置", zap.String("repo_url", config.AppConfig.Git.Gitee.RepoURL))
+		return config.AppConfig.Git.Gitee.RepoURL,
+			config.AppConfig.Git.Gitee.Username,
+			config.AppConfig.Git.Gitee.Token,
+			config.AppConfig.Git.Gitee.Email,
+			"gitee",
+			nil
 	}
 }
 
@@ -131,32 +183,44 @@ func (s *GitService) InitRepository() error {
 	// 克隆远程仓库
 	// ====================================================================
 
-	// 开始克隆Gitee仓库
-	logger.Logger.Info("开始克隆Gitee仓库", zap.String("url", config.AppConfig.Git.Gitee.RepoURL))
+	// 获取当前配置的Git仓库信息
+	repoURL, username, token, _, repoType, err := s.getCurrentGitConfig()
+	if err != nil {
+		return fmt.Errorf("获取Git配置失败: %w", err)
+	}
+
+	// 开始克隆仓库
+	logger.Logger.Info("开始克隆Git仓库", 
+		zap.String("url", repoURL), 
+		zap.String("type", repoType))
 
 	// 构建带有认证信息的URL
 	// 优先使用Token认证，如果没有Token则使用用户名密码认证
-	parsedURL, err := url.Parse(config.AppConfig.Git.Gitee.RepoURL)
+	parsedURL, err := url.Parse(repoURL)
 	if err != nil {
-		return fmt.Errorf("解析Gitee仓库URL失败: %w", err)
+		return fmt.Errorf("解析Git仓库URL失败: %w", err)
 	}
 
 	var authURL string
-	if config.AppConfig.Git.Gitee.Token != "" {
+	if token != "" {
 		// 使用访问令牌认证 (推荐方式)
-		// Gitee格式: https://username:token@gitee.com
-		encodedUsername := url.QueryEscape(config.AppConfig.Git.Gitee.Username)
-		encodedToken := url.QueryEscape(config.AppConfig.Git.Gitee.Token)
+		encodedUsername := url.QueryEscape(username)
+		encodedToken := url.QueryEscape(token)
 		parsedURL.User = url.UserPassword(encodedUsername, encodedToken)
 		authURL = parsedURL.String()
-		logger.Logger.Info("使用Gitee访问令牌进行认证")
+		logger.Logger.Info("使用访问令牌进行认证", zap.String("type", repoType))
 	} else {
-		// 使用用户名密码认证 (传统方式)
-		encodedUsername := url.QueryEscape(config.AppConfig.Git.Gitee.Username)
-		encodedPassword := url.QueryEscape(config.AppConfig.Git.Gitee.Password)
-		parsedURL.User = url.UserPassword(encodedUsername, encodedPassword)
-		authURL = parsedURL.String()
-		logger.Logger.Info("使用Gitee用户名密码进行认证")
+		// 对于没有Token的情况，需要根据仓库类型处理
+		if repoType == "gitee" {
+			// Gitee支持用户名密码认证
+			encodedUsername := url.QueryEscape(config.AppConfig.Git.Gitee.Username)
+			encodedPassword := url.QueryEscape(config.AppConfig.Git.Gitee.Password)
+			parsedURL.User = url.UserPassword(encodedUsername, encodedPassword)
+			authURL = parsedURL.String()
+			logger.Logger.Info("使用Gitee用户名密码进行认证")
+		} else {
+			return fmt.Errorf("GitHub仓库必须配置访问令牌")
+		}
 	}
 
 	// 使用系统git命令执行克隆操作
@@ -420,19 +484,30 @@ func (s *GitService) pullLatest() error {
 	// 尝试正常拉取
 	// ====================================================================
 
+	// 获取当前配置的Git仓库信息
+	_, username, token, _, repoType, err := s.getCurrentGitConfig()
+	if err != nil {
+		return fmt.Errorf("获取Git配置失败: %w", err)
+	}
+
 	// 首先尝试正常拉取，使用配置的认证信息
 	var auth *http.BasicAuth
-	if config.AppConfig.Git.Gitee.Token != "" {
-		// 使用访问令牌认证 - Gitee需要用户名和token
+	if token != "" {
+		// 使用访问令牌认证
 		auth = &http.BasicAuth{
-			Username: config.AppConfig.Git.Gitee.Username,
-			Password: config.AppConfig.Git.Gitee.Token,
+			Username: username,
+			Password: token,
 		}
 	} else {
-		// 使用用户名密码认证
-		auth = &http.BasicAuth{
-			Username: config.AppConfig.Git.Gitee.Username,
-			Password: config.AppConfig.Git.Gitee.Password,
+		// 对于没有Token的情况，需要根据仓库类型处理
+		if repoType == "gitee" {
+			// Gitee支持用户名密码认证
+			auth = &http.BasicAuth{
+				Username: config.AppConfig.Git.Gitee.Username,
+				Password: config.AppConfig.Git.Gitee.Password,
+			}
+		} else {
+			return fmt.Errorf("GitHub仓库必须配置访问令牌")
 		}
 	}
 
@@ -613,11 +688,22 @@ func (s *GitService) commitAndPush(newImages []string) (string, error) {
 	// 执行提交操作
 	// ====================================================================
 
+	// 获取当前配置的Git仓库信息
+	_, username, _, email, repoType, err := s.getCurrentGitConfig()
+	if err != nil {
+		return "", fmt.Errorf("获取Git配置失败: %w", err)
+	}
+
+	// 为GitHub设置默认邮箱（如果没有配置）
+	if email == "" && repoType == "github" {
+		email = username + "@users.noreply.github.com"
+	}
+
 	// 提交更改，使用配置的用户信息
 	commit, err := worktree.Commit(commitMsg, &git.CommitOptions{
 		Author: &object.Signature{
-			Name:  config.AppConfig.Git.Gitee.Username,
-			Email: config.AppConfig.Git.Gitee.Email,
+			Name:  username,
+			Email: email,
 			When:  time.Now(),
 		},
 	})
@@ -678,19 +764,30 @@ func (s *GitService) pushWithRetry(commitSHA string) error {
 		// 尝试推送
 		// ================================================================
 
+		// 获取当前配置的Git仓库信息
+		_, username, token, _, repoType, configErr := s.getCurrentGitConfig()
+		if configErr != nil {
+			return fmt.Errorf("获取Git配置失败: %w", configErr)
+		}
+
 		// 尝试推送到远程仓库
 		var auth *http.BasicAuth
-		if config.AppConfig.Git.Gitee.Token != "" {
-			// 使用访问令牌认证 - Gitee需要用户名和token
+		if token != "" {
+			// 使用访问令牌认证
 			auth = &http.BasicAuth{
-				Username: config.AppConfig.Git.Gitee.Username,
-				Password: config.AppConfig.Git.Gitee.Token,
+				Username: username,
+				Password: token,
 			}
 		} else {
-			// 使用用户名密码认证
-			auth = &http.BasicAuth{
-				Username: config.AppConfig.Git.Gitee.Username,
-				Password: config.AppConfig.Git.Gitee.Password,
+			// 对于没有Token的情况，需要根据仓库类型处理
+			if repoType == "gitee" {
+				// Gitee支持用户名密码认证
+				auth = &http.BasicAuth{
+					Username: config.AppConfig.Git.Gitee.Username,
+					Password: config.AppConfig.Git.Gitee.Password,
+				}
+			} else {
+				return fmt.Errorf("GitHub仓库必须配置访问令牌")
 			}
 		}
 

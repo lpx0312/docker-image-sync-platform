@@ -50,15 +50,16 @@ import (
 // - 支持并发控制，防止系统资源过载
 // - 提供详细的错误处理和状态反馈
 // - 集成Git服务和GitHub Actions自动化
+// - 支持动态Git仓库选择（Gitee/GitHub）
 type SyncHandler struct {
-	gitService    *services.GitService    // Git仓库服务，用于获取镜像配置
-	githubService *services.GitHubService // GitHub服务，用于工作流集成
+	gitServiceFactory *services.GitServiceFactory // Git服务工厂，用于动态选择Git服务
+	githubService     *services.GitHubService     // GitHub服务，用于工作流集成
 }
 
 // NewSyncHandler 创建新的同步处理器实例
 //
 // 参数:
-//   - gitService: Git仓库服务实例，用于从Git仓库获取镜像配置
+//   - gitServiceFactory: Git服务工厂实例，用于动态选择Git服务
 //   - githubService: GitHub服务实例，用于GitHub Actions工作流集成
 //
 // 返回:
@@ -66,13 +67,13 @@ type SyncHandler struct {
 //
 // 使用示例:
 //
-//	gitSvc := services.NewGitService(config)
+//	gitFactory := services.NewGitServiceFactory()
 //	githubSvc := services.NewGitHubService(config)
-//	syncHandler := NewSyncHandler(gitSvc, githubSvc)
-func NewSyncHandler(gitService *services.GitService, githubService *services.GitHubService) *SyncHandler {
+//	syncHandler := NewSyncHandler(gitFactory, githubSvc)
+func NewSyncHandler(gitServiceFactory *services.GitServiceFactory, githubService *services.GitHubService) *SyncHandler {
 	return &SyncHandler{
-		gitService:    gitService,
-		githubService: githubService,
+		gitServiceFactory: gitServiceFactory,
+		githubService:     githubService,
 	}
 }
 
@@ -819,9 +820,16 @@ func (h *SyncHandler) updateImagesFile(records []models.ImageSyncRecord) (string
 	// 提交到Git仓库
 	// ====================================================================
 
+	// 获取当前配置的Git服务
+	gitService, err := h.gitServiceFactory.GetGitService()
+	if err != nil {
+		logger.Logger.Error("获取Git服务失败", zap.Error(err))
+		return "", fmt.Errorf("获取Git服务失败: %v", err)
+	}
+
 	// 调用Git服务更新images.txt文件并推送到远程仓库
 	// 这将触发GitHub Actions工作流开始执行
-	return h.gitService.UpdateImagesFile(imageLines)
+	return gitService.UpdateImagesFile(imageLines)
 }
 
 // monitorGitHubActions 异步监控GitHub Actions工作流执行状态

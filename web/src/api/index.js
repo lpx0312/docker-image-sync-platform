@@ -286,7 +286,29 @@ export const systemAPI = {
    * @returns {Object} result.timestamp - 检查时间戳
    * @returns {Object} result.version - 服务版本号
    */
-  healthCheck: () => api.get('/health')
+  healthCheck: () => api.get('/health'),
+
+  /**
+   * 获取Git仓库配置
+   * 
+   * 获取当前系统使用的Git仓库类型配置
+   * 
+   * @returns {Promise} 返回Git仓库配置
+   * @returns {Object} result.data.repository_type - 仓库类型 ('gitee' | 'github')
+   */
+  getGitRepositoryConfig: () => api.get('/config/git-repository'),
+
+  /**
+   * 更新Git仓库配置
+   * 
+   * 更新系统使用的Git仓库类型
+   * 
+   * @param {string} repositoryType - 仓库类型 ('gitee' | 'github')
+   * @returns {Promise} 返回更新结果
+   */
+  updateGitRepositoryConfig: (repositoryType) => api.put('/config/git-repository', {
+    repository_type: repositoryType
+  })
 }
 
 export default api

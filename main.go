@@ -97,9 +97,9 @@ func main() {
 	// 第二阶段：业务服务初始化
 	// ========================================================================
 
-	// 初始化Git服务
-	// 负责从Git仓库（Gitee/GitHub）克隆和解析镜像配置文件
-	gitService := services.NewGitService()
+	// 初始化Git服务工厂
+	// 负责根据配置动态选择Git服务（Gitee/GitHub）
+	gitServiceFactory := services.NewGitServiceFactory()
 
 	// 初始化GitHub服务
 	// 负责GitHub Actions工作流的监控和管理
@@ -107,9 +107,9 @@ func main() {
 
 	// 初始化HTTP请求处理器
 	// 每个处理器负责特定的业务逻辑
-	syncHandler := handlers.NewSyncHandler(gitService, githubService) // 同步操作处理器
-	imageHandler := handlers.NewImageHandler()                        // 镜像管理处理器
-	configHandler := handlers.NewConfigHandler()                      // 配置管理处理器
+	syncHandler := handlers.NewSyncHandler(gitServiceFactory, githubService) // 同步操作处理器
+	imageHandler := handlers.NewImageHandler()                               // 镜像管理处理器
+	configHandler := handlers.NewConfigHandler(gitServiceFactory)            // 配置管理处理器
 
 	// TODO: 定时任务初始化
 	// 可以在这里添加定时任务，用于：
@@ -313,6 +313,14 @@ func main() {
 			// GET /api/v1/config/status - 获取当前配置状态和环境变量信息
 			// 用于调试和验证配置是否正确加载（不包含敏感信息）
 			config.GET("/status", configHandler.GetConfigStatus)
+
+			// GET /api/v1/config/git-repository - 获取Git仓库配置
+			// 返回当前选择的Git仓库类型（gitee或github）
+			config.GET("/git-repository", configHandler.GetGitRepositoryConfig)
+
+			// PUT /api/v1/config/git-repository - 更新Git仓库配置
+			// 更新Git仓库类型选择（gitee或github）
+			config.PUT("/git-repository", configHandler.UpdateGitRepositoryConfig)
 		}
 
 		// ====================================================================
