@@ -41,7 +41,7 @@ GITEE_EMAIL=lpx_0312@163.com
 # GitHub仓库URL (可选)
 GITHUB_REPO_URL=https://github.com/lpx0312/docker_image_pusher.git
 # GitHub认证信息 (使用Personal Access Token)
-GITHUB_USERNAME=lpx_0312@163.com
+GITHUB_USERNAME=lpx0312
 GITHUB_TOKEN=REDACTED_GITHUB_TOKEN
 
 # ----------------------------------------------------------------------------

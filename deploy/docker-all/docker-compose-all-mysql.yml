@@ -42,7 +42,7 @@ services:
       
       # Git配置 (GitHub)
       - GITHUB_REPO_URL=${GITHUB_REPO_URL:-https://github.com/lpx0312/docker_image_pusher.git}
-      - GITHUB_USERNAME=${GITHUB_USERNAME:-lpx_0312@163.com}
+      - GITHUB_USERNAME=${GITHUB_USERNAME:-lpx0312}
       - GITHUB_TOKEN=${GITHUB_TOKEN:-REDACTED_GITHUB_TOKEN}
       
       # 阿里云配置
