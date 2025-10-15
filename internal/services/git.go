@@ -566,12 +566,36 @@ func (s *GitService) forcePullLatest() error {
 		return fmt.Errorf("获取远程仓库失败: %w", err)
 	}
 
+	// 获取当前配置的Git仓库信息
+	_, username, token, _, repoType, configErr := s.getCurrentGitConfig()
+	if configErr != nil {
+		return fmt.Errorf("获取Git配置失败: %w", configErr)
+	}
+
+	// 准备认证信息
+	var auth *http.BasicAuth
+	if token != "" {
+		// 使用访问令牌认证
+		auth = &http.BasicAuth{
+			Username: username,
+			Password: token,
+		}
+	} else {
+		// 对于没有Token的情况，需要根据仓库类型处理
+		if repoType == "gitee" {
+			// Gitee支持用户名密码认证
+			auth = &http.BasicAuth{
+				Username: config.AppConfig.Git.Gitee.Username,
+				Password: config.AppConfig.Git.Gitee.Password,
+			}
+		} else {
+			return fmt.Errorf("GitHub仓库必须配置访问令牌")
+		}
+	}
+
 	// 获取远程的最新引用信息
 	err = remote.Fetch(&git.FetchOptions{
-		Auth: &http.BasicAuth{
-			Username: config.AppConfig.Git.Gitee.Username,
-			Password: config.AppConfig.Git.Gitee.Password,
-		},
+		Auth: auth,
 	})
 	if err != nil && err != git.NoErrAlreadyUpToDate {
 		return fmt.Errorf("获取远程引用失败: %w", err)
@@ -716,13 +740,21 @@ func (s *GitService) commitAndPush(newImages []string) (string, error) {
 	// 推送到远程仓库
 	// ====================================================================
 
-	// 推送到Gitee，如果失败则重试
+	// 推送到远程仓库，如果失败则重试
 	err = s.pushWithRetry(commit.String())
 	if err != nil {
 		return "", err
 	}
 
-	logger.Logger.Info("代码已推送到Gitee", zap.String("commit", commit.String()))
+	// 获取仓库类型用于日志消息
+	repoName := "Git仓库"
+	if repoType == "github" {
+		repoName = "GitHub"
+	} else if repoType == "gitee" {
+		repoName = "Gitee"
+	}
+
+	logger.Logger.Info("代码已推送到"+repoName, zap.String("commit", commit.String()))
 	return commit.String(), nil
 }
 
@@ -842,12 +874,30 @@ func (s *GitService) pushWithRetry(commitSHA string) error {
 
 		// 如果有更改，重新提交
 		if !status.IsClean() {
+			// 获取当前配置的用户信息
+			_, currentUsername, _, currentEmail, currentRepoType, configErr := s.getCurrentGitConfig()
+			if configErr != nil {
+				logger.Logger.Error("获取Git配置失败", zap.Error(configErr))
+				continue
+			}
+
+			// 根据仓库类型设置提交作者信息
+			var authorName, authorEmail string
+			if currentRepoType == "github" {
+				authorName = currentUsername
+				authorEmail = currentEmail
+			} else {
+				// Gitee
+				authorName = config.AppConfig.Git.Gitee.Username
+				authorEmail = config.AppConfig.Git.Gitee.Email
+			}
+
 			// 重新提交
 			commitMsg := fmt.Sprintf("Retry commit: %s", commitSHA)
 			_, err = worktree.Commit(commitMsg, &git.CommitOptions{
 				Author: &object.Signature{
-					Name:  config.AppConfig.Git.Gitee.Username,
-					Email: config.AppConfig.Git.Gitee.Email,
+					Name:  authorName,
+					Email: authorEmail,
 					When:  time.Now(),
 				},
 			})
@@ -865,7 +915,16 @@ func (s *GitService) pushWithRetry(commitSHA string) error {
 		time.Sleep(time.Duration(i+1) * time.Second)
 	}
 
-	return fmt.Errorf("推送到Gitee失败，已重试%d次", maxRetries)
+	// 获取当前仓库类型用于错误消息
+	_, _, _, _, repoType, _ := s.getCurrentGitConfig()
+	repoName := "Git仓库"
+	if repoType == "github" {
+		repoName = "GitHub"
+	} else if repoType == "gitee" {
+		repoName = "Gitee"
+	}
+	
+	return fmt.Errorf("推送到%s失败，已重试%d次", repoName, maxRetries)
 }
 
 // GetRepoStatus 获取仓库状态信息
