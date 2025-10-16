@@ -1,4 +1,7 @@
-alpine:latest
+redis:latest
+
+# 历史镜像记录
+# alpine:latest
 
 # 历史镜像记录
 # nginx:latest
