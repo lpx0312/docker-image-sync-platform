@@ -241,13 +241,31 @@ func (s *GitService) getConfigValue(configKey string) (string, error) {
 //   - 切换到新的仓库地址时
 func (s *GitService) InitRepository() error {
 	// ====================================================================
+	// 获取Git配置
+	// ====================================================================
+
+	// 获取当前配置的Git仓库信息
+	repoURL, username, token, _, repoType, localPath, err := s.getCurrentGitConfig()
+	if err != nil {
+		return fmt.Errorf("获取Git配置失败: %w", err)
+	}
+
+	// 设置本地仓库路径
+	logger.Logger.Info("DEBUG: 设置repoPath", zap.String("localPath", localPath), zap.String("oldRepoPath", s.repoPath))
+	s.repoPath = localPath
+	logger.Logger.Info("DEBUG: repoPath已设置", zap.String("newRepoPath", s.repoPath))
+
+	// ====================================================================
 	// 目录准备和检查
 	// ====================================================================
 
 	// 确保父目录存在，创建必要的目录结构
+	logger.Logger.Info("DEBUG: 准备创建目录", zap.String("repoPath", s.repoPath), zap.String("parentDir", filepath.Dir(s.repoPath)))
 	if err := os.MkdirAll(filepath.Dir(s.repoPath), 0755); err != nil {
+		logger.Logger.Error("DEBUG: 创建目录失败", zap.String("repoPath", s.repoPath), zap.String("parentDir", filepath.Dir(s.repoPath)), zap.Error(err))
 		return fmt.Errorf("创建目录失败: %w", err)
 	}
+	logger.Logger.Info("DEBUG: 目录创建成功", zap.String("repoPath", s.repoPath), zap.String("parentDir", filepath.Dir(s.repoPath)))
 
 	// ====================================================================
 	// 检查现有仓库
@@ -268,15 +286,6 @@ func (s *GitService) InitRepository() error {
 	// ====================================================================
 	// 克隆远程仓库
 	// ====================================================================
-
-	// 获取当前配置的Git仓库信息
-	repoURL, username, token, _, repoType, localPath, err := s.getCurrentGitConfig()
-	if err != nil {
-		return fmt.Errorf("获取Git配置失败: %w", err)
-	}
-
-	// 设置本地仓库路径
-	s.repoPath = localPath
 
 	// 开始克隆仓库
 	logger.Logger.Info("开始克隆Git仓库",
@@ -375,11 +384,18 @@ func (s *GitService) UpdateImagesFile(newImages []string) (string, error) {
 	// 仓库状态检查和初始化
 	// ====================================================================
 
+	logger.Logger.Info("DEBUG: UpdateImagesFile开始执行", zap.Bool("repoIsNil", s.repo == nil), zap.String("repoPath", s.repoPath))
+
 	// 确保仓库已初始化
 	if s.repo == nil {
+		logger.Logger.Info("DEBUG: s.repo为nil，准备调用InitRepository")
 		if err := s.InitRepository(); err != nil {
+			logger.Logger.Error("DEBUG: InitRepository调用失败", zap.Error(err))
 			return "", err
 		}
+		logger.Logger.Info("DEBUG: InitRepository调用成功")
+	} else {
+		logger.Logger.Info("DEBUG: s.repo不为nil，跳过InitRepository")
 	}
 
 	// ====================================================================
