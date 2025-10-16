@@ -116,7 +116,8 @@ services:
       - ALIYUN_USERNAME=${ALIYUN_USERNAME:-lipanx}
       - ALIYUN_PASSWORD=${ALIYUN_PASSWORD:-Lipanxiang1102}
       # 本地仓库路径
-      - GIT_LOCAL_REPO_PATH=${GIT_LOCAL_REPO_PATH:-/app/data/repo}
+      - GITEE_LOCAL_PATH=${GITEE_LOCAL_PATH:-/app/data/gitee-repo}
+        - GITHUB_LOCAL_PATH=${GITHUB_LOCAL_PATH:-/app/data/github-repo}
     volumes:
       - ./config.yaml:/app/config.yaml:ro
       - ./temp_logs:/app/logs

@@ -23,7 +23,8 @@
 - `github_repo_url` - GitHub仓库URL
 - `github_username` - GitHub用户名
 - `github_token` - GitHub访问令牌（加密存储）
-- `git_local_repo_path` - 本地仓库路径
+- `gitee_local_path` - Gitee本地仓库路径
+- `github_local_path` - GitHub本地仓库路径
 
 ### 阿里云配置
 - `aliyun_registry` - 阿里云镜像仓库地址

@@ -111,7 +111,8 @@ git:
     username: "your-username"
     token: "github_pat_xxxxx"
   
-  local_repo_path: "./temp/docker_image_pusher"
+  # 本地仓库路径配置已移至各自的git平台配置下
+# gitee.local_path 和 github.local_path
 ```
 
 #### 阿里云配置

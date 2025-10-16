@@ -90,26 +90,29 @@ type DatabaseConfig struct {
 
 // GitConfig Git配置
 type GitConfig struct {
-	Gitee         GiteeConfig  `mapstructure:"gitee"`
-	GitHub        GitHubConfig `mapstructure:"github"`
-	LocalRepoPath string       `mapstructure:"local_repo_path"`
+	Gitee  GiteeConfig  `mapstructure:"gitee"`
+	GitHub GitHubConfig `mapstructure:"github"`
 }
 
 // GiteeConfig Gitee配置
 type GiteeConfig struct {
-	RepoURL  string `mapstructure:"repo_url"`
-	Username string `mapstructure:"username"`
-	Password string `mapstructure:"password"`
-	Token    string `mapstructure:"token"` // 访问令牌，优先使用Token认证
-	Email    string `mapstructure:"email"`
+	RepoURL   string `mapstructure:"repo_url"`
+	Username  string `mapstructure:"username"`
+	Password  string `mapstructure:"password"`
+	Token     string `mapstructure:"token"` // 访问令牌，优先使用Token认证
+	Email     string `mapstructure:"email"`
+	Branch    string `mapstructure:"branch"`
+	LocalPath string `mapstructure:"local_path"`
 }
 
 // GitHubConfig GitHub配置
 type GitHubConfig struct {
-	RepoURL  string `mapstructure:"repo_url"`
-	Username string `mapstructure:"username"`
-	Token    string `mapstructure:"token"`
-	Email    string `mapstructure:"email"`
+	RepoURL   string `mapstructure:"repo_url"`
+	Username  string `mapstructure:"username"`
+	Token     string `mapstructure:"token"`
+	Email     string `mapstructure:"email"`
+	Branch    string `mapstructure:"branch"`
+	LocalPath string `mapstructure:"local_path"`
 }
 
 // AliyunConfig 阿里云配置
@@ -195,14 +198,18 @@ func setupEnvKeyMapping() {
 	viper.BindEnv("git.gitee.password", "GITEE_PASSWORD")
 	viper.BindEnv("git.gitee.token", "GITEE_TOKEN")
 	viper.BindEnv("git.gitee.email", "GITEE_EMAIL")
+	viper.BindEnv("git.gitee.branch", "GITEE_BRANCH")
+	viper.BindEnv("git.gitee.local_path", "GITEE_LOCAL_PATH")
 
 	// Git配置 - GitHub
 	viper.BindEnv("git.github.repo_url", "GITHUB_REPO_URL")
 	viper.BindEnv("git.github.username", "GITHUB_USERNAME")
 	viper.BindEnv("git.github.token", "GITHUB_TOKEN")
+	viper.BindEnv("git.github.email", "GITHUB_EMAIL")
+	viper.BindEnv("git.github.branch", "GITHUB_BRANCH")
+	viper.BindEnv("git.github.local_path", "GITHUB_LOCAL_PATH")
 
-	// Git本地路径
-	viper.BindEnv("git.local_repo_path", "GIT_LOCAL_REPO_PATH")
+
 
 	// 阿里云配置
 	viper.BindEnv("aliyun.registry", "ALIYUN_REGISTRY")
@@ -225,8 +232,6 @@ func setDefaults() {
 	viper.SetDefault("database.charset", "utf8mb4")
 	viper.SetDefault("database.parse_time", true)
 	viper.SetDefault("database.loc", "Local")
-
-	viper.SetDefault("git.local_repo_path", "./temp/docker_image_pusher")
 
 	viper.SetDefault("log.level", "info")
 	viper.SetDefault("log.file_path", "./logs/app.log")

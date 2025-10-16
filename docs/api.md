@@ -613,13 +613,14 @@ GET /api/v1/config
       "gitee": {
         "repo_url": "https://gitee.com/user/repo.git",
         "username": "user",
-        "email": "user@example.com"
+        "email": "user@example.com",
+        "local_path": "./gitee-repo"
       },
       "github": {
         "repo_url": "https://github.com/user/repo",
-        "username": "user"
-      },
-      "local_repo_path": "./temp/docker_image_pusher"
+        "username": "user",
+        "local_path": "./github-repo"
+      }
     },
     "aliyun": {
       "registry": "registry.cn-hangzhou.aliyuncs.com",

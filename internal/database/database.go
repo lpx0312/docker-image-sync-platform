@@ -253,16 +253,29 @@ func initDefaultConfigs() error {
 	giteePassword := config.AppConfig.Git.Gitee.Password
 	giteeToken := config.AppConfig.Git.Gitee.Token
 	giteeEmail := config.AppConfig.Git.Gitee.Email
+	giteeBranch := config.AppConfig.Git.Gitee.Branch
+	if giteeBranch == "" {
+		giteeBranch = "main" // 默认分支
+	}
+	giteeLocalPath := config.AppConfig.Git.Gitee.LocalPath
+	if giteeLocalPath == "" {
+		giteeLocalPath = "./gitee-repo" // 默认本地路径
+	}
 	
 	githubRepoURL := config.AppConfig.Git.GitHub.RepoURL
 	githubUsername := config.AppConfig.Git.GitHub.Username
 	githubToken := config.AppConfig.Git.GitHub.Token
 	githubEmail := config.AppConfig.Git.GitHub.Email
-	
-	gitLocalRepoPath := config.AppConfig.Git.LocalRepoPath
-	if gitLocalRepoPath == "" {
-		gitLocalRepoPath = "./temp/docker_image_pusher"
+	githubBranch := config.AppConfig.Git.GitHub.Branch
+	if githubBranch == "" {
+		githubBranch = "main" // 默认分支
 	}
+	githubLocalPath := config.AppConfig.Git.GitHub.LocalPath
+	if githubLocalPath == "" {
+		githubLocalPath = "./github-repo" // 默认本地路径
+	}
+	
+
 
 	// 从配置文件中读取同步配置
 	syncTimeoutMinutes := fmt.Sprintf("%d", config.AppConfig.Sync.TimeoutMinutes)
@@ -317,11 +330,7 @@ func initDefaultConfigs() error {
 			ConfigValue: "gitee",
 			Description: "Git仓库类型 (gitee/github)",
 		},
-		{
-			ConfigKey:   "git_local_repo_path",
-			ConfigValue: gitLocalRepoPath,
-			Description: "本地Git仓库路径",
-		},
+
 		
 		// Gitee配置
 		{
@@ -351,6 +360,16 @@ func initDefaultConfigs() error {
 			ConfigValue: giteeEmail,
 			Description: "Gitee邮箱地址",
 		},
+		{
+			ConfigKey:   "gitee_branch",
+			ConfigValue: giteeBranch,
+			Description: "Gitee仓库分支",
+		},
+		{
+			ConfigKey:   "gitee_local_path",
+			ConfigValue: giteeLocalPath,
+			Description: "Gitee本地仓库路径",
+		},
 		
 		// GitHub配置
 		{
@@ -373,6 +392,16 @@ func initDefaultConfigs() error {
 			ConfigKey:   "github_email",
 			ConfigValue: githubEmail,
 			Description: "GitHub邮箱地址",
+		},
+		{
+			ConfigKey:   "github_branch",
+			ConfigValue: githubBranch,
+			Description: "GitHub仓库分支",
+		},
+		{
+			ConfigKey:   "github_local_path",
+			ConfigValue: githubLocalPath,
+			Description: "GitHub本地仓库路径",
 		},
 		
 		// 同步配置

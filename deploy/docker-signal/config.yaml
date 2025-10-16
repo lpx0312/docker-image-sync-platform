@@ -111,12 +111,7 @@ git:
     # 必须使用Personal Access Token，不支持密码认证
     # 获取方式: GitHub -> Settings -> Developer settings -> Personal access tokens
     # 所需权限: repo, workflow
-    token: "REDACTED_GITHUB_TOKEN" 
-  # 本地仓库路径
-  # 系统克隆和操作Git仓库的本地路径
-  # 相对路径: 相对于应用根目录
-  # 绝对路径: 完整的文件系统路径
-  local_repo_path: "./temp/docker_image_pusher"
+    token: "REDACTED_GITHUB_TOKEN"
 
 # ----------------------------------------------------------------------------
 # 阿里云容器镜像服务(ACR)配置

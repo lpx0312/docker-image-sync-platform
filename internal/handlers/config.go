@@ -285,7 +285,6 @@ func (h *ConfigHandler) GetConfigStatus(c *gin.Context) {
 		"aliyun_username":  os.Getenv("ALIYUN_USERNAME"),
 
 		// 路径配置
-		"git_local_repo_path": os.Getenv("GIT_LOCAL_REPO_PATH"),
 		"log_file_path":       os.Getenv("LOG_FILE_PATH"),
 	}
 
@@ -323,7 +322,7 @@ func (h *ConfigHandler) GetConfigStatus(c *gin.Context) {
 				"repo_url": getConfigValue("github_repo_url", ""),
 				"username": getConfigValue("github_username", ""),
 			},
-			"local_repo_path": getConfigValue("git_local_repo_path", "./temp/docker_image_pusher"),
+
 		},
 		"aliyun": gin.H{
 			"registry":  getConfigValue("aliyun_registry", "registry.cn-hangzhou.aliyuncs.com"),

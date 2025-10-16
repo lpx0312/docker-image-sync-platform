@@ -81,6 +81,8 @@ DB_PARSE_TIME=true
 DB_LOC=Local
 
 # Git本地仓库路径
-GIT_LOCAL_REPO_PATH=/app/data/repos
+# Git本地仓库路径
+GITEE_LOCAL_PATH=/app/data/gitee-repo
+GITHUB_LOCAL_PATH=/app/data/github-repo
 # 日志文件路径
 LOG_FILE_PATH=/app/logs/app.log

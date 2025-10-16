@@ -85,16 +85,8 @@ func NewGitService(encryptionService *EncryptionService) *GitService {
 	service := &GitService{
 		encryptionService: encryptionService,
 	}
-	
-	// 从数据库获取本地仓库路径
-	repoPath, err := service.getConfigValue("git_local_repo_path")
-	if err != nil {
-		// 如果数据库中没有配置，使用默认路径
-		logger.Logger.Warn("从数据库获取Git本地路径失败，使用默认路径", zap.Error(err))
-		repoPath = "./temp/docker_image_pusher"
-	}
-	
-	service.repoPath = repoPath
+
+	// 本地仓库路径将在InitRepository时根据配置动态设置
 	return service
 }
 
@@ -113,7 +105,7 @@ func NewGitService(encryptionService *EncryptionService) *GitService {
 //   - email: 邮箱地址
 //   - repoType: 仓库类型（gitee或github）
 //   - error: 错误信息
-func (s *GitService) getCurrentGitConfig() (repoURL, username, token, email, repoType string, err error) {
+func (s *GitService) getCurrentGitConfig() (repoURL, username, token, email, repoType, localPath string, err error) {
 	// 从数据库查询当前配置的Git仓库类型
 	var systemConfig models.SystemConfig
 	err = database.DB.Where("config_key = ?", "git_repository_type").First(&systemConfig).Error
@@ -132,22 +124,27 @@ func (s *GitService) getCurrentGitConfig() (repoURL, username, token, email, rep
 		// 从数据库获取GitHub配置
 		repoURL, err = s.getConfigValue("github_repo_url")
 		if err != nil {
-			return "", "", "", "", "", fmt.Errorf("获取GitHub仓库URL配置失败: %w", err)
+			return "", "", "", "", "", "", fmt.Errorf("获取GitHub仓库URL配置失败: %w", err)
 		}
 
 		username, err = s.getConfigValue("github_username")
 		if err != nil {
-			return "", "", "", "", "", fmt.Errorf("获取GitHub用户名配置失败: %w", err)
+			return "", "", "", "", "", "", fmt.Errorf("获取GitHub用户名配置失败: %w", err)
 		}
 
 		token, err = s.getConfigValue("github_token")
 		if err != nil {
-			return "", "", "", "", "", fmt.Errorf("获取GitHub令牌配置失败: %w", err)
+			return "", "", "", "", "", "", fmt.Errorf("获取GitHub令牌配置失败: %w", err)
+		}
+
+		localPath, err = s.getConfigValue("github_local_path")
+		if err != nil {
+			return "", "", "", "", "", "", fmt.Errorf("获取GitHub本地路径配置失败: %w", err)
 		}
 
 		email = "" // GitHub配置中没有email字段
-		logger.Logger.Info("使用GitHub配置", zap.String("repo_url", repoURL), zap.String("username", username))
-		return repoURL, username, token, email, "github", nil
+		logger.Logger.Info("使用GitHub配置", zap.String("repo_url", repoURL), zap.String("username", username), zap.String("local_path", localPath))
+		return repoURL, username, token, email, "github", localPath, nil
 
 	case "gitee":
 		fallthrough
@@ -155,26 +152,31 @@ func (s *GitService) getCurrentGitConfig() (repoURL, username, token, email, rep
 		// 从数据库获取Gitee配置
 		repoURL, err = s.getConfigValue("gitee_repo_url")
 		if err != nil {
-			return "", "", "", "", "", fmt.Errorf("获取Gitee仓库URL配置失败: %w", err)
+			return "", "", "", "", "", "", fmt.Errorf("获取Gitee仓库URL配置失败: %w", err)
 		}
 
 		username, err = s.getConfigValue("gitee_username")
 		if err != nil {
-			return "", "", "", "", "", fmt.Errorf("获取Gitee用户名配置失败: %w", err)
+			return "", "", "", "", "", "", fmt.Errorf("获取Gitee用户名配置失败: %w", err)
 		}
 
 		token, err = s.getConfigValue("gitee_token")
 		if err != nil {
-			return "", "", "", "", "", fmt.Errorf("获取Gitee令牌配置失败: %w", err)
+			return "", "", "", "", "", "", fmt.Errorf("获取Gitee令牌配置失败: %w", err)
 		}
 
 		email, err = s.getConfigValue("gitee_email")
 		if err != nil {
-			return "", "", "", "", "", fmt.Errorf("获取Gitee邮箱配置失败: %w", err)
+			return "", "", "", "", "", "", fmt.Errorf("获取Gitee邮箱配置失败: %w", err)
 		}
 
-		logger.Logger.Info("使用Gitee配置", zap.String("repo_url", repoURL), zap.String("username", username))
-		return repoURL, username, token, email, "gitee", nil
+		localPath, err = s.getConfigValue("gitee_local_path")
+		if err != nil {
+			return "", "", "", "", "", "", fmt.Errorf("获取Gitee本地路径配置失败: %w", err)
+		}
+
+		logger.Logger.Info("使用Gitee配置", zap.String("repo_url", repoURL), zap.String("username", username), zap.String("local_path", localPath))
+		return repoURL, username, token, email, "gitee", localPath, nil
 	}
 }
 
@@ -268,14 +270,17 @@ func (s *GitService) InitRepository() error {
 	// ====================================================================
 
 	// 获取当前配置的Git仓库信息
-	repoURL, username, token, _, repoType, err := s.getCurrentGitConfig()
+	repoURL, username, token, _, repoType, localPath, err := s.getCurrentGitConfig()
 	if err != nil {
 		return fmt.Errorf("获取Git配置失败: %w", err)
 	}
 
+	// 设置本地仓库路径
+	s.repoPath = localPath
+
 	// 开始克隆仓库
-	logger.Logger.Info("开始克隆Git仓库", 
-		zap.String("url", repoURL), 
+	logger.Logger.Info("开始克隆Git仓库",
+		zap.String("url", repoURL),
 		zap.String("type", repoType))
 
 	// 构建带有认证信息的URL
@@ -573,7 +578,7 @@ func (s *GitService) pullLatest() error {
 	// ====================================================================
 
 	// 获取当前配置的Git仓库信息
-	_, username, token, _, repoType, err := s.getCurrentGitConfig()
+	_, username, token, _, repoType, _, err := s.getCurrentGitConfig()
 	if err != nil {
 		return fmt.Errorf("获取Git配置失败: %w", err)
 	}
@@ -659,7 +664,7 @@ func (s *GitService) forcePullLatest() error {
 	}
 
 	// 获取当前配置的Git仓库信息
-	_, username, token, _, repoType, configErr := s.getCurrentGitConfig()
+	_, username, token, _, repoType, _, configErr := s.getCurrentGitConfig()
 	if configErr != nil {
 		return fmt.Errorf("获取Git配置失败: %w", configErr)
 	}
@@ -809,7 +814,7 @@ func (s *GitService) commitAndPush(newImages []string) (string, error) {
 	// ====================================================================
 
 	// 获取当前配置的Git仓库信息
-	_, username, _, email, repoType, err := s.getCurrentGitConfig()
+	_, username, _, email, repoType, _, err := s.getCurrentGitConfig()
 	if err != nil {
 		return "", fmt.Errorf("获取Git配置失败: %w", err)
 	}
@@ -893,7 +898,7 @@ func (s *GitService) pushWithRetry(commitSHA string) error {
 		// ================================================================
 
 		// 获取当前配置的Git仓库信息
-		_, username, token, _, repoType, configErr := s.getCurrentGitConfig()
+		_, username, token, _, repoType, _, configErr := s.getCurrentGitConfig()
 		if configErr != nil {
 			return fmt.Errorf("获取Git配置失败: %w", configErr)
 		}
@@ -975,7 +980,7 @@ func (s *GitService) pushWithRetry(commitSHA string) error {
 		// 如果有更改，重新提交
 		if !status.IsClean() {
 			// 获取当前配置的用户信息
-			_, currentUsername, _, currentEmail, currentRepoType, configErr := s.getCurrentGitConfig()
+			_, currentUsername, _, currentEmail, currentRepoType, _, configErr := s.getCurrentGitConfig()
 			if configErr != nil {
 				logger.Logger.Error("获取Git配置失败", zap.Error(configErr))
 				continue
@@ -1016,14 +1021,14 @@ func (s *GitService) pushWithRetry(commitSHA string) error {
 	}
 
 	// 获取当前仓库类型用于错误消息
-	_, _, _, _, repoType, _ := s.getCurrentGitConfig()
+	_, _, _, _, repoType, _, _ := s.getCurrentGitConfig()
 	repoName := "Git仓库"
 	if repoType == "github" {
 		repoName = "GitHub"
 	} else if repoType == "gitee" {
 		repoName = "Gitee"
 	}
-	
+
 	return fmt.Errorf("推送到%s失败，已重试%d次", repoName, maxRetries)
 }
 
