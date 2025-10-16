@@ -1,1 +1,4 @@
-nginx:latest
+nginx:1.28.0
+
+# 历史镜像记录
+# nginx:latest
