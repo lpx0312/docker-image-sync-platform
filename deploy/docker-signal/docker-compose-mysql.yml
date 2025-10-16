@@ -106,18 +106,20 @@ services:
       - GITEE_PASSWORD=${GITEE_PASSWORD:-Abc2020##}
       - GITEE_EMAIL=${GITEE_EMAIL:-lpx_0312@163.com}
       - GITEE_TOKEN=${GITEE_TOKEN:-63fde4aa0198d257ea4d8f25af2077a9}
+      - GITEE_BRANCH=${GITEE_BRANCH:-main}
+      - GITEE_LOCAL_PATH=${GITEE_LOCAL_PATH:-/app/data/gitee-repo}
       # Git配置 (GitHub)
       - GITHUB_REPO_URL=${GITHUB_REPO_URL:-https://github.com/lpx0312/docker_image_pusher.git}
       - GITHUB_USERNAME=${GITHUB_USERNAME:-lpx0312}
+      - GITHUB_EMAIL=${GITHUB_EMAIL:-lpx_0312@163.com}
       - GITHUB_TOKEN=${GITHUB_TOKEN:-REDACTED_GITHUB_TOKEN}
+      - GITHUB_BRANCH=${GITHUB_BRANCH:-main}
+      - GITHUB_LOCAL_PATH=${GITHUB_LOCAL_PATH:-/app/data/github-repo}
       # 阿里云配置
       - ALIYUN_REGISTRY=${ALIYUN_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}
       - ALIYUN_NAMESPACE=${ALIYUN_NAMESPACE:-lpx03}
       - ALIYUN_USERNAME=${ALIYUN_USERNAME:-lipanx}
       - ALIYUN_PASSWORD=${ALIYUN_PASSWORD:-Lipanxiang1102}
-      # 本地仓库路径
-      - GITEE_LOCAL_PATH=${GITEE_LOCAL_PATH:-/app/data/gitee-repo}
-        - GITHUB_LOCAL_PATH=${GITHUB_LOCAL_PATH:-/app/data/github-repo}
     volumes:
       - ./config.yaml:/app/config.yaml:ro
       - ./temp_logs:/app/logs

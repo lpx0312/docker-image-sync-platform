@@ -33,6 +33,8 @@ GITEE_PASSWORD="Abc2020##"
 # 在 https://gitee.com/profile/personal_access_tokens 创建
 GITEE_TOKEN=63fde4aa0198d257ea4d8f25af2077a9
 GITEE_EMAIL=lpx_0312@163.com
+GITEE_BRANCH=main
+GITEE_LOCAL_PATH=/app/data/gitee-repo
 
 # ----------------------------------------------------------------------------
 # Git仓库配置 (GitHub) - 备用或主要Git仓库
@@ -42,7 +44,10 @@ GITEE_EMAIL=lpx_0312@163.com
 GITHUB_REPO_URL=https://github.com/lpx0312/docker_image_pusher.git
 # GitHub认证信息 (使用Personal Access Token)
 GITHUB_USERNAME=lpx0312
+GITHUB_EMAIL=lpx_0312@163.com
 GITHUB_TOKEN=REDACTED_GITHUB_TOKEN
+GITHUB_BRANCH=main
+GITHUB_LOCAL_PATH=/app/data/github-repo
 
 # ----------------------------------------------------------------------------
 # 阿里云容器镜像服务 (ACR) 配置
@@ -80,9 +85,5 @@ DB_CHARSET=utf8mb4
 DB_PARSE_TIME=true
 DB_LOC=Local
 
-# Git本地仓库路径
-# Git本地仓库路径
-GITEE_LOCAL_PATH=/app/data/gitee-repo
-GITHUB_LOCAL_PATH=/app/data/github-repo
 # 日志文件路径
 LOG_FILE_PATH=/app/logs/app.log
