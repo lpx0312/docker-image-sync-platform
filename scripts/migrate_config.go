@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -311,8 +312,10 @@ func main() {
 		log.Fatal("迁移数据库表失败:", err)
 	}
 
-	// 初始化加密服务（使用简单的logger）
-	encryptionService, err := services.NewEncryptionService(nil)
+	// 初始化加密服务（创建logger）
+	logger := logrus.New()
+	logger.SetLevel(logrus.InfoLevel)
+	encryptionService, err := services.NewEncryptionService(logger)
 	if err != nil {
 		log.Printf("警告: 初始化加密服务失败，敏感配置将不会被加密: %v", err)
 	}

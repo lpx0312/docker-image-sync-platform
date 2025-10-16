@@ -25,13 +25,13 @@ import (
 	"fmt"      // 字符串格式化
 	"io"       // IO操作
 	"net/http" // HTTP状态码和处理
+	"net/url" // URL解析
 	"os"       // 环境变量操作
 	"strings"  // 字符串操作
 	"time"     // 时间操作
 
 	"docker-image-sync-platform/internal/config"   // 配置管理
 	"docker-image-sync-platform/internal/database" // 数据库操作
-	"docker-image-sync-platform/internal/models"   // 数据模型
 	"docker-image-sync-platform/internal/services" // 业务服务
 	"github.com/gin-gonic/gin"                     // Gin Web框架
 	"github.com/go-git/go-git/v5"                  // Git操作
@@ -86,94 +86,7 @@ func NewConfigHandler(gitServiceFactory *services.GitServiceFactory, configServi
 	}
 }
 
-// GetAliyunConfig 获取阿里云ACR配置信息
-//
-// HTTP方法: GET
-// 路径: /api/v1/config/aliyun
-//
-// 响应码:
-//   - 200: 成功返回阿里云配置信息
-//   - 500: 服务器内部错误（数据库查询失败）
-//
-// 响应数据:
-//   - registry: 阿里云容器注册表地址（如 registry.cn-hangzhou.aliyuncs.com）
-//   - namespace: 阿里云容器注册表命名空间（如 docker-sync）
-//
-// 默认值处理:
-//   - registry默认值: registry.cn-hangzhou.aliyuncs.com（杭州区域）
-//   - namespace默认值: docker-sync
-//
-// 功能说明:
-//   - 从系统配置表中读取阿里云ACR相关配置
-//   - 提供配置的默认值机制，确保系统正常运行
-//   - 用于前端显示当前的阿里云配置信息
-//   - 支持镜像同步服务的配置获取
-//
-// 配置项详解:
-//   - aliyun_registry_prefix: 阿里云ACR的完整域名地址
-//   - 格式: registry.{region}.aliyuncs.com
-//   - 示例: registry.cn-hangzhou.aliyuncs.com
-//   - 用途: 构建完整的镜像推送地址
-//   - aliyun_namespace: ACR中的命名空间
-//   - 格式: 字符串，符合ACR命名规范
-//   - 示例: docker-sync, my-images
-//   - 用途: 组织和隔离不同项目的镜像
-//
-// 使用场景:
-//   - 前端配置页面显示当前配置
-//   - 镜像同步时获取目标仓库信息
-//   - 系统初始化时验证配置完整性
-func (h *ConfigHandler) GetAliyunConfig(c *gin.Context) {
-	// ====================================================================
-	// 初始化配置变量
-	// ====================================================================
-
-	var registryConfig models.SystemConfig  // 注册表地址配置
-	var namespaceConfig models.SystemConfig // 命名空间配置
-
-	// ====================================================================
-	// 查询阿里云注册表配置
-	// ====================================================================
-
-	// 获取阿里云容器注册表地址前缀配置
-	// 配置键: aliyun_registry_prefix
-	// 用途: 指定阿里云ACR的完整地址，如 registry.cn-hangzhou.aliyuncs.com
-	database.DB.Where("config_key = ?", "aliyun_registry_prefix").First(&registryConfig)
-
-	// 获取阿里云容器注册表命名空间配置
-	// 配置键: aliyun_namespace
-	// 用途: 指定在ACR中使用的命名空间，用于组织和隔离镜像
-	database.DB.Where("config_key = ?", "aliyun_namespace").First(&namespaceConfig)
-
-	// ====================================================================
-	// 配置值处理和默认值设置
-	// ====================================================================
-
-	// 处理注册表地址配置
-	// 如果数据库中没有配置或配置为空，使用默认的杭州区域地址
-	registry := registryConfig.ConfigValue
-	if registry == "" {
-		registry = "registry.cn-hangzhou.aliyuncs.com" // 默认使用杭州区域
-	}
-
-	// 处理命名空间配置
-	// 如果数据库中没有配置或配置为空，使用默认命名空间
-	namespace := namespaceConfig.ConfigValue
-	if namespace == "" {
-		namespace = "docker-sync" // 默认命名空间
-	}
-
-	// ====================================================================
-	// 返回配置信息
-	// ====================================================================
-
-	// 返回完整的阿里云ACR配置信息
-	// 响应格式为标准JSON，包含registry和namespace两个字段
-	c.JSON(http.StatusOK, gin.H{
-		"registry":  registry,  // 阿里云容器注册表地址
-		"namespace": namespace, // 阿里云容器注册表命名空间
-	})
-}
+// 旧版GetAliyunConfig函数已删除，统一使用GetAliyunConfigNew
 
 // GetGitRepositoryConfig 获取Git仓库配置信息
 //
@@ -731,7 +644,7 @@ func (h *ConfigHandler) TestGitConnection(c *gin.Context) {
 //   - 从数据库获取阿里云配置信息
 //   - 自动解密敏感信息但不在响应中返回
 //   - 支持配置的动态加载
-func (h *ConfigHandler) GetAliyunConfigNew(c *gin.Context) {
+func (h *ConfigHandler) GetAliyunConfig(c *gin.Context) {
 	aliyunConfig, err := h.configService.GetAliyunConfig()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -952,6 +865,96 @@ func (h *ConfigHandler) GetAllConfigs(c *gin.Context) {
 	})
 }
 
+// testGitHubAPIConnection 测试GitHub API连接
+//
+// 使用GitHub API验证访问令牌和仓库访问权限
+//
+// 参数：
+//   - repoURL: 仓库URL
+//   - username: 用户名
+//   - token: 访问令牌
+//
+// 返回：
+//   - error: 连接错误，nil表示连接成功
+func (h *ConfigHandler) testGitHubAPIConnection(repoURL, username, token string) error {
+	// 从仓库URL中提取owner和repo名称
+	// 例如：https://github.com/owner/repo.git -> owner/repo
+	repoURL = strings.TrimSuffix(repoURL, ".git")
+	parts := strings.Split(strings.TrimPrefix(repoURL, "https://github.com/"), "/")
+	if len(parts) != 2 {
+		return fmt.Errorf("无效的GitHub仓库URL格式")
+	}
+	owner, repo := parts[0], parts[1]
+
+	// 构建GitHub API URL
+	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s", owner, repo)
+
+	// 创建HTTP客户端，支持代理设置
+	transport := &http.Transport{}
+	
+	// 检查是否设置了HTTP代理
+	if proxyURL := os.Getenv("HTTP_PROXY"); proxyURL != "" {
+		if proxy, err := url.Parse(proxyURL); err == nil {
+			transport.Proxy = http.ProxyURL(proxy)
+		}
+	} else if proxyURL := os.Getenv("HTTPS_PROXY"); proxyURL != "" {
+		if proxy, err := url.Parse(proxyURL); err == nil {
+			transport.Proxy = http.ProxyURL(proxy)
+		}
+	}
+	
+	client := &http.Client{
+		Timeout:   30 * time.Second,
+		Transport: transport,
+	}
+
+	// 创建请求
+	req, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		return fmt.Errorf("创建GitHub API请求失败: %v", err)
+	}
+
+	// 添加认证头
+	req.Header.Set("Authorization", "token "+token)
+	req.Header.Set("User-Agent", "Docker-Image-Sync-Platform/1.0")
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	// 发送请求
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("GitHub API请求失败: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// 读取响应体
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("读取GitHub API响应失败: %v", err)
+	}
+
+	// 检查响应状态码
+	switch resp.StatusCode {
+	case http.StatusOK:
+		// API调用成功，仓库存在且可访问
+		return nil
+	case http.StatusUnauthorized:
+		return fmt.Errorf("GitHub访问令牌无效或已过期")
+	case http.StatusForbidden:
+		return fmt.Errorf("GitHub访问令牌权限不足，请确保令牌具有repo权限")
+	case http.StatusNotFound:
+		return fmt.Errorf("GitHub仓库不存在或无访问权限")
+	default:
+		// 尝试解析错误信息
+		var errorResp map[string]interface{}
+		if json.Unmarshal(body, &errorResp) == nil {
+			if msg, ok := errorResp["message"].(string); ok {
+				return fmt.Errorf("GitHub API错误: %s", msg)
+			}
+		}
+		return fmt.Errorf("GitHub API请求失败，状态码: %d", resp.StatusCode)
+	}
+}
+
 // testGitRepositoryConnection 测试Git仓库连接
 //
 // 使用go-git库尝试连接到指定的Git仓库，验证认证信息是否正确
@@ -966,6 +969,12 @@ func (h *ConfigHandler) GetAllConfigs(c *gin.Context) {
 // 返回：
 //   - error: 连接错误，nil表示连接成功
 func (h *ConfigHandler) testGitRepositoryConnection(repoURL, username, password, token, gitType string) error {
+	// 对于GitHub，先尝试使用API验证token和仓库访问权限
+	if gitType == "github" {
+		if err := h.testGitHubAPIConnection(repoURL, username, token); err != nil {
+			return err
+		}
+	}
 	// 创建内存存储，用于测试连接而不实际克隆仓库
 	storage := memory.NewStorage()
 	
@@ -989,29 +998,47 @@ func (h *ConfigHandler) testGitRepositoryConnection(repoURL, username, password,
 		URLs: []string{repoURL},
 	})
 	
+	// 创建带超时的上下文 - 增加超时时间以适应网络延迟
+	timeout := 120 * time.Second
+	if gitType == "github" {
+		// GitHub在某些网络环境下可能需要更长时间
+		timeout = 180 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	
 	// 创建一个通道来接收结果
 	resultChan := make(chan error, 1)
-	done := make(chan bool, 1)
 	
 	// 在goroutine中执行Git操作
 	go func() {
 		defer func() {
-			done <- true
+			if r := recover(); r != nil {
+				resultChan <- fmt.Errorf("Git操作发生异常: %v", r)
+			}
 		}()
+		
+		// 记录开始时间用于调试
+		startTime := time.Now()
 		
 		_, err := remote.List(&git.ListOptions{
 			Auth: auth,
 		})
 		
+		// 记录操作耗时
+		duration := time.Since(startTime)
+		if err != nil {
+			// 添加详细的错误信息
+			err = fmt.Errorf("Git操作失败 (耗时: %v, 仓库: %s, 用户: %s): %v", 
+				duration, repoURL, username, err)
+		}
+		
 		select {
 		case resultChan <- err:
-		case <-done:
-			// 如果已经超时，不发送结果
+		case <-ctx.Done():
+			// 如果上下文已取消，不发送结果
 		}
 	}()
-	
-	// 设置15秒超时（减少超时时间以更快响应）
-	timeout := time.After(15 * time.Second)
 	
 	// 等待结果或超时
 	select {
@@ -1019,24 +1046,50 @@ func (h *ConfigHandler) testGitRepositoryConnection(repoURL, username, password,
 		if err != nil {
 			// 检查是否是超时相关的错误
 			errStr := err.Error()
-			if context.DeadlineExceeded.Error() == errStr || 
-			   fmt.Sprintf("context deadline exceeded") == errStr ||
-			   fmt.Sprintf("timeout") == errStr {
-				return fmt.Errorf("连接超时：无法连接到%s仓库。请检查网络连接或稍后重试", gitType)
+			if strings.Contains(errStr, "context deadline exceeded") || 
+			   strings.Contains(errStr, "timeout") ||
+			   strings.Contains(errStr, "connection timeout") ||
+			   strings.Contains(errStr, "i/o timeout") {
+				if gitType == "github" {
+					return fmt.Errorf("GitHub连接超时：网络连接到GitHub可能受限。建议：1) 检查网络连接 2) 确认防火墙设置 3) 尝试使用代理或VPN 4) 稍后重试")
+				} else {
+					return fmt.Errorf("Gitee连接超时：无法连接到Gitee仓库。请检查网络连接或稍后重试")
+				}
+			}
+			
+			// 检查认证相关错误
+			if strings.Contains(errStr, "authentication required") ||
+			   strings.Contains(errStr, "401") ||
+			   strings.Contains(errStr, "403") ||
+			   strings.Contains(errStr, "unauthorized") {
+				if gitType == "github" {
+					return fmt.Errorf("GitHub认证失败：访问令牌无效或权限不足。请检查：1) 令牌是否正确 2) 令牌是否有repo权限 3) 仓库是否存在且可访问")
+				} else {
+					return fmt.Errorf("Gitee认证失败：用户名或密码错误。请检查用户名和密码是否正确")
+				}
+			}
+			
+			// 检查仓库不存在的错误
+			if strings.Contains(errStr, "repository not found") ||
+			   strings.Contains(errStr, "404") ||
+			   strings.Contains(errStr, "not found") {
+				return fmt.Errorf("仓库不存在：请检查仓库URL是否正确，仓库是否存在且可访问")
 			}
 			
 			// 提供更详细的错误信息
 			if gitType == "github" {
-				return fmt.Errorf("GitHub连接失败: %s。请检查仓库URL、用户名和访问令牌是否正确，以及网络连接是否正常", err.Error())
+				return fmt.Errorf("GitHub连接失败: %s。请检查：1) 仓库URL格式是否正确 2) 用户名和访问令牌是否有效 3) 网络连接是否正常 4) 仓库是否存在且可访问", err.Error())
 			} else {
-				return fmt.Errorf("Gitee连接失败: %s。请检查仓库URL、用户名和密码是否正确，以及网络连接是否正常", err.Error())
+				return fmt.Errorf("Gitee连接失败: %s。请检查：1) 仓库URL格式是否正确 2) 用户名和密码是否正确 3) 网络连接是否正常 4) 仓库是否存在且可访问", err.Error())
 			}
 		}
 		return nil
-	case <-timeout:
-		// 发送停止信号
-		done <- true
-		return fmt.Errorf("连接超时：无法在15秒内连接到%s仓库。请检查网络连接或稍后重试", gitType)
+	case <-ctx.Done():
+		if gitType == "github" {
+			return fmt.Errorf("GitHub连接超时：无法在60秒内连接到GitHub仓库。这可能是由于网络限制导致的，建议：1) 检查网络连接 2) 确认防火墙设置 3) 尝试使用代理或VPN 4) 稍后重试")
+		} else {
+			return fmt.Errorf("Gitee连接超时：无法在60秒内连接到Gitee仓库。请检查网络连接或稍后重试")
+		}
 	}
 }
 
@@ -1053,13 +1106,35 @@ func (h *ConfigHandler) testGitRepositoryConnection(repoURL, username, password,
 // 返回：
 //   - error: 连接错误，nil表示连接成功
 func (h *ConfigHandler) testAliyunRegistryConnection(registryURL, namespace, username, password string) error {
+	startTime := time.Now()
+	
+	// 记录开始测试
+	fmt.Printf("[阿里云连接测试] 开始测试 - 仓库: %s, 用户: %s, 命名空间: %s\n", registryURL, username, namespace)
+	
 	// 构建Docker Registry API的认证URL
 	// 阿里云容器镜像服务使用标准的Docker Registry v2 API
 	authURL := fmt.Sprintf("https://%s/v2/", strings.TrimPrefix(registryURL, "https://"))
+	fmt.Printf("[阿里云连接测试] 测试URL: %s\n", authURL)
 	
-	// 创建HTTP客户端
+	// 创建HTTP客户端，支持代理设置
+	transport := &http.Transport{}
+	
+	// 检查是否设置了HTTP代理
+	if proxyURL := os.Getenv("HTTP_PROXY"); proxyURL != "" {
+		if proxy, err := url.Parse(proxyURL); err == nil {
+			transport.Proxy = http.ProxyURL(proxy)
+			fmt.Printf("[阿里云连接测试] 使用HTTP代理: %s\n", proxyURL)
+		}
+	} else if proxyURL := os.Getenv("HTTPS_PROXY"); proxyURL != "" {
+		if proxy, err := url.Parse(proxyURL); err == nil {
+			transport.Proxy = http.ProxyURL(proxy)
+			fmt.Printf("[阿里云连接测试] 使用HTTPS代理: %s\n", proxyURL)
+		}
+	}
+	
 	client := &http.Client{
-		Timeout: 10 * time.Second,
+		Timeout:   30 * time.Second, // 增加超时时间
+		Transport: transport,
 	}
 	
 	// 创建请求
@@ -1074,11 +1149,17 @@ func (h *ConfigHandler) testAliyunRegistryConnection(registryURL, namespace, use
 	req.Header.Set("User-Agent", "Docker-Image-Sync-Platform/1.0")
 	
 	// 发送请求
+	fmt.Printf("[阿里云连接测试] 发送请求...\n")
 	resp, err := client.Do(req)
 	if err != nil {
+		elapsed := time.Since(startTime)
+		fmt.Printf("[阿里云连接测试] 请求失败 - 耗时: %v, 错误: %v\n", elapsed, err)
 		return fmt.Errorf("连接阿里云镜像仓库失败: %v", err)
 	}
 	defer resp.Body.Close()
+	
+	elapsed := time.Since(startTime)
+	fmt.Printf("[阿里云连接测试] 收到响应 - 状态码: %d, 耗时: %v\n", resp.StatusCode, elapsed)
 	
 	// 读取响应体
 	body, err := io.ReadAll(resp.Body)
@@ -1086,14 +1167,24 @@ func (h *ConfigHandler) testAliyunRegistryConnection(registryURL, namespace, use
 		return fmt.Errorf("读取响应失败: %v", err)
 	}
 	
+	// 记录响应头信息
+	fmt.Printf("[阿里云连接测试] 响应头: %v\n", resp.Header)
+	if len(body) > 0 && len(body) < 1000 {
+		fmt.Printf("[阿里云连接测试] 响应体: %s\n", string(body))
+	}
+	
 	// 检查响应状态码
 	switch resp.StatusCode {
 	case http.StatusOK:
 		// 连接成功
+		fmt.Printf("[阿里云连接测试] 连接成功！\n")
 		return nil
 	case http.StatusUnauthorized:
-		// 认证失败
-		return fmt.Errorf("认证失败：用户名或密码错误")
+		// 认证失败 - 这是阿里云的正常行为，需要Bearer token认证
+		fmt.Printf("[阿里云连接测试] 收到401状态码，这是正常的，表示需要Bearer token认证\n")
+		
+		// 尝试获取Bearer token
+		return h.testAliyunBearerAuth(registryURL, namespace, username, password)
 	case http.StatusForbidden:
 		// 权限不足
 		return fmt.Errorf("权限不足：用户没有访问该镜像仓库的权限")
@@ -1125,4 +1216,166 @@ func (h *ConfigHandler) testAliyunRegistryConnection(registryURL, namespace, use
 		
 		return fmt.Errorf("连接失败: %s", errorMsg)
 	}
+}
+
+// testAliyunBearerAuth 测试阿里云Bearer认证
+//
+// 阿里云容器镜像服务使用Bearer token认证机制
+// 首先需要通过用户名密码获取Bearer token，然后使用token访问API
+//
+// 参数：
+//   - registryURL: 镜像仓库地址
+//   - namespace: 命名空间
+//   - username: 用户名
+//   - password: 密码
+//
+// 返回：
+//   - error: 认证错误，nil表示认证成功
+func (h *ConfigHandler) testAliyunBearerAuth(registryURL, namespace, username, password string) error {
+	fmt.Printf("[阿里云Bearer认证] 开始Bearer token认证流程\n")
+	
+	// 构建认证URL
+	// 从WWW-Authenticate头中解析realm和service
+	authURL := fmt.Sprintf("https://%s/v2/", strings.TrimPrefix(registryURL, "https://"))
+	
+	// 创建HTTP客户端
+	transport := &http.Transport{}
+	
+	// 检查是否设置了HTTP代理
+	if proxyURL := os.Getenv("HTTP_PROXY"); proxyURL != "" {
+		if proxy, err := url.Parse(proxyURL); err == nil {
+			transport.Proxy = http.ProxyURL(proxy)
+		}
+	} else if proxyURL := os.Getenv("HTTPS_PROXY"); proxyURL != "" {
+		if proxy, err := url.Parse(proxyURL); err == nil {
+			transport.Proxy = http.ProxyURL(proxy)
+		}
+	}
+	
+	client := &http.Client{
+		Timeout:   30 * time.Second,
+		Transport: transport,
+	}
+	
+	// 第一步：获取认证信息
+	req, err := http.NewRequest("GET", authURL, nil)
+	if err != nil {
+		return fmt.Errorf("创建认证请求失败: %v", err)
+	}
+	
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("获取认证信息失败: %v", err)
+	}
+	defer resp.Body.Close()
+	
+	// 解析WWW-Authenticate头
+	authHeader := resp.Header.Get("WWW-Authenticate")
+	fmt.Printf("[阿里云Bearer认证] WWW-Authenticate: %s\n", authHeader)
+	
+	if authHeader == "" {
+		return fmt.Errorf("未找到WWW-Authenticate头")
+	}
+	
+	// 解析realm和service
+	var realm, service string
+	
+	// 检查是否是Bearer认证
+	if !strings.HasPrefix(authHeader, "Bearer ") {
+		return fmt.Errorf("不支持的认证类型: %s", authHeader)
+	}
+	
+	// 去掉"Bearer "前缀
+	authParams := strings.TrimPrefix(authHeader, "Bearer ")
+	fmt.Printf("[阿里云Bearer认证] 认证参数: %s\n", authParams)
+	
+	// 解析参数
+	parts := strings.Split(authParams, ",")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if strings.HasPrefix(part, "realm=") {
+			realm = strings.Trim(strings.TrimPrefix(part, "realm="), "\"")
+		} else if strings.HasPrefix(part, "service=") {
+			service = strings.Trim(strings.TrimPrefix(part, "service="), "\"")
+		}
+	}
+	
+	if realm == "" {
+		return fmt.Errorf("未找到认证realm")
+	}
+	
+	fmt.Printf("[阿里云Bearer认证] Realm: %s, Service: %s\n", realm, service)
+	
+	// 第二步：使用用户名密码获取Bearer token
+	tokenURL := realm
+	if service != "" {
+		tokenURL += "?service=" + service
+	}
+	
+	tokenReq, err := http.NewRequest("GET", tokenURL, nil)
+	if err != nil {
+		return fmt.Errorf("创建token请求失败: %v", err)
+	}
+	
+	// 添加Basic认证
+	auth := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
+	tokenReq.Header.Set("Authorization", "Basic "+auth)
+	
+	tokenResp, err := client.Do(tokenReq)
+	if err != nil {
+		return fmt.Errorf("获取Bearer token失败: %v", err)
+	}
+	defer tokenResp.Body.Close()
+	
+	tokenBody, err := io.ReadAll(tokenResp.Body)
+	if err != nil {
+		return fmt.Errorf("读取token响应失败: %v", err)
+	}
+	
+	fmt.Printf("[阿里云Bearer认证] Token响应状态码: %d\n", tokenResp.StatusCode)
+	
+	if tokenResp.StatusCode == http.StatusUnauthorized {
+		return fmt.Errorf("认证失败：用户名或密码错误")
+	}
+	
+	if tokenResp.StatusCode != http.StatusOK {
+		return fmt.Errorf("获取Bearer token失败，状态码: %d, 响应: %s", tokenResp.StatusCode, string(tokenBody))
+	}
+	
+	// 解析token响应
+	var tokenData map[string]interface{}
+	if err := json.Unmarshal(tokenBody, &tokenData); err != nil {
+		return fmt.Errorf("解析token响应失败: %v", err)
+	}
+	
+	token, ok := tokenData["token"].(string)
+	if !ok {
+		return fmt.Errorf("未找到Bearer token")
+	}
+	
+	fmt.Printf("[阿里云Bearer认证] 成功获取Bearer token\n")
+	
+	// 第三步：使用Bearer token访问API
+	apiReq, err := http.NewRequest("GET", authURL, nil)
+	if err != nil {
+		return fmt.Errorf("创建API请求失败: %v", err)
+	}
+	
+	apiReq.Header.Set("Authorization", "Bearer "+token)
+	
+	apiResp, err := client.Do(apiReq)
+	if err != nil {
+		return fmt.Errorf("使用Bearer token访问API失败: %v", err)
+	}
+	defer apiResp.Body.Close()
+	
+	fmt.Printf("[阿里云Bearer认证] API访问状态码: %d\n", apiResp.StatusCode)
+	
+	if apiResp.StatusCode == http.StatusOK {
+		fmt.Printf("[阿里云Bearer认证] 认证成功！\n")
+		return nil
+	}
+	
+	apiBody, _ := io.ReadAll(apiResp.Body)
+	return fmt.Errorf("Bearer token认证失败，状态码: %d, 响应: %s", apiResp.StatusCode, string(apiBody))
 }

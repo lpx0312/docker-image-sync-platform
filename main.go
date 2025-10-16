@@ -321,9 +321,7 @@ func main() {
 		// ====================================================================
 		config := api.Group("/config")
 		{
-			// GET /api/v1/config/aliyun - 获取阿里云容器镜像服务配置
-			// 返回阿里云ACR的基本配置信息（不包含敏感信息）
-			config.GET("/aliyun", configHandler.GetAliyunConfig)
+			// 阿里云容器镜像服务配置API（已删除旧版API）
 
 			// GET /api/v1/config/status - 获取当前配置状态和环境变量信息
 			// 用于调试和验证配置是否正确加载（不包含敏感信息）
@@ -356,7 +354,7 @@ func main() {
 			// 数据库配置管理API - 阿里云配置
 			// ====================================================================
 			// GET /api/v1/config/aliyun-db - 获取阿里云配置（数据库版本）
-			config.GET("/aliyun-db", configHandler.GetAliyunConfigNew)
+			config.GET("/aliyun-db", configHandler.GetAliyunConfig)
 
 			// PUT /api/v1/config/aliyun-db - 更新阿里云配置（数据库版本）
 			config.PUT("/aliyun-db", configHandler.UpdateAliyunConfig)

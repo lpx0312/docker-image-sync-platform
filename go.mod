@@ -8,6 +8,7 @@ require (
 	github.com/go-resty/resty/v2 v2.10.0
 	github.com/google/go-containerregistry v0.16.1
 	github.com/google/uuid v1.4.0
+	github.com/sirupsen/logrus v1.9.1
 	github.com/spf13/viper v1.17.0
 	go.uber.org/zap v1.26.0
 	golang.org/x/time v0.5.0
@@ -64,7 +65,6 @@ require (
 	github.com/sagikazarmark/locafero v0.3.0 // indirect
 	github.com/sagikazarmark/slog-shim v0.1.0 // indirect
 	github.com/sergi/go-diff v1.1.0 // indirect
-	github.com/sirupsen/logrus v1.9.1 // indirect
 	github.com/skeema/knownhosts v1.2.1 // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
 	github.com/spf13/afero v1.10.0 // indirect

@@ -71,19 +71,21 @@ type ConfigService struct {
 // 字段说明：
 //   - RepoURL: 仓库地址，支持HTTPS和SSH格式
 //   - Username: 用户名，用于认证
-//   - Password: 密码或访问令牌，自动加密存储
+//   - Password: 密码（用于Gitee），自动加密存储
+//   - Token: 访问令牌（用于GitHub），自动加密存储
 //   - Email: 提交邮箱，用于Git提交
 //   - Branch: 默认分支，通常为main或master
 //   - LocalPath: 本地克隆路径
 //
 // 安全注意：
-//   - Password字段会自动加密存储
-//   - 建议使用访问令牌而非密码
+//   - Password和Token字段会自动加密存储
+//   - GitHub建议使用Token而非密码
 //   - 定期轮换访问令牌
 type GitConfig struct {
 	RepoURL   string `json:"repo_url"`   // 仓库URL地址
 	Username  string `json:"username"`   // 用户名
-	Password  string `json:"password"`   // 密码或访问令牌（加密存储）
+	Password  string `json:"password"`   // 密码（用于Gitee，加密存储）
+	Token     string `json:"token"`      // 访问令牌（用于GitHub，加密存储）
 	Email     string `json:"email"`      // 提交邮箱
 	Branch    string `json:"branch"`     // 默认分支
 	LocalPath string `json:"local_path"` // 本地路径
@@ -403,12 +405,28 @@ func (cs *ConfigService) SetGitConfig(platform string, config GitConfig) error {
 
 	// 设置各个配置项
 	configs := map[string]interface{}{
-		fmt.Sprintf("git.%s.repo_url", platform):   config.RepoURL,
-		fmt.Sprintf("git.%s.username", platform):   config.Username,
-		fmt.Sprintf("git.%s.password", platform):   config.Password,
-		fmt.Sprintf("git.%s.email", platform):      config.Email,
-		fmt.Sprintf("git.%s.branch", platform):     config.Branch,
-		fmt.Sprintf("git.%s.local_path", platform): config.LocalPath,
+		fmt.Sprintf("%s_repo_url", platform):   config.RepoURL,
+		fmt.Sprintf("%s_username", platform):   config.Username,
+		fmt.Sprintf("%s_email", platform):      config.Email,
+		fmt.Sprintf("%s_branch", platform):     config.Branch,
+		fmt.Sprintf("%s_local_path", platform): config.LocalPath,
+	}
+
+	// 根据平台类型设置认证字段
+	if platform == "github" {
+		// GitHub使用token
+		if config.Token != "" {
+			configs[fmt.Sprintf("%s_token", platform)] = config.Token
+		}
+	} else {
+		// Gitee使用password
+		if config.Password != "" {
+			configs[fmt.Sprintf("%s_password", platform)] = config.Password
+		}
+		// Gitee也可能有token
+		if config.Token != "" {
+			configs[fmt.Sprintf("%s_token", platform)] = config.Token
+		}
 	}
 
 	order := 1
@@ -454,19 +472,30 @@ func (cs *ConfigService) GetGitConfig(platform string) (GitConfig, error) {
 	var config GitConfig
 	
 	// 读取各个配置项
-	repoURL, _ := cs.GetConfig(fmt.Sprintf("git.%s.repo_url", platform))
-	username, _ := cs.GetConfig(fmt.Sprintf("git.%s.username", platform))
-	password, _ := cs.GetConfig(fmt.Sprintf("git.%s.password", platform))
-	email, _ := cs.GetConfig(fmt.Sprintf("git.%s.email", platform))
-	branch, _ := cs.GetConfig(fmt.Sprintf("git.%s.branch", platform))
-	localPath, _ := cs.GetConfig(fmt.Sprintf("git.%s.local_path", platform))
+	repoURL, _ := cs.GetConfig(fmt.Sprintf("%s_repo_url", platform))
+	username, _ := cs.GetConfig(fmt.Sprintf("%s_username", platform))
+	email, _ := cs.GetConfig(fmt.Sprintf("%s_email", platform))
+	branch, _ := cs.GetConfig(fmt.Sprintf("%s_branch", platform))
+	localPath, _ := cs.GetConfig(fmt.Sprintf("%s_local_path", platform))
 
 	config.RepoURL = repoURL
 	config.Username = username
-	config.Password = password
 	config.Email = email
 	config.Branch = branch
 	config.LocalPath = localPath
+
+	// 根据平台类型读取认证字段
+	if platform == "github" {
+		// GitHub优先使用token
+		token, _ := cs.GetConfig(fmt.Sprintf("%s_token", platform))
+		config.Token = token
+	} else {
+		// Gitee可能使用password或token
+		password, _ := cs.GetConfig(fmt.Sprintf("%s_password", platform))
+		token, _ := cs.GetConfig(fmt.Sprintf("%s_token", platform))
+		config.Password = password
+		config.Token = token
+	}
 
 	return config, nil
 }
@@ -497,13 +526,13 @@ func (cs *ConfigService) SetAliyunConfig(config AliyunConfig) error {
 		}
 	}()
 
-	// 设置各个配置项
+	// 设置各个配置项（统一使用aliyun_*格式，与GitHub/Gitee保持一致）
 	configs := map[string]string{
-		"aliyun.registry":  config.Registry,
-		"aliyun.namespace": config.Namespace,
-		"aliyun.username":  config.Username,
-		"aliyun.password":  config.Password,
-		"aliyun.region":    config.Region,
+		"aliyun_registry":  config.Registry,
+		"aliyun_namespace": config.Namespace,
+		"aliyun_username":  config.Username,
+		"aliyun_password":  config.Password,
+		"aliyun_region":    config.Region,
 	}
 
 	order := 1
@@ -538,12 +567,12 @@ func (cs *ConfigService) SetAliyunConfig(config AliyunConfig) error {
 func (cs *ConfigService) GetAliyunConfig() (AliyunConfig, error) {
 	var config AliyunConfig
 	
-	// 读取各个配置项
-	registry, _ := cs.GetConfig("aliyun.registry")
-	namespace, _ := cs.GetConfig("aliyun.namespace")
-	username, _ := cs.GetConfig("aliyun.username")
-	password, _ := cs.GetConfig("aliyun.password")
-	region, _ := cs.GetConfig("aliyun.region")
+	// 读取各个配置项（统一使用aliyun_*格式）
+	registry, _ := cs.GetConfig("aliyun_registry")
+	namespace, _ := cs.GetConfig("aliyun_namespace")
+	username, _ := cs.GetConfig("aliyun_username")
+	password, _ := cs.GetConfig("aliyun_password")
+	region, _ := cs.GetConfig("aliyun_region")
 
 	config.Registry = registry
 	config.Namespace = namespace

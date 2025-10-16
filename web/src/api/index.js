@@ -373,10 +373,12 @@ export const systemAPI = {
    * 
    * @returns {Promise} 返回阿里云配置数据
    */
-  getAliyunConfig: () => api.get('/config/aliyun'),
+  getAliyunConfig: () => api.get('/config/aliyun-db'),
 
   /**
    * 更新阿里云配置
+   * 
+   * 更新阿里云镜像仓库的配置信息
    * 
    * @param {Object} config - 阿里云配置数据
    * @param {string} config.registry - 镜像仓库地址
@@ -385,7 +387,7 @@ export const systemAPI = {
    * @param {string} config.password - 密码
    * @returns {Promise} 返回更新结果
    */
-  updateAliyunConfig: (config) => api.put('/config/aliyun', config),
+  updateAliyunConfig: (config) => api.put('/config/aliyun-db', config),
 
   /**
    * 测试阿里云连接
