@@ -1,1 +1,4 @@
-nginx:latest
+redis:latest
+
+# 历史镜像记录
+# nginx:latest
