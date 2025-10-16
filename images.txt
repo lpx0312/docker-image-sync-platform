@@ -1,4 +1,7 @@
-redis:latest
+ubuntu:latest
+
+# 历史镜像记录
+# redis:latest
 
 # 历史镜像记录
 # alpine:latest
