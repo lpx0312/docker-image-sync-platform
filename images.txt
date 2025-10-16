@@ -1,4 +1,7 @@
-alpine:latest
+busybox:latest
+
+# 历史镜像记录
+# alpine:latest
 
 # 历史镜像记录
 # redis:latest
