@@ -1,4 +1,7 @@
-redis:latest
+nginx:1.23.1
+
+# 历史镜像记录
+# redis:latest
 
 # 历史镜像记录
 # nginx:latest
