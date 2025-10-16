@@ -1,4 +1,7 @@
-ubuntu:latest
+nginx:latest
+
+# 历史镜像记录
+# ubuntu:latest
 
 # 历史镜像记录
 # redis:latest
