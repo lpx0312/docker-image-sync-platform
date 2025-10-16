@@ -112,13 +112,13 @@ func main() {
 	// 负责根据配置动态选择Git服务（Gitee/GitHub）
 	gitServiceFactory := services.NewGitServiceFactory(encryptionService)
 
-	// 初始化GitHub服务
-	// 负责GitHub Actions工作流的监控和管理
-	githubService := services.NewGitHubService()
-
 	// 初始化配置服务
 	// 负责数据库配置的CRUD操作和加密解密
 	configService := services.NewConfigService(database.DB, encryptionService, logrusLogger)
+
+	// 初始化GitHub服务
+	// 负责GitHub Actions工作流的监控和管理
+	githubService := services.NewGitHubService(configService)
 
 	// 初始化HTTP请求处理器
 	// 每个处理器负责特定的业务逻辑
@@ -367,6 +367,9 @@ func main() {
 			// ====================================================================
 			// GET /api/v1/config/all - 获取所有配置
 			config.GET("/all", configHandler.GetAllConfigs)
+
+			// GET /api/v1/config/debug/:key - 调试配置获取
+			config.GET("/debug/:key", configHandler.DebugGetConfig)
 		}
 
 		// ====================================================================

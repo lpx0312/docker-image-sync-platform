@@ -33,7 +33,6 @@ import (
 	"strings"
 	"time"
 
-	"docker-image-sync-platform/internal/config"
 	"docker-image-sync-platform/internal/database"
 	"docker-image-sync-platform/internal/logger"
 	"docker-image-sync-platform/internal/models"
@@ -68,7 +67,7 @@ type GitService struct {
 // NewGitService 创建Git服务实例
 //
 // 功能说明:
-//   - 初始化Git服务，配置本地仓库路径
+//   - 初始化Git服务，从数据库获取本地仓库路径
 //   - 注入加密服务以支持敏感配置的解密
 //   - 为后续的Git操作做准备
 //
@@ -83,10 +82,20 @@ type GitService struct {
 //   - 镜像同步任务需要版本控制时
 //   - 需要与远程仓库交互时
 func NewGitService(encryptionService *EncryptionService) *GitService {
-	return &GitService{
-		repoPath:          config.AppConfig.Git.LocalRepoPath,
+	service := &GitService{
 		encryptionService: encryptionService,
 	}
+	
+	// 从数据库获取本地仓库路径
+	repoPath, err := service.getConfigValue("git_local_repo_path")
+	if err != nil {
+		// 如果数据库中没有配置，使用默认路径
+		logger.Logger.Warn("从数据库获取Git本地路径失败，使用默认路径", zap.Error(err))
+		repoPath = "./temp/docker_image_pusher"
+	}
+	
+	service.repoPath = repoPath
+	return service
 }
 
 // getCurrentGitConfig 获取当前配置的Git仓库信息
@@ -123,21 +132,17 @@ func (s *GitService) getCurrentGitConfig() (repoURL, username, token, email, rep
 		// 从数据库获取GitHub配置
 		repoURL, err = s.getConfigValue("github_repo_url")
 		if err != nil {
-			// 回退到config.yaml配置
-			logger.Logger.Warn("从数据库获取GitHub仓库URL失败，使用config.yaml配置", zap.Error(err))
-			repoURL = config.AppConfig.Git.GitHub.RepoURL
+			return "", "", "", "", "", fmt.Errorf("获取GitHub仓库URL配置失败: %w", err)
 		}
 
 		username, err = s.getConfigValue("github_username")
 		if err != nil {
-			logger.Logger.Warn("从数据库获取GitHub用户名失败，使用config.yaml配置", zap.Error(err))
-			username = config.AppConfig.Git.GitHub.Username
+			return "", "", "", "", "", fmt.Errorf("获取GitHub用户名配置失败: %w", err)
 		}
 
 		token, err = s.getConfigValue("github_token")
 		if err != nil {
-			logger.Logger.Warn("从数据库获取GitHub令牌失败，使用config.yaml配置", zap.Error(err))
-			token = config.AppConfig.Git.GitHub.Token
+			return "", "", "", "", "", fmt.Errorf("获取GitHub令牌配置失败: %w", err)
 		}
 
 		email = "" // GitHub配置中没有email字段
@@ -150,27 +155,22 @@ func (s *GitService) getCurrentGitConfig() (repoURL, username, token, email, rep
 		// 从数据库获取Gitee配置
 		repoURL, err = s.getConfigValue("gitee_repo_url")
 		if err != nil {
-			// 回退到config.yaml配置
-			logger.Logger.Warn("从数据库获取Gitee仓库URL失败，使用config.yaml配置", zap.Error(err))
-			repoURL = config.AppConfig.Git.Gitee.RepoURL
+			return "", "", "", "", "", fmt.Errorf("获取Gitee仓库URL配置失败: %w", err)
 		}
 
 		username, err = s.getConfigValue("gitee_username")
 		if err != nil {
-			logger.Logger.Warn("从数据库获取Gitee用户名失败，使用config.yaml配置", zap.Error(err))
-			username = config.AppConfig.Git.Gitee.Username
+			return "", "", "", "", "", fmt.Errorf("获取Gitee用户名配置失败: %w", err)
 		}
 
 		token, err = s.getConfigValue("gitee_token")
 		if err != nil {
-			logger.Logger.Warn("从数据库获取Gitee令牌失败，使用config.yaml配置", zap.Error(err))
-			token = config.AppConfig.Git.Gitee.Token
+			return "", "", "", "", "", fmt.Errorf("获取Gitee令牌配置失败: %w", err)
 		}
 
 		email, err = s.getConfigValue("gitee_email")
 		if err != nil {
-			logger.Logger.Warn("从数据库获取Gitee邮箱失败，使用config.yaml配置", zap.Error(err))
-			email = config.AppConfig.Git.Gitee.Email
+			return "", "", "", "", "", fmt.Errorf("获取Gitee邮箱配置失败: %w", err)
 		}
 
 		logger.Logger.Info("使用Gitee配置", zap.String("repo_url", repoURL), zap.String("username", username))
@@ -296,9 +296,13 @@ func (s *GitService) InitRepository() error {
 	} else {
 		// 对于没有Token的情况，需要根据仓库类型处理
 		if repoType == "gitee" {
-			// Gitee支持用户名密码认证
-			encodedUsername := url.QueryEscape(config.AppConfig.Git.Gitee.Username)
-			encodedPassword := url.QueryEscape(config.AppConfig.Git.Gitee.Password)
+			// Gitee支持用户名密码认证，从数据库获取密码
+			password, err := s.getConfigValue("gitee_password")
+			if err != nil {
+				return fmt.Errorf("获取Gitee密码失败: %w", err)
+			}
+			encodedUsername := url.QueryEscape(username)
+			encodedPassword := url.QueryEscape(password)
 			parsedURL.User = url.UserPassword(encodedUsername, encodedPassword)
 			authURL = parsedURL.String()
 			logger.Logger.Info("使用Gitee用户名密码进行认证")
@@ -585,10 +589,14 @@ func (s *GitService) pullLatest() error {
 	} else {
 		// 对于没有Token的情况，需要根据仓库类型处理
 		if repoType == "gitee" {
-			// Gitee支持用户名密码认证
+			// Gitee支持用户名密码认证，从数据库获取密码
+			password, err := s.getConfigValue("gitee_password")
+			if err != nil {
+				return fmt.Errorf("获取Gitee密码失败: %w", err)
+			}
 			auth = &http.BasicAuth{
-				Username: config.AppConfig.Git.Gitee.Username,
-				Password: config.AppConfig.Git.Gitee.Password,
+				Username: username,
+				Password: password,
 			}
 		} else {
 			return fmt.Errorf("GitHub仓库必须配置访问令牌")
@@ -667,10 +675,14 @@ func (s *GitService) forcePullLatest() error {
 	} else {
 		// 对于没有Token的情况，需要根据仓库类型处理
 		if repoType == "gitee" {
-			// Gitee支持用户名密码认证
+			// Gitee支持用户名密码认证，从数据库获取密码
+			password, err := s.getConfigValue("gitee_password")
+			if err != nil {
+				return fmt.Errorf("获取Gitee密码失败: %w", err)
+			}
 			auth = &http.BasicAuth{
-				Username: config.AppConfig.Git.Gitee.Username,
-				Password: config.AppConfig.Git.Gitee.Password,
+				Username: username,
+				Password: password,
 			}
 		} else {
 			return fmt.Errorf("GitHub仓库必须配置访问令牌")
@@ -897,10 +909,14 @@ func (s *GitService) pushWithRetry(commitSHA string) error {
 		} else {
 			// 对于没有Token的情况，需要根据仓库类型处理
 			if repoType == "gitee" {
-				// Gitee支持用户名密码认证
+				// Gitee支持用户名密码认证，从数据库获取密码
+				password, err := s.getConfigValue("gitee_password")
+				if err != nil {
+					return fmt.Errorf("获取Gitee密码失败: %w", err)
+				}
 				auth = &http.BasicAuth{
-					Username: config.AppConfig.Git.Gitee.Username,
-					Password: config.AppConfig.Git.Gitee.Password,
+					Username: username,
+					Password: password,
 				}
 			} else {
 				return fmt.Errorf("GitHub仓库必须配置访问令牌")
@@ -971,9 +987,9 @@ func (s *GitService) pushWithRetry(commitSHA string) error {
 				authorName = currentUsername
 				authorEmail = currentEmail
 			} else {
-				// Gitee
-				authorName = config.AppConfig.Git.Gitee.Username
-				authorEmail = config.AppConfig.Git.Gitee.Email
+				// Gitee - 使用从数据库获取的配置
+				authorName = currentUsername
+				authorEmail = currentEmail
 			}
 
 			// 重新提交

@@ -726,7 +726,7 @@ func (h *ImageHandler) generateACRImage(originalImage, tag string) string {
 func (h *ImageHandler) generateACRImageWithArchitecture(originalImage, tag, architecture string) string {
 	// 配置获取：从数据库获取阿里云注册表配置
 	var registryConfig models.SystemConfig
-	database.DB.Where("config_key = ?", "aliyun_registry_prefix").First(&registryConfig)
+	database.DB.Where("config_key = ?", "aliyun_registry").First(&registryConfig)
 
 	registry := registryConfig.ConfigValue
 	if registry == "" {

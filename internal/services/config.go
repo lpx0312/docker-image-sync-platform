@@ -447,7 +447,19 @@ func (cs *ConfigService) SetGitConfig(platform string, config GitConfig) error {
 		return fmt.Errorf("failed to commit git config: %w", err)
 	}
 
-	cs.logger.WithField("platform", platform).Info("Successfully set git config")
+	// 清理相关缓存，确保下次读取时获取最新值
+	for key := range configs {
+		delete(cs.cache, key)
+	}
+	// 也清理可能的认证字段缓存
+	if platform == "github" {
+		delete(cs.cache, fmt.Sprintf("%s_token", platform))
+	} else {
+		delete(cs.cache, fmt.Sprintf("%s_password", platform))
+		delete(cs.cache, fmt.Sprintf("%s_token", platform))
+	}
+
+	cs.logger.WithField("platform", platform).Info("Successfully set git config and cleared cache")
 	return nil
 }
 

@@ -28,8 +28,15 @@
 package database
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
+	"io"
 	"log"
+	"os"
 	"time"
 
 	"docker-image-sync-platform/internal/config"
@@ -159,15 +166,60 @@ func AutoMigrate() error {
 	return nil
 }
 
+// encryptSensitiveValue 加密敏感配置值
+// 使用AES-256-GCM算法加密敏感数据，避免循环依赖
+func encryptSensitiveValue(plaintext string) (string, error) {
+	if plaintext == "" {
+		return "", nil
+	}
+
+	// 获取加密密钥
+	var key []byte
+	if envKey := os.Getenv("ENCRYPTION_KEY"); envKey != "" {
+		hash := sha256.Sum256([]byte(envKey))
+		key = hash[:]
+	} else {
+		defaultKey := "docker-sync-platform-default-key-2024"
+		hash := sha256.Sum256([]byte(defaultKey))
+		key = hash[:]
+	}
+
+	// 创建AES密码器
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", fmt.Errorf("failed to create cipher: %w", err)
+	}
+
+	// 创建GCM模式
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", fmt.Errorf("failed to create GCM: %w", err)
+	}
+
+	// 生成随机nonce
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", fmt.Errorf("failed to generate nonce: %w", err)
+	}
+
+	// 加密数据
+	ciphertext := gcm.Seal(nonce, nonce, []byte(plaintext), nil)
+
+	// Base64编码并添加前缀
+	encoded := base64.StdEncoding.EncodeToString(ciphertext)
+	return "ENC:" + encoded, nil
+}
+
 // initDefaultConfigs 初始化默认配置
 //
 // 功能说明：
 // 1. 创建系统运行所需的默认配置项
 // 2. 如果配置已存在则跳过，避免重复创建
 // 3. 配置项包括阿里云设置、同步参数等
+// 4. 自动加密敏感配置字段
 //
 // 默认配置项：
-// - aliyun_registry_prefix: 阿里云镜像仓库前缀地址
+
 // - aliyun_namespace: 阿里云镜像仓库命名空间
 // - sync_check_interval: 同步状态检查间隔时间
 // - max_concurrent_syncs: 最大并发同步数量
@@ -184,12 +236,32 @@ func initDefaultConfigs() error {
 	// 从配置文件中读取阿里云配置
 	aliyunRegistry := config.AppConfig.Aliyun.Registry
 	if aliyunRegistry == "" {
-		aliyunRegistry = "registry.cn-hangzhou.aliyuncs.com" // 默认值
+		aliyunRegistry = "registry.cn-hangzhou.aliyuncs.com"
 	}
-
+	
 	aliyunNamespace := config.AppConfig.Aliyun.Namespace
 	if aliyunNamespace == "" {
-		aliyunNamespace = "your-namespace" // 默认值
+		aliyunNamespace = "your-namespace"
+	}
+	
+	aliyunUsername := config.AppConfig.Aliyun.Username
+	aliyunPassword := config.AppConfig.Aliyun.Password
+
+	// 从配置文件中读取Git配置
+	giteeRepoURL := config.AppConfig.Git.Gitee.RepoURL
+	giteeUsername := config.AppConfig.Git.Gitee.Username
+	giteePassword := config.AppConfig.Git.Gitee.Password
+	giteeToken := config.AppConfig.Git.Gitee.Token
+	giteeEmail := config.AppConfig.Git.Gitee.Email
+	
+	githubRepoURL := config.AppConfig.Git.GitHub.RepoURL
+	githubUsername := config.AppConfig.Git.GitHub.Username
+	githubToken := config.AppConfig.Git.GitHub.Token
+	githubEmail := config.AppConfig.Git.GitHub.Email
+	
+	gitLocalRepoPath := config.AppConfig.Git.LocalRepoPath
+	if gitLocalRepoPath == "" {
+		gitLocalRepoPath = "./temp/docker_image_pusher"
 	}
 
 	// 从配置文件中读取同步配置
@@ -216,47 +288,113 @@ func initDefaultConfigs() error {
 	}
 
 	defaultConfigs := []models.SystemConfig{
-		{
-			ConfigKey:   "aliyun_registry_prefix",
-			ConfigValue: aliyunRegistry,
-			Description: "阿里云镜像仓库前缀",
-			// 说明：从config.yaml中的aliyun.registry读取
-			// 不同地域有不同的前缀，如杭州地域为 registry.cn-hangzhou.aliyuncs.com
-		},
+		// 阿里云配置
 		{
 			ConfigKey:   "aliyun_namespace",
 			ConfigValue: aliyunNamespace,
 			Description: "阿里云镜像仓库命名空间",
-			// 说明：从config.yaml中的aliyun.namespace读取
-			// 用户在阿里云创建的命名空间名称
 		},
+		{
+			ConfigKey:   "aliyun_registry",
+			ConfigValue: aliyunRegistry,
+			Description: "阿里云镜像仓库地址",
+		},
+		{
+			ConfigKey:   "aliyun_username",
+			ConfigValue: aliyunUsername,
+			Description: "阿里云镜像仓库用户名",
+		},
+		{
+			ConfigKey:   "aliyun_password",
+			ConfigValue: aliyunPassword,
+			Description: "阿里云镜像仓库密码",
+			IsEncrypted: true,
+		},
+		
+		// Git仓库配置
+		{
+			ConfigKey:   "git_repository_type",
+			ConfigValue: "gitee",
+			Description: "Git仓库类型 (gitee/github)",
+		},
+		{
+			ConfigKey:   "git_local_repo_path",
+			ConfigValue: gitLocalRepoPath,
+			Description: "本地Git仓库路径",
+		},
+		
+		// Gitee配置
+		{
+			ConfigKey:   "gitee_repo_url",
+			ConfigValue: giteeRepoURL,
+			Description: "Gitee仓库URL",
+		},
+		{
+			ConfigKey:   "gitee_username",
+			ConfigValue: giteeUsername,
+			Description: "Gitee用户名",
+		},
+		{
+			ConfigKey:   "gitee_password",
+			ConfigValue: giteePassword,
+			Description: "Gitee密码",
+			IsEncrypted: true,
+		},
+		{
+			ConfigKey:   "gitee_token",
+			ConfigValue: giteeToken,
+			Description: "Gitee访问令牌",
+			IsEncrypted: true,
+		},
+		{
+			ConfigKey:   "gitee_email",
+			ConfigValue: giteeEmail,
+			Description: "Gitee邮箱地址",
+		},
+		
+		// GitHub配置
+		{
+			ConfigKey:   "github_repo_url",
+			ConfigValue: githubRepoURL,
+			Description: "GitHub仓库URL",
+		},
+		{
+			ConfigKey:   "github_username",
+			ConfigValue: githubUsername,
+			Description: "GitHub用户名",
+		},
+		{
+			ConfigKey:   "github_token",
+			ConfigValue: githubToken,
+			Description: "GitHub访问令牌",
+			IsEncrypted: true,
+		},
+		{
+			ConfigKey:   "github_email",
+			ConfigValue: githubEmail,
+			Description: "GitHub邮箱地址",
+		},
+		
+		// 同步配置
 		{
 			ConfigKey:   "sync_timeout_minutes",
 			ConfigValue: syncTimeoutMinutes,
 			Description: "同步任务超时时间（分钟）",
-			// 说明：从config.yaml中的sync.timeout_minutes读取
-			// 单个镜像同步任务的最大执行时间
 		},
 		{
 			ConfigKey:   "max_concurrent_syncs",
 			ConfigValue: maxConcurrentSyncs,
 			Description: "最大并发同步数量",
-			// 说明：从config.yaml中的sync.max_concurrent_jobs读取
-			// 同时进行的镜像同步任务数量上限
 		},
 		{
 			ConfigKey:   "max_retry_count",
 			ConfigValue: maxRetryCount,
 			Description: "同步失败重试次数",
-			// 说明：从config.yaml中的sync.max_retry_count读取
-			// 同步失败时的自动重试次数
 		},
 		{
 			ConfigKey:   "retry_interval_minutes",
 			ConfigValue: retryIntervalMinutes,
 			Description: "重试间隔时间（分钟）",
-			// 说明：从config.yaml中的sync.retry_interval_minutes读取
-			// 重试之间的等待时间
 		},
 	}
 
@@ -272,10 +410,21 @@ func initDefaultConfigs() error {
 
 		// 如果配置不存在，则创建新配置
 		if result.Error == gorm.ErrRecordNotFound {
+			// 如果是敏感字段且有值，则先加密
+			if config.IsEncrypted && config.ConfigValue != "" {
+				encryptedValue, err := encryptSensitiveValue(config.ConfigValue)
+				if err != nil {
+					return fmt.Errorf("加密配置 %s 失败: %w", config.ConfigKey, err)
+				}
+				config.ConfigValue = encryptedValue
+				log.Printf("创建加密配置: %s = %s", config.ConfigKey, "ENC:***")
+			} else {
+				log.Printf("创建默认配置: %s = %s", config.ConfigKey, config.ConfigValue)
+			}
+
 			if err := DB.Create(&config).Error; err != nil {
 				return fmt.Errorf("创建默认配置 %s 失败: %w", config.ConfigKey, err)
 			}
-			log.Printf("创建默认配置: %s = %s", config.ConfigKey, config.ConfigValue)
 		}
 		// 如果配置已存在，则跳过创建，保持用户的自定义设置
 	}

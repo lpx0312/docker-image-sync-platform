@@ -11,7 +11,7 @@
 // - 确保配置的一致性和可用性
 //
 // 主要配置项：
-// - aliyun_registry_prefix: 阿里云容器注册表地址前缀
+
 // - aliyun_namespace: 阿里云容器注册表命名空间
 //
 // 作者: Docker镜像同步平台开发团队
@@ -290,8 +290,16 @@ func (h *ConfigHandler) GetConfigStatus(c *gin.Context) {
 	}
 
 	// ====================================================================
-	// 收集应用配置信息
+	// 收集应用配置信息（从数据库获取）
 	// ====================================================================
+
+	// 从数据库获取配置
+	getConfigValue := func(key, defaultValue string) string {
+		if value, err := h.configService.GetConfig(key); err == nil {
+			return value
+		}
+		return defaultValue
+	}
 
 	appConfig := gin.H{
 		"server": gin.H{
@@ -307,20 +315,20 @@ func (h *ConfigHandler) GetConfigStatus(c *gin.Context) {
 		},
 		"git": gin.H{
 			"gitee": gin.H{
-				"repo_url": config.AppConfig.Git.Gitee.RepoURL,
-				"username": config.AppConfig.Git.Gitee.Username,
-				"email":    config.AppConfig.Git.Gitee.Email,
+				"repo_url": getConfigValue("gitee_repo_url", ""),
+				"username": getConfigValue("gitee_username", ""),
+				"email":    getConfigValue("gitee_email", ""),
 			},
 			"github": gin.H{
-				"repo_url": config.AppConfig.Git.GitHub.RepoURL,
-				"username": config.AppConfig.Git.GitHub.Username,
+				"repo_url": getConfigValue("github_repo_url", ""),
+				"username": getConfigValue("github_username", ""),
 			},
-			"local_repo_path": config.AppConfig.Git.LocalRepoPath,
+			"local_repo_path": getConfigValue("git_local_repo_path", "./temp/docker_image_pusher"),
 		},
 		"aliyun": gin.H{
-			"registry":  config.AppConfig.Aliyun.Registry,
-			"namespace": config.AppConfig.Aliyun.Namespace,
-			"username":  config.AppConfig.Aliyun.Username,
+			"registry":  getConfigValue("aliyun_registry", "registry.cn-hangzhou.aliyuncs.com"),
+			"namespace": getConfigValue("aliyun_namespace", "lipanxiang"),
+			"username":  getConfigValue("aliyun_username", ""),
 		},
 		"log": gin.H{
 			"level":     config.AppConfig.Log.Level,
@@ -364,8 +372,33 @@ func (h *ConfigHandler) GetConfigStatus(c *gin.Context) {
 		"config":      appConfig,
 		"database":    dbStatus,
 		"timestamp": gin.H{
-			"unix": gin.H{},
+			"unix": time.Now().Unix(),
 		},
+	})
+}
+
+// DebugGetConfig 调试配置获取
+func (h *ConfigHandler) DebugGetConfig(c *gin.Context) {
+	key := c.Param("key")
+	if key == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  "error",
+			"message": "key parameter is required",
+		})
+		return
+	}
+
+	value, err := h.configService.GetConfig(key)
+	c.JSON(http.StatusOK, gin.H{
+		"status": "success",
+		"key":    key,
+		"value":  value,
+		"error":  func() string {
+			if err != nil {
+				return err.Error()
+			}
+			return ""
+		}(),
 	})
 }
 
@@ -413,15 +446,19 @@ func (h *ConfigHandler) GetGitConfig(c *gin.Context) {
 
 	// 移除敏感信息
 	giteeResponse := gin.H{
-		"repo_url": giteeConfig.RepoURL,
-		"username": giteeConfig.Username,
-		"email":    giteeConfig.Email,
+		"repo_url":   giteeConfig.RepoURL,
+		"username":   giteeConfig.Username,
+		"email":      giteeConfig.Email,
+		"branch":     giteeConfig.Branch,
+		"local_path": giteeConfig.LocalPath,
 	}
 
 	githubResponse := gin.H{
-		"repo_url": githubConfig.RepoURL,
-		"username": githubConfig.Username,
-		"email":    githubConfig.Email,
+		"repo_url":   githubConfig.RepoURL,
+		"username":   githubConfig.Username,
+		"email":      githubConfig.Email,
+		"branch":     githubConfig.Branch,
+		"local_path": githubConfig.LocalPath,
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -841,14 +878,18 @@ func (h *ConfigHandler) GetAllConfigs(c *gin.Context) {
 	response := gin.H{
 		"git": gin.H{
 			"gitee": gin.H{
-				"repo_url": giteeConfig.RepoURL,
-				"username": giteeConfig.Username,
-				"email":    giteeConfig.Email,
+				"repo_url":   giteeConfig.RepoURL,
+				"username":   giteeConfig.Username,
+				"email":      giteeConfig.Email,
+				"branch":     giteeConfig.Branch,
+				"local_path": giteeConfig.LocalPath,
 			},
 			"github": gin.H{
-				"repo_url": githubConfig.RepoURL,
-				"username": githubConfig.Username,
-				"email":    githubConfig.Email,
+				"repo_url":   githubConfig.RepoURL,
+				"username":   githubConfig.Username,
+				"email":      githubConfig.Email,
+				"branch":     githubConfig.Branch,
+				"local_path": githubConfig.LocalPath,
 			},
 		},
 		"aliyun": gin.H{
@@ -922,6 +963,14 @@ func (h *ConfigHandler) testGitHubAPIConnection(repoURL, username, token string)
 	// 发送请求
 	resp, err := client.Do(req)
 	if err != nil {
+		// 检查是否是网络连接问题
+		errStr := err.Error()
+		if strings.Contains(errStr, "timeout") || 
+		   strings.Contains(errStr, "connection refused") ||
+		   strings.Contains(errStr, "no route to host") ||
+		   strings.Contains(errStr, "network is unreachable") {
+			return fmt.Errorf("GitHub网络连接失败: %v。可能的解决方案：\n1. 检查网络连接是否正常\n2. 确认防火墙是否阻止了GitHub访问\n3. 尝试设置HTTP代理：export HTTPS_PROXY=http://proxy:port\n4. 如果在中国大陆，可能需要使用VPN或代理服务\n5. 稍后重试，可能是临时网络问题", err)
+		}
 		return fmt.Errorf("GitHub API请求失败: %v", err)
 	}
 	defer resp.Body.Close()
@@ -938,11 +987,11 @@ func (h *ConfigHandler) testGitHubAPIConnection(repoURL, username, token string)
 		// API调用成功，仓库存在且可访问
 		return nil
 	case http.StatusUnauthorized:
-		return fmt.Errorf("GitHub访问令牌无效或已过期")
+		return fmt.Errorf("GitHub访问令牌无效或已过期。请检查：\n1. 令牌是否正确复制\n2. 令牌是否已过期\n3. 令牌是否被撤销")
 	case http.StatusForbidden:
-		return fmt.Errorf("GitHub访问令牌权限不足，请确保令牌具有repo权限")
+		return fmt.Errorf("GitHub访问令牌权限不足。请确保：\n1. 令牌具有repo权限\n2. 对私有仓库有访问权限\n3. 令牌未被限制访问该仓库")
 	case http.StatusNotFound:
-		return fmt.Errorf("GitHub仓库不存在或无访问权限")
+		return fmt.Errorf("GitHub仓库不存在或无访问权限。请检查：\n1. 仓库URL是否正确\n2. 仓库是否存在\n3. 是否有访问该仓库的权限")
 	default:
 		// 尝试解析错误信息
 		var errorResp map[string]interface{}
@@ -1051,9 +1100,21 @@ func (h *ConfigHandler) testGitRepositoryConnection(repoURL, username, password,
 			   strings.Contains(errStr, "connection timeout") ||
 			   strings.Contains(errStr, "i/o timeout") {
 				if gitType == "github" {
-					return fmt.Errorf("GitHub连接超时：网络连接到GitHub可能受限。建议：1) 检查网络连接 2) 确认防火墙设置 3) 尝试使用代理或VPN 4) 稍后重试")
+					return fmt.Errorf("GitHub连接超时：网络连接到GitHub可能受限。可能的解决方案：\n1. 检查网络连接是否正常\n2. 确认防火墙是否阻止了GitHub访问\n3. 尝试设置HTTP代理：export HTTPS_PROXY=http://proxy:port\n4. 如果在中国大陆，可能需要使用VPN或代理服务\n5. 稍后重试，可能是临时网络问题")
 				} else {
 					return fmt.Errorf("Gitee连接超时：无法连接到Gitee仓库。请检查网络连接或稍后重试")
+				}
+			}
+			
+			// 检查网络连接错误
+			if strings.Contains(errStr, "unexpected EOF") ||
+			   strings.Contains(errStr, "connection refused") ||
+			   strings.Contains(errStr, "no route to host") ||
+			   strings.Contains(errStr, "network is unreachable") {
+				if gitType == "github" {
+					return fmt.Errorf("GitHub网络连接失败: %s。可能的解决方案：\n1. 检查网络连接是否正常\n2. 确认防火墙是否阻止了GitHub访问\n3. 尝试设置HTTP代理：export HTTPS_PROXY=http://proxy:port\n4. 如果在中国大陆，可能需要使用VPN或代理服务\n5. 稍后重试，可能是临时网络问题", err.Error())
+				} else {
+					return fmt.Errorf("Gitee网络连接失败: %s。请检查网络连接或稍后重试", err.Error())
 				}
 			}
 			
@@ -1063,9 +1124,9 @@ func (h *ConfigHandler) testGitRepositoryConnection(repoURL, username, password,
 			   strings.Contains(errStr, "403") ||
 			   strings.Contains(errStr, "unauthorized") {
 				if gitType == "github" {
-					return fmt.Errorf("GitHub认证失败：访问令牌无效或权限不足。请检查：1) 令牌是否正确 2) 令牌是否有repo权限 3) 仓库是否存在且可访问")
+					return fmt.Errorf("GitHub认证失败：访问令牌无效或权限不足。请检查：\n1. 令牌是否正确复制\n2. 令牌是否有repo权限\n3. 仓库是否存在且可访问\n4. 令牌是否已过期")
 				} else {
-					return fmt.Errorf("Gitee认证失败：用户名或密码错误。请检查用户名和密码是否正确")
+					return fmt.Errorf("Gitee认证失败：用户名或密码错误。请检查：\n1. 用户名是否正确\n2. 密码是否正确\n3. 账户是否被锁定")
 				}
 			}
 			
@@ -1073,14 +1134,14 @@ func (h *ConfigHandler) testGitRepositoryConnection(repoURL, username, password,
 			if strings.Contains(errStr, "repository not found") ||
 			   strings.Contains(errStr, "404") ||
 			   strings.Contains(errStr, "not found") {
-				return fmt.Errorf("仓库不存在：请检查仓库URL是否正确，仓库是否存在且可访问")
+				return fmt.Errorf("仓库不存在：请检查：\n1. 仓库URL是否正确\n2. 仓库是否存在\n3. 是否有访问该仓库的权限")
 			}
 			
 			// 提供更详细的错误信息
 			if gitType == "github" {
-				return fmt.Errorf("GitHub连接失败: %s。请检查：1) 仓库URL格式是否正确 2) 用户名和访问令牌是否有效 3) 网络连接是否正常 4) 仓库是否存在且可访问", err.Error())
+				return fmt.Errorf("GitHub连接失败: %s。请检查：\n1. 仓库URL格式是否正确\n2. 用户名和访问令牌是否有效\n3. 网络连接是否正常\n4. 仓库是否存在且可访问", err.Error())
 			} else {
-				return fmt.Errorf("Gitee连接失败: %s。请检查：1) 仓库URL格式是否正确 2) 用户名和密码是否正确 3) 网络连接是否正常 4) 仓库是否存在且可访问", err.Error())
+				return fmt.Errorf("Gitee连接失败: %s。请检查：\n1. 仓库URL格式是否正确\n2. 用户名和密码是否正确\n3. 网络连接是否正常\n4. 仓库是否存在且可访问", err.Error())
 			}
 		}
 		return nil

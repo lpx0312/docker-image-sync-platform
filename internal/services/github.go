@@ -30,7 +30,6 @@ import (
 	"strings"
 	"time"
 
-	"docker-image-sync-platform/internal/config"
 	"docker-image-sync-platform/internal/logger"
 
 	"github.com/go-resty/resty/v2"
@@ -104,9 +103,12 @@ type WorkflowRunsResponse struct {
 
 // NewGitHubService 创建GitHub服务实例
 //
+// 参数:
+//   - configService: 配置服务实例，用于从数据库获取GitHub配置
+//
 // 功能说明:
 //   - 初始化GitHub API客户端，配置认证和超时
-//   - 从应用配置中读取GitHub相关设置
+//   - 从数据库中读取GitHub相关设置
 //   - 解析GitHub仓库URL，提取所有者和仓库名
 //   - 配置HTTP客户端的默认头部和认证信息
 //
@@ -123,7 +125,7 @@ type WorkflowRunsResponse struct {
 //   - 系统启动时初始化GitHub集成
 //   - 镜像同步任务需要监控GitHub Actions时
 //   - 需要查询工作流状态时
-func NewGitHubService() *GitHubService {
+func NewGitHubService(configService *ConfigService) *GitHubService {
 	// ====================================================================
 	// HTTP客户端初始化
 	// ====================================================================
@@ -134,12 +136,32 @@ func NewGitHubService() *GitHubService {
 	client.SetHeader("User-Agent", "docker-image-sync-platform")
 
 	// ====================================================================
+	// 从数据库获取GitHub配置
+	// ====================================================================
+
+	var repoURL, token string
+	
+	// 获取GitHub仓库URL
+	if url, err := configService.GetConfig("github_repo_url"); err == nil {
+		repoURL = url
+	} else {
+		logger.Logger.Warn("从数据库获取GitHub仓库URL失败", zap.Error(err))
+	}
+	
+	// 获取GitHub Token
+	if tkn, err := configService.GetConfig("github_token"); err == nil {
+		token = tkn
+	} else {
+		logger.Logger.Warn("从数据库获取GitHub Token失败", zap.Error(err))
+	}
+
+	// ====================================================================
 	// 认证配置
 	// ====================================================================
 
 	// 如果配置了GitHub Token，则设置认证
-	if config.AppConfig.Git.GitHub.Token != "" {
-		client.SetAuthToken(config.AppConfig.Git.GitHub.Token)
+	if token != "" {
+		client.SetAuthToken(token)
 	}
 
 	// ====================================================================
@@ -147,7 +169,6 @@ func NewGitHubService() *GitHubService {
 	// ====================================================================
 
 	// 解析GitHub仓库URL，提取所有者和仓库名
-	repoURL := config.AppConfig.Git.GitHub.RepoURL
 	owner, repo := parseGitHubRepo(repoURL)
 
 	return &GitHubService{

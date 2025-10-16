@@ -82,6 +82,22 @@
             @input="markGiteeConfigChanged"
           />
         </el-form-item>
+
+        <el-form-item label="分支" required>
+          <el-input
+            v-model="giteeConfig.branch"
+            placeholder="Git分支名称，如：main"
+            @input="markGiteeConfigChanged"
+          />
+        </el-form-item>
+
+        <el-form-item label="本地路径" required>
+          <el-input
+            v-model="giteeConfig.local_path"
+            placeholder="本地仓库路径，如：/tmp/gitee-repo"
+            @input="markGiteeConfigChanged"
+          />
+        </el-form-item>
       </el-form>
 
       <div v-if="connectionStatus.gitee" class="connection-status">
@@ -156,6 +172,22 @@
             @input="markGitHubConfigChanged"
           />
         </el-form-item>
+
+        <el-form-item label="分支" required>
+          <el-input
+            v-model="githubConfig.branch"
+            placeholder="Git分支名称，如：main"
+            @input="markGitHubConfigChanged"
+          />
+        </el-form-item>
+
+        <el-form-item label="本地路径" required>
+          <el-input
+            v-model="githubConfig.local_path"
+            placeholder="本地仓库路径，如：/tmp/github-repo"
+            @input="markGitHubConfigChanged"
+          />
+        </el-form-item>
       </el-form>
 
       <div v-if="connectionStatus.github" class="connection-status">
@@ -203,14 +235,18 @@ const giteeConfig = ref({
   repo_url: '',
   username: '',
   password: '',
-  email: ''
+  email: '',
+  branch: '',
+  local_path: ''
 })
 
 const githubConfig = ref({
   repo_url: '',
   username: '',
   token: '',
-  email: ''
+  email: '',
+  branch: '',
+  local_path: ''
 })
 
 const testingConnection = ref({
@@ -246,14 +282,18 @@ const loadConfigs = async () => {
           repo_url: data.gitee.repo_url || '',
           username: data.gitee.username || '',
           password: data.gitee.password || '',
-          email: data.gitee.email || ''
+          email: data.gitee.email || '',
+          branch: data.gitee.branch || '',
+          local_path: data.gitee.local_path || ''
         }
         
         giteeConfig.value = {
           repo_url: data.gitee.repo_url || '',
           username: data.gitee.username || '',
           password: data.gitee.password || '',
-          email: data.gitee.email || ''
+          email: data.gitee.email || '',
+          branch: data.gitee.branch || '',
+          local_path: data.gitee.local_path || ''
         }
       }
       
@@ -263,14 +303,18 @@ const loadConfigs = async () => {
           repo_url: data.github.repo_url || '',
           username: data.github.username || '',
           token: data.github.token || '',
-          email: data.github.email || ''
+          email: data.github.email || '',
+          branch: data.github.branch || '',
+          local_path: data.github.local_path || ''
         }
         
         githubConfig.value = {
           repo_url: data.github.repo_url || '',
           username: data.github.username || '',
           token: data.github.token || '',
-          email: data.github.email || ''
+          email: data.github.email || '',
+          branch: data.github.branch || '',
+          local_path: data.github.local_path || ''
         }
       }
     }

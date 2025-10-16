@@ -109,6 +109,7 @@ type GitHubConfig struct {
 	RepoURL  string `mapstructure:"repo_url"`
 	Username string `mapstructure:"username"`
 	Token    string `mapstructure:"token"`
+	Email    string `mapstructure:"email"`
 }
 
 // AliyunConfig 阿里云配置

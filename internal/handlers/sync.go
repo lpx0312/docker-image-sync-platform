@@ -1125,7 +1125,7 @@ func (h *SyncHandler) generateACRImage(originalImage, tag string) string {
 func (h *SyncHandler) generateACRImageWithArchitecture(originalImage, tag, architecture string) string {
 	// 从配置中获取阿里云信息
 	var registryConfig models.SystemConfig
-	database.DB.Where("config_key = ?", "aliyun_registry_prefix").First(&registryConfig)
+	database.DB.Where("config_key = ?", "aliyun_registry").First(&registryConfig)
 
 	registry := registryConfig.ConfigValue
 	if registry == "" {
