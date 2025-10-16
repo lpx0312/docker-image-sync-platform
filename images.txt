@@ -1,4 +1,7 @@
-nginx:latest
+nginx:alpine
+
+# 历史镜像记录
+# nginx:latest
 
 # 历史镜像记录
 # nginx:1.28.0
