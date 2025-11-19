@@ -112,6 +112,11 @@ func main() {
 	// 负责根据配置动态选择Git服务（Gitee/GitHub）
 	gitServiceFactory := services.NewGitServiceFactory(encryptionService)
 
+	// 记录Git优化服务状态
+	logger.Logger.Info("Git服务工厂初始化完成",
+		zap.Bool("use_optimized", gitServiceFactory.IsUsingOptimized()),
+		zap.String("default_mode", "sparse_checkout"))
+
 	// 初始化配置服务
 	// 负责数据库配置的CRUD操作和加密解密
 	configService := services.NewConfigService(database.DB, encryptionService, logrusLogger)
@@ -349,6 +354,24 @@ func main() {
 
 			// POST /api/v1/config/git/test - 测试Git连接
 			config.POST("/git/test", configHandler.TestGitConnection)
+
+			// ====================================================================
+			// Git优化配置API
+			// ====================================================================
+			// GET /api/v1/config/git-optimization - 获取Git优化配置
+			config.GET("/git-optimization", configHandler.GetGitOptimizationConfig)
+
+			// PUT /api/v1/config/git-optimization - 更新Git优化配置
+			config.PUT("/git-optimization", configHandler.UpdateGitOptimizationConfig)
+
+			// GET /api/v1/config/git-performance - 获取Git性能指标
+			config.GET("/git-performance", configHandler.GetGitPerformanceMetrics)
+
+			// GET /api/v1/config/git-network-test - 测试Git网络质量
+			config.GET("/git-network-test", configHandler.TestGitNetworkQuality)
+
+			// POST /api/v1/config/git-test-operations - 测试Git代码拉取和提交操作
+			config.POST("/git-test-operations", configHandler.TestGitOperations)
 
 			// ====================================================================
 			// 数据库配置管理API - 阿里云配置

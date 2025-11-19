@@ -117,18 +117,26 @@
         <div class="card-header">
           <span class="header-title">GitHub配置</span>
           <div class="header-actions">
-            <el-button 
-              type="success" 
-              size="small" 
+            <el-button
+              type="warning"
+              size="small"
+              @click="testGitOperations('github')"
+              :loading="testingGitOperations.github"
+            >
+              测试代码拉取和提交
+            </el-button>
+            <el-button
+              type="success"
+              size="small"
               @click="saveGitHubConfig"
               :loading="savingConfig.github"
               :disabled="!isGitHubConfigChanged"
             >
               保存配置
             </el-button>
-            <el-button 
-              type="primary" 
-              size="small" 
+            <el-button
+              type="primary"
+              size="small"
               @click="testConnection('github')"
               :loading="testingConnection.github"
             >
@@ -204,6 +212,14 @@
     <div class="config-status" v-if="lastSaved">
       <span class="status-text">配置已保存 - {{ lastSaved }}</span>
     </div>
+
+    <!-- Git操作测试结果弹窗 -->
+    <GitTestResultDialog
+      v-model:visible="testResultVisible"
+      :test-result="testResultData"
+      @close="handleTestResultClose"
+      @view-commit="handleViewCommit"
+    />
   </div>
 </template>
 
@@ -212,6 +228,7 @@ import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Connection } from '@element-plus/icons-vue'
 import { systemAPI } from '@/api'
+import GitTestResultDialog from './GitTestResultDialog.vue'
 
 const loading = ref(false)
 const lastSaved = ref('')
@@ -254,10 +271,19 @@ const testingConnection = ref({
   github: false
 })
 
+const testingGitOperations = ref({
+  gitee: false,
+  github: false
+})
+
 const connectionStatus = ref({
   gitee: null,
   github: null
 })
+
+// Git操作测试相关
+const testResultVisible = ref(false)
+const testResultData = ref(null)
 
 onMounted(() => {
   loadConfigs()
@@ -482,6 +508,101 @@ const testConnection = async (type) => {
   } finally {
     testingConnection.value[type] = false
   }
+}
+
+const testGitOperations = async (type) => {
+  try {
+    testingGitOperations.value[type] = true
+
+    // 获取当前表单配置
+    const config = type === 'gitee' ? giteeConfig.value : githubConfig.value
+
+    // 验证必填字段
+    if (!config.repo_url || !config.username || !config.email || !config.branch || !config.local_path) {
+      ElMessage.error('请填写完整的配置信息')
+      return
+    }
+
+    if (type === 'gitee' && !config.password) {
+      ElMessage.error('请填写Gitee密码')
+      return
+    }
+
+    if (type === 'github' && !config.token) {
+      ElMessage.error('请填写GitHub访问令牌')
+      return
+    }
+
+    // 只为GitHub提供测试功能
+    if (type !== 'github') {
+      ElMessage.warning('目前仅支持GitHub仓库的代码拉取和提交测试')
+      return
+    }
+
+    ElMessage.info('正在测试GitHub代码操作，请稍候...')
+
+    // 构建测试请求数据
+    const testData = {
+      repo_url: config.repo_url,
+      username: config.username,
+      token: config.token,
+      email: config.email,
+      branch: config.branch,
+      local_path: config.local_path
+    }
+
+    // 调用后端API进行测试
+    const response = await systemAPI.testGitOperations(testData)
+
+    if (response.success) {
+      testResultData.value = response.data
+      testResultVisible.value = true
+
+      if (response.data.pull_success && response.data.commit_success && response.data.test_images_txt) {
+        ElMessage.success('GitHub代码操作测试全部成功！')
+      } else {
+        ElMessage.warning('GitHub代码操作测试部分完成，请查看详细结果')
+      }
+    } else {
+      ElMessage.error('测试失败：' + (response.message || '未知错误'))
+    }
+  } catch (error) {
+    console.error('测试Git操作失败:', error)
+    const errorMessage = error.response?.data?.message || error.message || '测试失败'
+    ElMessage.error('测试失败：' + errorMessage)
+
+    // 即使失败也显示结果，如果有的话
+    if (error.response?.data?.data) {
+      testResultData.value = error.response.data.data
+      testResultVisible.value = true
+    }
+  } finally {
+    testingGitOperations.value[type] = false
+  }
+}
+
+const handleTestResultClose = () => {
+  testResultVisible.value = false
+  testResultData.value = null
+}
+
+const handleViewCommit = (commitSha) => {
+  // 构建GitHub提交URL
+  const config = githubConfig.value
+  if (config && config.repo_url) {
+    // 从仓库URL中提取owner和repo名称
+    const repoUrl = config.repo_url.replace('.git', '')
+    const match = repoUrl.match(/github\.com\/(.+)\/(.+)/)
+    if (match) {
+      const owner = match[1]
+      const repo = match[2]
+      const commitUrl = `https://github.com/${owner}/${repo}/commit/${commitSha}`
+      window.open(commitUrl, '_blank')
+      return
+    }
+  }
+
+  ElMessage.warning('无法生成提交链接，请手动查看GitHub仓库')
 }
 
 const updateLastSaved = () => {

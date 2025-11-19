@@ -348,9 +348,9 @@ export const systemAPI = {
 
   /**
    * 测试Git连接
-   * 
+   *
    * 测试指定Git仓库的连接状态
-   * 
+   *
    * @param {Object} config - 测试配置数据
    * @param {string} config.type - 仓库类型 ('gitee' | 'github')
    * @param {string} config.repo_url - 仓库URL
@@ -361,6 +361,22 @@ export const systemAPI = {
    * @returns {Promise} 返回连接测试结果
    */
   testGitConnection: (config) => api.post('/config/git/test', config),
+
+  /**
+   * 测试Git代码拉取和提交操作
+   *
+   * 测试GitHub仓库的代码拉取和提交功能
+   *
+   * @param {Object} config - 测试配置数据
+   * @param {string} config.repo_url - 仓库URL
+   * @param {string} config.username - 用户名
+   * @param {string} config.token - 访问令牌
+   * @param {string} config.email - 邮箱
+   * @param {string} config.branch - 分支名称
+   * @param {string} config.local_path - 本地仓库路径
+   * @returns {Promise} 返回Git操作测试结果
+   */
+  testGitOperations: (config) => api.post('/config/git-test-operations', config),
 
   // ====================================================================
   // 阿里云配置管理接口

@@ -141,6 +141,12 @@ docker-image-sync-platform/
 - Processes image sync requests
 - Manages batch and individual sync operations
 
+### 5. Git Optimized Service
+- `internal/services/git_optimized.go`
+- Provides optimized Git operations with caching and sparse checkout
+- Includes GitHub code operations testing functionality
+- Methods: `PullImagesFileForTesting()`, `UpdateImagesFileForTesting()`
+
 ## API Structure
 
 ### Base URL: `/api/v1`
@@ -159,8 +165,11 @@ docker-image-sync-platform/
 
 ### Configuration
 - `GET /config/all` - Get all configurations
+- `GET /config/git` - Get Git configurations
 - `PUT /config/git/gitee` - Update Gitee config
 - `PUT /config/git/github` - Update GitHub config
+- `POST /config/git/test` - Test Git connection
+- `POST /config/git-test-operations` - Test GitHub code pull and commit operations
 - `PUT /config/aliyun-db` - Update Aliyun ACR config
 
 ### GitHub Integration
@@ -209,7 +218,8 @@ Key sections:
 ### Key Components
 - `SingleSyncForm.vue` - Single image sync
 - `BatchSyncForm.vue` - Batch image sync
-- `GitConfigForm.vue` - Git repository configuration
+- `GitConfigForm.vue` - Git repository configuration with GitHub testing feature
+- `GitTestResultDialog.vue` - GitHub operations test results display
 - `AliyunConfigForm.vue` - ACR configuration
 
 ## Development Workflow
@@ -270,3 +280,109 @@ Key sections:
 - CORS protection
 - Request logging and monitoring
 - Input validation and sanitization
+
+## GitHub Code Operations Testing Feature
+
+### Overview
+The platform includes a comprehensive GitHub code operations testing feature that allows users to validate their GitHub configuration before using it for Docker image synchronization.
+
+### Features
+- **Three-Step Testing Process**:
+  1. Pull images.txt file from GitHub repository
+  2. Commit test content to images.txt
+  3. Verify the commit and push changes
+- **Detailed Timing Information**: Records elapsed time for each operation (pull, commit, push)
+- **Comprehensive Error Reporting**: Provides detailed error messages for debugging
+- **User-Friendly Interface**: Modern Vue.js dialog with step-by-step results display
+
+### API Endpoint
+- **URL**: `POST /api/v1/config/git-test-operations`
+- **Request Parameters**:
+  ```json
+  {
+    "repo_url": "https://github.com/username/repository.git",
+    "username": "github-username",
+    "token": "github-personal-access-token",
+    "email": "user@example.com",
+    "branch": "main",
+    "local_path": "/tmp/test-repo"
+  }
+  ```
+- **Response Structure**:
+  ```json
+  {
+    "success": true,
+    "message": "GitHub代码操作测试部分失败",
+    "data": {
+      "pull_success": false,
+      "pull_time": 21070,
+      "commit_success": false,
+      "commit_time": 0,
+      "push_success": false,
+      "push_time": 0,
+      "test_images_txt": false,
+      "total_time": 21071,
+      "commit_sha": "",
+      "error_message": "Detailed error information..."
+    }
+  }
+  ```
+
+### Frontend Components
+- **GitConfigForm.vue**: GitHub configuration form with "测试代码拉取和提交" button
+- **GitTestResultDialog.vue**: Results display dialog showing:
+  - Overall test status with success indicators
+  - Step-by-step breakdown with timing
+  - Error messages and troubleshooting hints
+  - Commit SHA with GitHub link (when successful)
+  - Statistical information in tabular format
+
+### Implementation Details
+- **Backend**: Uses temporary directories for testing (`/tmp/git-test-operations`)
+- **Git Operations**: Implements actual Git clone, commit, and push operations
+- **Error Handling**: Comprehensive error catching with user-friendly messages
+- **Security**: Tests use isolated temporary environments, no impact on production data
+
+### Usage
+1. Navigate to the Configuration page in the web interface
+2. Configure GitHub repository settings (URL, username, token, email, branch)
+3. Click "测试代码拉取和提交" button in the GitHub configuration section
+4. Review detailed test results in the popup dialog
+5. Verify all operations succeed before using the configuration for image sync
+
+### Benefits
+- **Configuration Validation**: Ensures GitHub credentials and permissions are correct
+- **Early Error Detection**: Identifies connectivity or authentication issues before actual sync operations
+- **Performance Monitoring**: Provides timing metrics for Git operations
+- **User Confidence**: Gives users confidence that their GitHub integration will work properly
+
+
+
+### 本地开发
+
+### 开发机器平台
+- 操作系统：Windows 11
+- 处理器：AMD Ryzen 7 5800H
+- 内存：16GB DDR4
+- 显卡：RTX 3060 Laptop 6GB
+- 存储：512GB SSD
+
+### 前端启动：
+```bash
+cd web
+npm install
+npm run dev
+```
+
+### 后端启动：
+```bash
+go run main.go
+```
+
+### 本地开发日志
+本地开发的后端日志存放在 `logs/app.log` 文件中。
+
+### 启动开发环境时
+需要固定后端端口8080，前端端口3000, 如果之前有其他服务占用这两个端口，请先把强制杀掉
+
+### 代码修改后都必须重新启动前后端

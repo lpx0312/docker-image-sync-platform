@@ -817,32 +817,59 @@ func (h *SyncHandler) updateImagesFile(records []models.ImageSyncRecord) (string
 	}
 
 	// ====================================================================
-	// 提交到Git仓库（优化版本）
+	// 提交到Git仓库（API优化版本）
 	// ====================================================================
 
-	// 优先尝试使用优化后的Git服务
 	var commitSHA string
 	var err error
 
+	// 构建文件内容
+	content := strings.Join(imageLines, "\n")
+	commitMessage := fmt.Sprintf("Add %d new images for sync", len(imageLines))
+
+	logger.Logger.Info("开始更新images.txt文件",
+		zap.Int("image_count", len(imageLines)),
+		zap.Int("content_length", len(content)))
+
+	// 优先尝试使用API模式
+	useAPI := h.gitServiceFactory.IsUsingAPI()
+	if useAPI {
+		logger.Logger.Info("使用API模式更新文件")
+		commitSHA, err = h.updateImagesFileWithAPI(content, commitMessage)
+		if err == nil {
+			logger.Logger.Info("使用API模式成功更新文件",
+				zap.String("commit_sha", commitSHA),
+				zap.String("mode", "api"))
+			return commitSHA, nil
+		}
+		logger.Logger.Error("API模式更新失败，回退到传统模式",
+			zap.Error(err),
+			zap.String("fallback_reason", "api_failed"))
+	}
+
 	// 检查是否启用优化服务
-	if h.gitServiceFactory.IsUsingOptimized() {
-		// 获取优化后的Git服务
+	useOptimized := h.gitServiceFactory.IsUsingOptimized()
+	if useOptimized {
+		logger.Logger.Info("使用稀疏检出模式更新文件")
 		optimizedService, err := h.gitServiceFactory.GetOptimizedGitService()
 		if err != nil {
-			logger.Logger.Warn("获取优化Git服务失败，回退到原服务", zap.Error(err))
+			logger.Logger.Error("获取优化Git服务失败，回退到原服务", zap.Error(err))
 		} else {
-			// 使用优化服务更新文件
 			commitSHA, err = optimizedService.UpdateImagesFileOptimized(imageLines)
 			if err == nil {
-				logger.Logger.Info("使用优化Git服务成功更新文件",
-					zap.String("commit_sha", commitSHA))
+				logger.Logger.Info("使用稀疏检出模式成功更新文件",
+					zap.String("commit_sha", commitSHA),
+					zap.String("mode", "sparse_checkout"))
 				return commitSHA, nil
 			}
-			logger.Logger.Warn("优化Git服务更新失败，回退到原服务", zap.Error(err))
+			logger.Logger.Error("稀疏检出模式更新失败，回退到原服务",
+				zap.Error(err),
+				zap.String("fallback_reason", "sparse_checkout_failed"))
 		}
 	}
 
-	// 降级到原有Git服务
+	// 最终降级到原有Git服务
+	logger.Logger.Info("使用完整克隆模式更新文件")
 	gitService, err := h.gitServiceFactory.GetGitService()
 	if err != nil {
 		logger.Logger.Error("获取Git服务失败", zap.Error(err))
@@ -856,8 +883,48 @@ func (h *SyncHandler) updateImagesFile(records []models.ImageSyncRecord) (string
 		return "", fmt.Errorf("原Git服务更新失败: %v", err)
 	}
 
-	logger.Logger.Info("使用原有Git服务成功更新文件",
+	logger.Logger.Info("使用完整克隆模式成功更新文件",
 		zap.String("commit_sha", commitSHA))
+	return commitSHA, nil
+}
+
+// updateImagesFileWithAPI 使用API模式更新images.txt文件
+//
+// 参数:
+//   - content: 文件内容
+//   - commitMessage: 提交信息
+//
+// 返回:
+//   - string: 提交SHA
+//   - error: 操作过程中的错误
+func (h *SyncHandler) updateImagesFileWithAPI(content, commitMessage string) (string, error) {
+	startTime := time.Now()
+	logger.Logger.Info("开始使用API模式更新images.txt文件",
+		zap.Int("content_length", len(content)),
+		zap.String("commit_message", commitMessage))
+
+	// 获取Git文件API服务
+	gitFileService, err := h.gitServiceFactory.GetGitFileService()
+	if err != nil {
+		return "", fmt.Errorf("获取Git文件API服务失败: %w", err)
+	}
+
+	// 执行文件更新
+	commitSHA, err := gitFileService.UpdateImagesFile(content, commitMessage)
+	if err != nil {
+		duration := time.Since(startTime)
+		logger.Logger.Error("API模式更新文件失败",
+			zap.Error(err),
+			zap.Duration("duration", duration))
+		return "", err
+	}
+
+	duration := time.Since(startTime)
+	logger.Logger.Info("API模式成功更新images.txt文件",
+		zap.String("commit_sha", commitSHA),
+		zap.Duration("duration", duration),
+		zap.String("estimated_speed", "fast"))
+
 	return commitSHA, nil
 }
 

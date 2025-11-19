@@ -419,14 +419,27 @@ func (h *ConfigHandler) DebugGetConfig(c *gin.Context) {
 // 响应数据:
 //   - gitee: Gitee配置信息（不包含密码）
 //   - github: GitHub配置信息（不包含token）
+//   - repository_type: 当前使用的Git仓库类型
 //
 // 功能说明:
 //   - 从数据库获取Git配置信息
 //   - 自动解密敏感信息但不在响应中返回
 //   - 支持配置的动态加载
+//   - 返回当前选择的仓库类型
 func (h *ConfigHandler) GetGitConfig(c *gin.Context) {
+	logger.Logger.Info("获取Git配置信息 - 开始")
+
+	// 获取当前仓库类型配置
+	repositoryType, err := h.gitServiceFactory.GetGitRepositoryConfig()
+	if err != nil {
+		logger.Logger.Error("获取Git仓库类型配置失败", zap.Error(err))
+	} else {
+		logger.Logger.Info("获取Git仓库类型配置成功", zap.String("repository_type", repositoryType))
+	}
+
 	giteeConfig, err := h.configService.GetGitConfig("gitee")
 	if err != nil {
+		logger.Logger.Error("获取Gitee配置失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"status":  "error",
 			"message": "Failed to get Gitee configuration",
@@ -437,6 +450,7 @@ func (h *ConfigHandler) GetGitConfig(c *gin.Context) {
 
 	githubConfig, err := h.configService.GetGitConfig("github")
 	if err != nil {
+		logger.Logger.Error("获取GitHub配置失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"status":  "error",
 			"message": "Failed to get GitHub configuration",
@@ -462,13 +476,22 @@ func (h *ConfigHandler) GetGitConfig(c *gin.Context) {
 		"local_path": githubConfig.LocalPath,
 	}
 
+	// 构建响应数据，包含仓库类型
+	responseData := gin.H{
+		"gitee":         giteeResponse,
+		"github":        githubResponse,
+		"repository_type": repositoryType,
+	}
+
+	logger.Logger.Info("Git配置信息获取完成",
+		zap.String("repository_type", repositoryType),
+		zap.String("gitee_repo", giteeConfig.RepoURL),
+		zap.String("github_repo", githubConfig.RepoURL))
+
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "success",
 		"message": "Git configuration retrieved successfully",
-		"data": gin.H{
-			"gitee":  giteeResponse,
-			"github": githubResponse,
-		},
+		"data":    responseData,
 	})
 }
 
@@ -875,6 +898,9 @@ func (h *ConfigHandler) GetAllConfigs(c *gin.Context) {
 		return
 	}
 
+	// 获取当前仓库类型配置
+	repositoryType, _ := h.gitServiceFactory.GetGitRepositoryConfig()
+
 	// 构建响应数据（移除敏感信息）
 	response := gin.H{
 		"git": gin.H{
@@ -892,6 +918,7 @@ func (h *ConfigHandler) GetAllConfigs(c *gin.Context) {
 				"branch":     githubConfig.Branch,
 				"local_path": githubConfig.LocalPath,
 			},
+			"repository_type": repositoryType,
 		},
 		"aliyun": gin.H{
 			"registry":  aliyunConfig.Registry,
@@ -1636,4 +1663,206 @@ func (h *ConfigHandler) getQualityString(quality services.NetworkQuality) string
 	default:
 		return "unknown"
 	}
+}
+
+// TestGitOperations 测试Git代码拉取和提交操作
+//
+// HTTP方法: POST
+// 路径: /api/v1/config/git-test-operations
+//
+// 请求体:
+//   - repo_url: 仓库URL
+//   - username: 用户名
+//   - token: 访问令牌(GitHub用)或密码(Gitee用)
+//   - email: 邮箱地址
+//   - branch: 分支名称
+//   - local_path: 本地仓库路径
+//
+// 响应:
+//   - 200: 测试成功，返回详细的操作结果
+//   - 400: 请求参数错误
+//   - 500: 服务器内部错误
+//
+// 响应数据包含:
+//   - pull_success: 拉取操作是否成功
+//   - pull_time: 拉取操作耗时
+//   - commit_success: 提交操作是否成功
+//   - commit_time: 提交操作耗时
+//   - push_success: 推送操作是否成功
+//   - push_time: 推送操作耗时
+//   - total_time: 总耗时
+//   - error_message: 错误信息(如果有)
+//   - commit_sha: 提交的SHA值(如果成功)
+func (h *ConfigHandler) TestGitOperations(c *gin.Context) {
+	startTime := time.Now()
+
+	// 解析请求参数
+	var req struct {
+		RepoURL   string `json:"repo_url" binding:"required"`
+		Username  string `json:"username" binding:"required"`
+		Token     string `json:"token" binding:"required"`
+		Email     string `json:"email" binding:"required"`
+		Branch    string `json:"branch" binding:"required"`
+		LocalPath string `json:"local_path" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Logger.Error("解析Git操作测试请求参数失败", zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "请求参数格式错误",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	// 确定Git类型
+	var gitType string
+	if strings.Contains(req.RepoURL, "github.com") {
+		gitType = "github"
+	} else if strings.Contains(req.RepoURL, "gitee.com") {
+		gitType = "gitee"
+	} else {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "不支持的Git仓库类型，仅支持GitHub和Gitee",
+		})
+		return
+	}
+
+	// 只为GitHub提供测试功能
+	if gitType != "github" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "目前仅支持GitHub仓库的代码拉取和提交测试",
+		})
+		return
+	}
+
+	logger.Logger.Info("开始GitHub代码操作测试",
+		zap.String("repo_url", req.RepoURL),
+		zap.String("username", req.Username),
+		zap.String("branch", req.Branch),
+		zap.String("local_path", req.LocalPath))
+
+	// 获取优化Git服务
+	optimizedService, err := h.gitServiceFactory.GetOptimizedGitService()
+	if err != nil {
+		logger.Logger.Error("获取优化Git服务失败", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"message": "获取Git服务失败",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	// 测试结果结构
+	result := gin.H{
+		"pull_success":    false,
+		"pull_time":       0,
+		"commit_success":  false,
+		"commit_time":     0,
+		"push_success":    false,
+		"push_time":       0,
+		"total_time":      0,
+		"error_message":   "",
+		"commit_sha":      "",
+		"test_images_txt": false,
+	}
+
+	// 第一步：测试拉取images.txt文件
+	logger.Logger.Info("步骤1: 测试拉取images.txt文件")
+	pullStartTime := time.Now()
+
+	imagesContent, err := optimizedService.PullImagesFileForTesting()
+	pullDuration := time.Since(pullStartTime)
+	result["pull_time"] = pullDuration.Milliseconds()
+
+	if err != nil {
+		result["error_message"] = fmt.Sprintf("拉取images.txt失败: %v", err)
+		logger.Logger.Error("拉取images.txt失败", zap.Error(err))
+	} else {
+		result["pull_success"] = true
+		logger.Logger.Info("拉取images.txt成功",
+			zap.String("content_preview", func() string {
+				if len(imagesContent) > 100 {
+					return imagesContent[:100] + "..."
+				}
+				return imagesContent
+			}()))
+	}
+
+	// 第二步：测试提交测试内容到images.txt
+	if result["pull_success"].(bool) {
+		logger.Logger.Info("步骤2: 测试提交测试内容到images.txt")
+		commitStartTime := time.Now()
+
+		commitSHA, err := optimizedService.UpdateImagesFileForTesting([]string{"nginx:1.26.1"}, "Git操作测试")
+		commitDuration := time.Since(commitStartTime)
+		result["commit_time"] = commitDuration.Milliseconds()
+
+		if err != nil {
+			result["error_message"] = fmt.Sprintf("提交测试内容失败: %v", err)
+			logger.Logger.Error("提交测试内容失败", zap.Error(err))
+		} else {
+			result["commit_success"] = true
+			result["commit_sha"] = commitSHA
+			logger.Logger.Info("提交测试内容成功", zap.String("commit_sha", commitSHA))
+		}
+	}
+
+	// 第三步：测试验证提交内容（可选）
+	if result["commit_success"].(bool) && result["pull_success"].(bool) {
+		logger.Logger.Info("步骤3: 验证提交内容")
+		verifyStartTime := time.Now()
+
+		// 再次拉取验证内容是否正确更新
+		verifyContent, err := optimizedService.PullImagesFileForTesting()
+		verifyDuration := time.Since(verifyStartTime)
+
+		if err != nil {
+			logger.Logger.Error("验证提交内容失败", zap.Error(err))
+		} else {
+			// 检查是否包含测试内容
+			if strings.Contains(verifyContent, "Git操作测试") && strings.Contains(verifyContent, "nginx:1.26.1") {
+				result["test_images_txt"] = true
+				logger.Logger.Info("验证提交内容成功")
+			} else {
+				logger.Logger.Warn("验证提交内容不匹配")
+			}
+		}
+
+		// 将验证时间加到推送时间中
+		result["push_time"] = verifyDuration.Milliseconds()
+		result["push_success"] = result["test_images_txt"].(bool)
+	}
+
+	// 计算总耗时
+	totalDuration := time.Since(startTime)
+	result["total_time"] = totalDuration.Milliseconds()
+
+	// 记录测试结果
+	logger.Logger.Info("GitHub代码操作测试完成",
+		zap.Bool("pull_success", result["pull_success"].(bool)),
+		zap.Bool("commit_success", result["commit_success"].(bool)),
+		zap.Bool("push_success", result["push_success"].(bool)),
+		zap.Int64("total_time_ms", result["total_time"].(int64)))
+
+	// 构建响应消息
+	var message string
+	if result["pull_success"].(bool) && result["commit_success"].(bool) && result["push_success"].(bool) {
+		message = fmt.Sprintf("GitHub代码操作测试全部成功！总耗时: %d ms", result["total_time"].(int64))
+	} else if result["error_message"].(string) != "" {
+		message = "GitHub代码操作测试部分失败"
+	} else {
+		message = "GitHub代码操作测试完成"
+	}
+
+	// 返回测试结果
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": message,
+		"data":    result,
+	})
 }

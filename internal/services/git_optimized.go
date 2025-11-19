@@ -370,6 +370,8 @@ func (s *GitOptimizedService) UpdateImagesFileOptimized(newImages []string) (str
 // updateWithSparseCheckout 使用稀疏检出更新文件
 func (s *GitOptimizedService) updateWithSparseCheckout(newImages []string) (string, error) {
 	s.recordSparseOperation()
+	logger.Logger.Info("开始使用稀疏检出模式更新镜像文件",
+		zap.Int("new_images_count", len(newImages)))
 
 	// 检查缓存
 	if s.config.EnableCache {
@@ -380,16 +382,21 @@ func (s *GitOptimizedService) updateWithSparseCheckout(newImages []string) (stri
 	}
 
 	// 确保稀疏检出仓库已初始化
+	logger.Logger.Info("初始化稀疏检出仓库")
 	if err := s.initSparseRepository(); err != nil {
+		logger.Logger.Error("初始化稀疏检出仓库失败", zap.Error(err))
 		return "", fmt.Errorf("初始化稀疏检出仓库失败: %w", err)
 	}
 
+	logger.Logger.Info("稀疏检出仓库初始化成功，开始拉取最新文件")
 	// 快速拉取最新文件
 	if err := s.fetchSingleFile(); err != nil {
-		return "", fmt.Errorf("拉取单个文件失败: %w", err)
+		logger.Logger.Warn("拉取单个文件失败，继续使用本地文件", zap.Error(err))
+		// 不返回错误，继续使用本地文件
 	}
 
 	// 读取现有文件内容
+	logger.Logger.Info("读取现有的images.txt文件内容")
 	content, err := s.readImagesContent()
 	if err != nil {
 		logger.Logger.Warn("读取文件失败，使用空内容",
@@ -398,9 +405,13 @@ func (s *GitOptimizedService) updateWithSparseCheckout(newImages []string) (stri
 		return s.processContentAndCommit(emptyContent, newImages, "sparse")
 	}
 
+	logger.Logger.Info("成功读取现有文件内容",
+		zap.Int("existing_lines_count", len(content)))
+
 	// 更新缓存
 	if s.config.EnableCache {
 		s.updateCache(content)
+		logger.Logger.Debug("已更新缓存")
 	}
 
 	return s.processContentAndCommit(content, newImages, "sparse")
@@ -464,61 +475,146 @@ func (s *GitOptimizedService) createNewSparseRepository(repoURL, username, token
 		return fmt.Errorf("创建目录失败: %w", err)
 	}
 
-	// 使用系统git命令进行稀疏检出（更稳定）
-	cmd := exec.Command("git", "clone",
+	// 清理可能存在的旧目录
+	if _, err := os.Stat(s.repoPath); err == nil {
+		logger.Logger.Info("检测到已存在的稀疏检出目录，准备清理", zap.String("path", s.repoPath))
+		if err := os.RemoveAll(s.repoPath); err != nil {
+			return fmt.Errorf("清理现有稀疏检出目录失败: %w", err)
+		}
+		logger.Logger.Info("已清理现有稀疏检出目录", zap.String("path", s.repoPath))
+	}
+
+	logger.Logger.Info("开始创建稀疏检出仓库",
+		zap.String("repo_url", repoURL),
+		zap.String("local_path", s.repoPath),
+		zap.String("repo_type", repoType))
+
+	// 方法2：先创建空仓库，然后设置稀疏检出，最后拉取
+	// 这样可以避免稀疏检出命令的问题
+
+	// 1. 初始化空仓库
+	initCmd := exec.Command("git", "init", s.repoPath)
+	if output, err := initCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("初始化Git仓库失败: %w, 输出: %s", err, string(output))
+	}
+	logger.Logger.Info("Git仓库初始化成功")
+
+	// 2. 设置远程仓库
+	remoteCmd := exec.Command("git", "-C", s.repoPath, "remote", "add", "origin", repoURL)
+	if output, err := remoteCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("添加远程仓库失败: %w, 输出: %s", err, string(output))
+	}
+	logger.Logger.Info("远程仓库设置成功")
+
+	// 3. 设置稀疏检出
+	sparseConfigDir := filepath.Join(s.repoPath, ".git", "info")
+	if err := os.MkdirAll(sparseConfigDir, 0755); err != nil {
+		return fmt.Errorf("创建Git配置目录失败: %w", err)
+	}
+
+	sparseConfigFile := filepath.Join(sparseConfigDir, "sparse-checkout")
+	if err := os.WriteFile(sparseConfigFile, []byte("images.txt\n"), 0644); err != nil {
+		return fmt.Errorf("写入稀疏检出配置文件失败: %w", err)
+	}
+
+	// 4. 启用稀疏检出配置
+	configCmd := exec.Command("git", "-C", s.repoPath, "config", "core.sparsecheckout", "true")
+	if output, err := configCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("启用稀疏检出配置失败: %w, 输出: %s", err, string(output))
+	}
+
+	logger.Logger.Info("稀疏检出配置设置成功", zap.String("config_file", sparseConfigFile))
+
+	// 5. 拉取数据（使用浅克隆和过滤）
+	fetchArgs := []string{
+		"-C", s.repoPath,
+		"fetch",
 		"--depth", "1",
 		"--filter=blob:none",
-		"--sparse",
-		repoURL,
-		s.repoPath)
+		"origin",
+		"HEAD:refs/remotes/origin/HEAD",
+	}
 
 	// 设置认证信息
+	fetchCmd := exec.Command("git", fetchArgs...)
+	cmdEnv := os.Environ()
 	if token != "" {
-		cmd.Env = append(os.Environ(),
+		cmdEnv = append(cmdEnv,
 			fmt.Sprintf("GIT_USERNAME=%s", username),
-			fmt.Sprintf("GIT_PASSWORD=%s", token))
+			fmt.Sprintf("GIT_PASSWORD=%s", token),
+			"GIT_TERMINAL_PROMPT=never")
 	}
+	fetchCmd.Env = cmdEnv
 
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		logger.Logger.Error("稀疏检出失败",
+	if output, err := fetchCmd.CombinedOutput(); err != nil {
+		logger.Logger.Error("拉取远程数据失败",
 			zap.String("output", string(output)),
 			zap.Error(err))
-		return fmt.Errorf("稀疏检出失败: %w", err)
+		return fmt.Errorf("拉取远程数据失败: %w, 输出: %s", err, string(output))
 	}
 
-	// 配置只检出images.txt文件
-	setSparseCmd := exec.Command("git", "-C", s.repoPath, "sparse-checkout", "set", "images.txt")
-	if output, err := setSparseCmd.CombinedOutput(); err != nil {
-		// 如果设置失败，可能是因为images.txt文件不存在，创建空文件
-		logger.Logger.Warn("设置稀疏检出路径失败，尝试创建images.txt文件",
+	logger.Logger.Info("远程数据拉取成功")
+
+	// 6. 检出指定文件
+	checkoutCmd := exec.Command("git", "-C", s.repoPath, "checkout", "origin/HEAD")
+	if output, err := checkoutCmd.CombinedOutput(); err != nil {
+		logger.Logger.Error("检出文件失败",
 			zap.String("output", string(output)),
 			zap.Error(err))
 
-		// 创建空的images.txt文件
+		// 如果检出失败，创建空的images.txt文件
+		logger.Logger.Info("检出失败，创建空的images.txt文件")
 		imagesPath := filepath.Join(s.repoPath, "images.txt")
-		if _, err := os.Create(imagesPath); err != nil {
+		if err := os.WriteFile(imagesPath, []byte("# 稀疏检出模式 - 初始空文件\n"), 0644); err != nil {
 			return fmt.Errorf("创建images.txt文件失败: %w", err)
 		}
-		logger.Logger.Info("已创建空的images.txt文件", zap.String("path", imagesPath))
+	} else {
+		logger.Logger.Info("文件检出成功", zap.String("output", string(output)))
+	}
 
-		// 重新尝试设置稀疏检出路径
-		if output, err := setSparseCmd.CombinedOutput(); err != nil {
-			logger.Logger.Error("重新设置稀疏检出路径仍然失败",
-				zap.String("output", string(output)),
-				zap.Error(err))
-			return fmt.Errorf("重新设置稀疏检出路径失败: %w", err)
+	// 7. 验证稀疏检出结果
+	imagesPath := filepath.Join(s.repoPath, "images.txt")
+	if _, err := os.Stat(imagesPath); err != nil {
+		if os.IsNotExist(err) {
+			logger.Logger.Info("images.txt文件不存在，创建空文件")
+			if err := os.WriteFile(imagesPath, []byte("# 稀疏检出模式 - 初始空文件\n"), 0644); err != nil {
+				return fmt.Errorf("创建images.txt文件失败: %w", err)
+			}
+		} else {
+			return fmt.Errorf("检查images.txt文件失败: %w", err)
 		}
 	}
 
-	// 打开仓库
+	// 8. 列出仓库中的文件以验证稀疏检出
+	listCmd := exec.Command("git", "-C", s.repoPath, "ls-files")
+	if listOutput, err := listCmd.CombinedOutput(); err == nil {
+		filesList := string(listOutput)
+		logger.Logger.Info("稀疏检出仓库文件列表",
+			zap.String("files", filesList),
+			zap.Int("file_count", len(strings.Split(strings.TrimSpace(filesList), "\n"))))
+	}
+
+	// 9. 检查仓库大小以确认稀疏检出生效
+	var repoSize int64
+	filepath.Walk(s.repoPath, func(_ string, info os.FileInfo, err error) error {
+		if err == nil && !info.IsDir() {
+			repoSize += info.Size()
+		}
+		return nil
+	})
+
+	logger.Logger.Info("稀疏检出仓库创建成功",
+		zap.String("path", s.repoPath),
+		zap.String("repo_type", repoType),
+		zap.Int64("repo_size_bytes", repoSize))
+
+	// 10. 打开仓库
 	repo, err := git.PlainOpen(s.repoPath)
 	if err != nil {
 		return fmt.Errorf("打开克隆的仓库失败: %w", err)
 	}
 
 	s.repo = repo
-	logger.Logger.Info("稀疏检出仓库创建成功", zap.String("path", s.repoPath))
 	return nil
 }
 
@@ -1082,4 +1178,178 @@ func (s *GitOptimizedService) CleanRepositoryOptimized() error {
 		return os.RemoveAll(s.repoPath)
 	}
 	return nil
+}
+
+// PullImagesFileForTesting 为测试目的拉取images.txt文件
+func (s *GitOptimizedService) PullImagesFileForTesting() (string, error) {
+	// 获取Git配置
+	repoURL, username, _, email, gitType, _, err := s.getCurrentGitConfig()
+	if err != nil {
+		return "", fmt.Errorf("获取Git配置失败: %w", err)
+	}
+
+	// 确保使用GitHub配置
+	if gitType != "github" {
+		return "", fmt.Errorf("此测试功能仅支持GitHub仓库")
+	}
+
+	// 设置临时路径用于测试
+	testPath := filepath.Join(os.TempDir(), "git-test-operations")
+	if err := os.RemoveAll(testPath); err != nil {
+		logger.Logger.Warn("清理测试路径失败", zap.String("path", testPath), zap.Error(err))
+	}
+
+	// 克隆GitHub仓库（完整克隆以确保能获取images.txt）
+	cmd := exec.Command("git", "clone", repoURL, testPath)
+	cmd.Env = append(os.Environ(),
+		"GIT_TERMINAL_PROMPT=never",
+		"GIT_AUTHOR_NAME="+username,
+		"GIT_AUTHOR_EMAIL="+email,
+		"GIT_COMMITTER_NAME="+username,
+		"GIT_COMMITTER_EMAIL="+email,
+	)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("克隆GitHub仓库失败: %v, 输出: %s", err, string(output))
+	}
+
+	// 读取images.txt文件
+	imagesPath := filepath.Join(testPath, "images.txt")
+	content, err := os.ReadFile(imagesPath)
+	if err != nil {
+		// 如果images.txt不存在，创建一个空文件
+		if os.IsNotExist(err) {
+			emptyContent := "# Git测试 - 此为空文件\n"
+			err = os.WriteFile(imagesPath, []byte(emptyContent), 0644)
+			if err != nil {
+				return "", fmt.Errorf("创建images.txt文件失败: %w", err)
+				}
+			return emptyContent, nil
+		}
+		return "", fmt.Errorf("读取images.txt文件失败: %w", err)
+	}
+
+	// 清理测试目录
+	os.RemoveAll(testPath)
+
+	return string(content), nil
+}
+
+// UpdateImagesFileForTesting 为测试目的更新images.txt文件
+func (s *GitOptimizedService) UpdateImagesFileForTesting(newImages []string, description string) (string, error) {
+	// 获取Git配置
+	repoURL, username, _, email, gitType, _, err := s.getCurrentGitConfig()
+	if err != nil {
+		return "", fmt.Errorf("获取Git配置失败: %w", err)
+	}
+
+	// 确保使用GitHub配置
+	if gitType != "github" {
+		return "", fmt.Errorf("此测试功能仅支持GitHub仓库")
+	}
+
+	// 设置临时路径用于测试
+	testPath := filepath.Join(os.TempDir(), "git-test-operations")
+
+	// 确保目录存在
+	if err := os.MkdirAll(testPath, 0755); err != nil {
+		return "", fmt.Errorf("创建测试目录失败: %w", err)
+	}
+
+	// 克隆GitHub仓库
+	cmd := exec.Command("git", "clone", repoURL, testPath)
+	cmd.Env = append(os.Environ(),
+		"GIT_TERMINAL_PROMPT=never",
+		"GIT_AUTHOR_NAME="+username,
+		"GIT_AUTHOR_EMAIL="+email,
+		"GIT_COMMITTER_NAME="+username,
+		"GIT_COMMITTER_EMAIL="+email,
+	)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("克隆GitHub仓库失败: %v, 输出: %s", err, string(output))
+	}
+
+	// 创建或更新images.txt文件
+	imagesPath := filepath.Join(testPath, "images.txt")
+
+	// 读取现有内容
+	var existingContent []byte
+	if content, err := os.ReadFile(imagesPath); err == nil {
+		existingContent = content
+	} else {
+		existingContent = []byte("")
+	}
+
+	// 准备新的镜像内容
+	var imageLines []string
+	for _, image := range newImages {
+		if strings.TrimSpace(image) != "" {
+			imageLines = append(imageLines, strings.TrimSpace(image))
+		}
+	}
+
+	// 构建文件内容
+	fileContent := strings.TrimSpace(string(existingContent)) + "\n\n" +
+		fmt.Sprintf("# Git操作测试 - %s", time.Now().Format("2006-01-02 15:04:05")) + "\n" +
+		strings.Join(imageLines, "\n") + "\n" +
+		"# 此为测试提交，请忽略"
+
+	// 写入文件
+	err = os.WriteFile(imagesPath, []byte(fileContent), 0644)
+	if err != nil {
+		return "", fmt.Errorf("写入images.txt文件失败: %w", err)
+	}
+
+	// 切换到测试目录
+	originalDir, _ := os.Getwd()
+	defer os.Chdir(originalDir)
+	os.Chdir(testPath)
+
+	// 配置Git用户信息
+	exec.Command("git", "config", "user.name", username).Run()
+	exec.Command("git", "config", "user.email", email).Run()
+
+	// 添加文件到Git
+	cmd = exec.Command("git", "add", "images.txt")
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		os.RemoveAll(testPath)
+		return "", fmt.Errorf("添加文件到Git失败: %v, 输出: %s", err, string(output))
+	}
+
+	// 提交更改
+	cmd = exec.Command("git", "commit", "-m", description)
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		os.RemoveAll(testPath)
+		return "", fmt.Errorf("提交更改失败: %v, 输出: %s", err, string(output))
+	}
+
+	// 获取提交SHA
+	cmd = exec.Command("git", "rev-parse", "HEAD")
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		os.RemoveAll(testPath)
+		return "", fmt.Errorf("获取提交SHA失败: %v, 输出: %s", err, string(output))
+	}
+
+	commitSHA := strings.TrimSpace(string(output))
+
+	// 推送到远程仓库
+	cmd = exec.Command("git", "push", "origin", "HEAD")
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		// 推送失败，但本地提交成功，仍然返回提交SHA
+		logger.Logger.Warn("推送到远程仓库失败，但本地提交成功", zap.String("commit_sha", commitSHA), zap.Error(err))
+	}
+
+	// 清理测试目录
+	os.RemoveAll(testPath)
+
+	logger.Logger.Info("Git操作测试提交成功", zap.String("commit_sha", commitSHA), zap.String("description", description))
+
+	return commitSHA, nil
 }

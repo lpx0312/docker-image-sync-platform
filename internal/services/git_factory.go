@@ -15,11 +15,13 @@ type GitServiceFactory struct {
 	giteeService      *GitService          // Gitee服务实例
 	githubService     *GitService          // GitHub服务实例（如果需要的话）
 	optimizedService  *GitOptimizedService  // 优化后的Git服务实例
+	gitFileService    GitFileService       // Git文件API服务实例
 	encryptionService *EncryptionService   // 加密服务，用于创建GitService时传入
 	mutex             sync.RWMutex          // 读写锁，保护服务实例
 	configCache       string                // 配置缓存，避免频繁查询数据库
 	cacheMutex        sync.RWMutex          // 配置缓存锁
 	useOptimized      bool                 // 是否使用优化服务
+	useAPI            bool                 // 是否使用API模式
 }
 
 // NewGitServiceFactory 创建Git服务工厂
@@ -27,6 +29,7 @@ func NewGitServiceFactory(encryptionService *EncryptionService) *GitServiceFacto
 	factory := &GitServiceFactory{
 		encryptionService: encryptionService,
 		useOptimized:      true, // 默认使用优化服务
+		useAPI:            true, // 默认使用API模式
 	}
 
 	// 创建服务实例
@@ -63,23 +66,25 @@ func (f *GitServiceFactory) getOptimizedGitService() (*GitService, error) {
 		f.optimizedService = NewGitOptimizedService(f.encryptionService)
 	}
 
-	// 注意：这里返回的是原GitService接口，但内部使用优化服务
-	// 为了兼容现有代码，我们可以创建一个适配器
-	// 或者修改调用方以使用优化服务的接口
+	// 记录使用优化服务的信息
+	logger.Logger.Info("使用优化后的Git服务（稀疏检出模式）", zap.String("repo_type", repoType))
 
-	// 临时方案：返回原有服务但记录优化信息
-	logger.Logger.Info("使用优化后的Git服务", zap.String("repo_type", repoType))
+	// 为了兼容现有代码的接口，我们需要返回一个适配器或者创建兼容的服务
+	// 由于 GitOptimizedService 和 GitService 的接口不同，我们暂时返回原有服务
+	// 但确保在 sync.go 中直接调用 GitOptimizedService 的方法
 
 	switch repoType {
 	case "gitee":
 		if f.giteeService == nil {
 			f.giteeService = NewGitService(f.encryptionService)
 		}
+		// 返回原有服务用于兼容，但实际优化操作将在 GitOptimizedService 中进行
 		return f.giteeService, nil
 	case "github":
 		if f.githubService == nil {
 			f.githubService = NewGitService(f.encryptionService)
 		}
+		// 返回原有服务用于兼容，但实际优化操作将在 GitOptimizedService 中进行
 		return f.githubService, nil
 	default:
 		return nil, fmt.Errorf("不支持的Git仓库类型: %s", repoType)
@@ -213,4 +218,61 @@ func (f *GitServiceFactory) IsUsingOptimized() bool {
 	f.mutex.RLock()
 	defer f.mutex.RUnlock()
 	return f.useOptimized
+}
+
+// GetGitFileService 获取Git文件API服务实例
+func (f *GitServiceFactory) GetGitFileService() (GitFileService, error) {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+
+	// 如果API服务已存在，直接返回
+	if f.gitFileService != nil {
+		return f.gitFileService, nil
+	}
+
+	// 获取当前配置的Git仓库类型
+	repoType, err := f.getGitRepositoryType()
+	if err != nil {
+		return nil, fmt.Errorf("获取Git仓库配置失败: %v", err)
+	}
+
+	logger.Logger.Info("创建Git文件API服务", zap.String("repo_type", repoType))
+
+	// 根据仓库类型创建对应的API服务
+	gitFileService, err := CreateGitFileService(repoType, f.encryptionService)
+	if err != nil {
+		return nil, fmt.Errorf("创建Git文件API服务失败: %w", err)
+	}
+
+	// 缓存服务实例
+	f.gitFileService = gitFileService
+
+	logger.Logger.Info("Git文件API服务创建成功", zap.String("repo_type", repoType))
+	return f.gitFileService, nil
+}
+
+// SetUseAPI 设置是否使用API模式
+func (f *GitServiceFactory) SetUseAPI(useAPI bool) {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+	f.useAPI = useAPI
+
+	logger.Logger.Info("Git服务API模式已更新", zap.Bool("use_api", useAPI))
+}
+
+// IsUsingAPI 检查是否使用API模式
+func (f *GitServiceFactory) IsUsingAPI() bool {
+	f.mutex.RLock()
+	defer f.mutex.RUnlock()
+	return f.useAPI
+}
+
+// TestGitFileService 测试Git文件API服务连接
+func (f *GitServiceFactory) TestGitFileService() error {
+	gitFileService, err := f.GetGitFileService()
+	if err != nil {
+		return fmt.Errorf("获取Git文件API服务失败: %w", err)
+	}
+
+	return gitFileService.TestConnection()
 }
