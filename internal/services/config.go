@@ -494,8 +494,6 @@ func (cs *ConfigService) GetGitConfig(platform string) (GitConfig, error) {
 	config.Username = username
 	config.Email = email
 	config.Branch = branch
-	// config.LocalPath = localPath  // API模式下不再需要
-	config.LocalPath = ""  // 设置为空字符串，保持向后兼容性
 
 	// 根据平台类型读取认证字段
 	if platform == "github" {

@@ -91,13 +91,14 @@
           />
         </el-form-item>
 
-        <el-form-item label="本地路径" required>
+        <!-- API模式下不再需要本地路径配置 -->
+        <!-- <el-form-item label="本地路径" required>
           <el-input
             v-model="giteeConfig.local_path"
             placeholder="本地仓库路径，如：/tmp/gitee-repo"
             @input="markGiteeConfigChanged"
           />
-        </el-form-item>
+        </el-form-item> -->
       </el-form>
 
       <div v-if="connectionStatus.gitee" class="connection-status">
@@ -189,13 +190,14 @@
           />
         </el-form-item>
 
-        <el-form-item label="本地路径" required>
+        <!-- API模式下不再需要本地路径配置 -->
+        <!-- <el-form-item label="本地路径" required>
           <el-input
             v-model="githubConfig.local_path"
             placeholder="本地仓库路径，如：/tmp/github-repo"
             @input="markGitHubConfigChanged"
           />
-        </el-form-item>
+        </el-form-item> -->
       </el-form>
 
       <div v-if="connectionStatus.github" class="connection-status">
@@ -253,8 +255,7 @@ const giteeConfig = ref({
   username: '',
   password: '',
   email: '',
-  branch: '',
-  local_path: ''
+  branch: ''
 })
 
 const githubConfig = ref({
@@ -262,8 +263,7 @@ const githubConfig = ref({
   username: '',
   token: '',
   email: '',
-  branch: '',
-  local_path: ''
+  branch: ''
 })
 
 const testingConnection = ref({
@@ -309,17 +309,15 @@ const loadConfigs = async () => {
           username: data.gitee.username || '',
           password: data.gitee.password || '',
           email: data.gitee.email || '',
-          branch: data.gitee.branch || '',
-          local_path: data.gitee.local_path || ''
+          branch: data.gitee.branch || ''
         }
-        
+
         giteeConfig.value = {
           repo_url: data.gitee.repo_url || '',
           username: data.gitee.username || '',
           password: data.gitee.password || '',
           email: data.gitee.email || '',
-          branch: data.gitee.branch || '',
-          local_path: data.gitee.local_path || ''
+          branch: data.gitee.branch || ''
         }
       }
       
@@ -330,17 +328,15 @@ const loadConfigs = async () => {
           username: data.github.username || '',
           token: data.github.token || '',
           email: data.github.email || '',
-          branch: data.github.branch || '',
-          local_path: data.github.local_path || ''
+          branch: data.github.branch || ''
         }
-        
+
         githubConfig.value = {
           repo_url: data.github.repo_url || '',
           username: data.github.username || '',
           token: data.github.token || '',
           email: data.github.email || '',
-          branch: data.github.branch || '',
-          local_path: data.github.local_path || ''
+          branch: data.github.branch || ''
         }
       }
     }
@@ -518,7 +514,7 @@ const testGitOperations = async (type) => {
     const config = type === 'gitee' ? giteeConfig.value : githubConfig.value
 
     // 验证必填字段
-    if (!config.repo_url || !config.username || !config.email || !config.branch || !config.local_path) {
+    if (!config.repo_url || !config.username || !config.email || !config.branch) {
       ElMessage.error('请填写完整的配置信息')
       return
     }
@@ -547,8 +543,7 @@ const testGitOperations = async (type) => {
       username: config.username,
       token: config.token,
       email: config.email,
-      branch: config.branch,
-      local_path: config.local_path
+      branch: config.branch
     }
 
     // 调用后端API进行测试

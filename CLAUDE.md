@@ -6,75 +6,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a Docker image synchronization platform built with Go backend and Vue.js frontend. It provides automated synchronization of Docker images from various registries (Docker Hub, GCR, etc.) to Alibaba Cloud Container Registry (ACR) through GitHub Actions workflows.
 
-## Key Commands
-
-### Development
-```bash
-# Initialize project environment
-make init
-
-# Install all dependencies (Go modules + npm packages)
-make deps
-
-# Start full development environment (frontend + backend)
-make dev
-
-# Start only frontend (Vue.js dev server on :3000)
-make frontend
-
-# Start only backend (Gin server on :8080)
-make backend
-
-# Run tests
-make test
-
-# Format code
-make fmt
-
-# Run linting
-make lint
-```
-
-### Building
-```bash
-# Build complete application
-make build
-
-# Build only frontend
-make build-frontend
-
-# Build only backend
-make build-backend
-
-# Run built application
-make run
-```
-
-### Docker Deployment
-```bash
-# Build and run with Docker
-make docker-build
-make docker-run
-
-# View logs
-make docker-logs
-
-# Stop services
-make docker-stop
-
-# Clean Docker resources
-make docker-clean
-```
-
-### Health Check
-```bash
-# Check if services are running
-make health-check
-
-# Direct API health check
-curl http://localhost:8080/api/v1/health
-```
-
 ## Architecture Overview
 
 ### Backend (Go)
@@ -82,7 +13,7 @@ curl http://localhost:8080/api/v1/health
 - **Database**: MySQL with GORM ORM
 - **Configuration**: Viper for config management
 - **Logging**: Zap for structured logging
-- **Git Operations**: go-git library
+- **Git Operations**: go-git library with optimized caching
 - **Container Registry**: go-containerregistry
 
 ### Frontend (Vue.js)
@@ -222,65 +153,6 @@ Key sections:
 - `GitTestResultDialog.vue` - GitHub operations test results display
 - `AliyunConfigForm.vue` - ACR configuration
 
-## Development Workflow
-
-1. **Local Development**:
-   - Use `make deps` to install dependencies
-   - Use `make dev` to start both frontend and backend
-   - Frontend runs on :3000, backend on :8080
-
-2. **Database Setup**:
-   - MySQL 8.0+ required
-   - Auto-migration on startup
-   - Connection pooling configured
-
-3. **Configuration**:
-   - Copy `config.yaml.example` to `config.yaml`
-   - Set up Git repository credentials
-   - Configure Alibaba Cloud Registry access
-
-4. **Testing**:
-   - `make test` runs all tests
-   - Coverage reports generated in `coverage.html`
-
-## Deployment
-
-### Docker Options
-1. **Separate Containers**: `deploy/docker-signal/`
-   - Frontend and backend in separate containers
-   - Good for development and microservices
-
-2. **All-in-One**: `deploy/docker-all/`
-   - Single container with both frontend and backend
-   - Simplified production deployment
-
-### Environment Variables
-- Database connection settings
-- Git repository credentials
-- Alibaba Cloud Registry configuration
-- Server and logging configuration
-
-## Troubleshooting
-
-### Common Issues
-1. **Database Connection**: Check MySQL service and credentials
-2. **Git Operations**: Verify repository access and permissions
-3. **Sync Failures**: Check GitHub Actions workflow status
-4. **Frontend Build**: Ensure Node.js dependencies installed
-
-### Health Checks
-- API health endpoint: `/api/v1/health`
-- Service status: `make health-check`
-- Logs: `logs/app.log` or `make docker-logs`
-
-## Security Considerations
-
-- Rate limiting on sync endpoints
-- Encrypted storage of sensitive configuration
-- CORS protection
-- Request logging and monitoring
-- Input validation and sanitization
-
 ## GitHub Code Operations Testing Feature
 
 ### Overview
@@ -304,8 +176,7 @@ The platform includes a comprehensive GitHub code operations testing feature tha
     "username": "github-username",
     "token": "github-personal-access-token",
     "email": "user@example.com",
-    "branch": "main",
-    "local_path": "/tmp/test-repo"
+    "branch": "main"
   }
   ```
 - **Response Structure**:
@@ -356,33 +227,104 @@ The platform includes a comprehensive GitHub code operations testing feature tha
 - **Performance Monitoring**: Provides timing metrics for Git operations
 - **User Confidence**: Gives users confidence that their GitHub integration will work properly
 
+## 本地开发测试方法
 
+### 开发环境
+- **操作系统**: Windows 11
+- **终端**: PowerShell
 
-### 本地开发
+### 服务启动流程
 
-### 开发机器平台
-- 操作系统：Windows 11
-- 处理器：AMD Ryzen 7 5800H
-- 内存：16GB DDR4
-- 显卡：RTX 3060 Laptop 6GB
-- 存储：512GB SSD
-
-### 前端启动：
+#### 前端服务启动 (固定端口 3000)
 ```bash
 cd web
-npm install
+npm install  # 首次运行需要安装依赖
 npm run dev
 ```
 
-### 后端启动：
+#### 后端服务启动 (固定端口 8080)
 ```bash
 go run main.go
 ```
 
-### 本地开发日志
-本地开发的后端日志存放在 `logs/app.log` 文件中。
+### 开发注意事项
 
-### 启动开发环境时
-需要固定后端端口8080，前端端口3000, 如果之前有其他服务占用这两个端口，请先把强制杀掉
+#### 日志管理
+- **后端日志**: 存放在 `logs/app.log` 文件中
+- **日志查看**: 实时监控开发过程中的错误和信息
 
-### 代码修改后都必须重新启动前后端
+
+#### 前后端重启
+- **前端重启**: 固定使用 3000端口,重启前需要先终止占用3000端口的进程,然后在重启前端服务
+- **后端重启**: 固定使用 8080端口,重启前需要先终止占用8080端口的进程,然后在重启后端服务
+
+#### 代码更新
+- **前端修改**: 重启前后端
+- **后端修改**: 重启前后端
+- **只要修改了代码，都需要重新启动前后端**
+
+### 自动化测试
+
+#### Chrome DevTools 测试
+平台支持使用 Chrome DevTools MCP进行自动化测试：
+- **页面元素操作**: 点击、输入、导航等
+- **表单验证**: 配置表单的完整性和功能测试
+- **API 接口测试**: 验证前后端数据交互
+- **界面渲染测试**: 确认修改生效
+
+#### 测试功能定位
+如需测试特定功能或界面，且你不清楚在哪里，可询问我
+
+
+#### 常见测试场景
+1. **配置管理测试**: Git配置保存、验证、切换功能
+2. **镜像同步测试**: 单个和批量同步操作
+3. **状态监控测试**: 同步进度和结果查看
+4. **错误处理测试**: 异常情况的处理和提示
+
+### 开发工作流
+
+1. **环境准备**: 确保端口未被占用，启动前后端服务
+2. **代码修改**: 按功能需求修改前端或后端代码
+3. **服务重启**: 修改后重新启动对应服务
+4. **功能测试**: 使用 Chrome DevTools 进行自动化验证
+5. **结果确认**: 确保功能正常运行，无报错信息
+
+## Deployment
+
+### Docker Options
+1. **Separate Containers**: `deploy/docker-signal/`
+   - Frontend and backend in separate containers
+   - Good for development and microservices
+
+2. **All-in-One**: `deploy/docker-all/`
+   - Single container with both frontend and backend
+   - Simplified production deployment
+
+### Environment Variables
+- Database connection settings
+- Git repository credentials
+- Alibaba Cloud Registry configuration
+- Server and logging configuration
+
+## Troubleshooting
+
+### Common Issues
+1. **Database Connection**: Check MySQL service and credentials
+2. **Git Operations**: Verify repository access and permissions
+3. **Sync Failures**: Check GitHub Actions workflow status
+4. **Frontend Build**: Ensure Node.js dependencies installed
+5. **Port Conflicts**: Use netstat to identify and resolve conflicts
+
+### Health Checks
+- API health endpoint: `/api/v1/health`
+- Service status: `make health-check`
+- Logs: `logs/app.log` or `make docker-logs`
+
+## Security Considerations
+
+- Rate limiting on sync endpoints
+- Encrypted storage of sensitive configuration
+- CORS protection
+- Request logging and monitoring
+- Input validation and sanitization
