@@ -459,21 +459,21 @@ func (h *ConfigHandler) GetGitConfig(c *gin.Context) {
 		return
 	}
 
-	// 移除敏感信息
+	// 移除敏感信息和不需要的local_path（API模式下不再需要本地路径）
 	giteeResponse := gin.H{
-		"repo_url":   giteeConfig.RepoURL,
-		"username":   giteeConfig.Username,
-		"email":      giteeConfig.Email,
-		"branch":     giteeConfig.Branch,
-		"local_path": giteeConfig.LocalPath,
+		"repo_url": giteeConfig.RepoURL,
+		"username": giteeConfig.Username,
+		"email":    giteeConfig.Email,
+		"branch":   giteeConfig.Branch,
+		// "local_path": giteeConfig.LocalPath,  // API模式下不再需要
 	}
 
 	githubResponse := gin.H{
-		"repo_url":   githubConfig.RepoURL,
-		"username":   githubConfig.Username,
-		"email":      githubConfig.Email,
-		"branch":     githubConfig.Branch,
-		"local_path": githubConfig.LocalPath,
+		"repo_url": githubConfig.RepoURL,
+		"username": githubConfig.Username,
+		"email":    githubConfig.Email,
+		"branch":   githubConfig.Branch,
+		// "local_path": githubConfig.LocalPath,  // API模式下不再需要
 	}
 
 	// 构建响应数据，包含仓库类型
@@ -901,22 +901,22 @@ func (h *ConfigHandler) GetAllConfigs(c *gin.Context) {
 	// 获取当前仓库类型配置
 	repositoryType, _ := h.gitServiceFactory.GetGitRepositoryConfig()
 
-	// 构建响应数据（移除敏感信息）
+	// 构建响应数据（移除敏感信息和不需要的local_path）
 	response := gin.H{
 		"git": gin.H{
 			"gitee": gin.H{
-				"repo_url":   giteeConfig.RepoURL,
-				"username":   giteeConfig.Username,
-				"email":      giteeConfig.Email,
-				"branch":     giteeConfig.Branch,
-				"local_path": giteeConfig.LocalPath,
+				"repo_url": giteeConfig.RepoURL,
+				"username": giteeConfig.Username,
+				"email":    giteeConfig.Email,
+				"branch":   giteeConfig.Branch,
+				// "local_path": giteeConfig.LocalPath,  // API模式下不再需要
 			},
 			"github": gin.H{
-				"repo_url":   githubConfig.RepoURL,
-				"username":   githubConfig.Username,
-				"email":      githubConfig.Email,
-				"branch":     githubConfig.Branch,
-				"local_path": githubConfig.LocalPath,
+				"repo_url": githubConfig.RepoURL,
+				"username": githubConfig.Username,
+				"email":    githubConfig.Email,
+				"branch":   githubConfig.Branch,
+				// "local_path": githubConfig.LocalPath,  // API模式下不再需要
 			},
 			"repository_type": repositoryType,
 		},

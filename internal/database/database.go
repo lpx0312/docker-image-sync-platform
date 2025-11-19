@@ -257,11 +257,12 @@ func initDefaultConfigs() error {
 	if giteeBranch == "" {
 		giteeBranch = "main" // 默认分支
 	}
-	giteeLocalPath := config.AppConfig.Git.Gitee.LocalPath
-	if giteeLocalPath == "" {
-		giteeLocalPath = "./gitee-repo" // 默认本地路径
-	}
-	
+	// API模式下不再需要本地路径
+	// giteeLocalPath := config.AppConfig.Git.Gitee.LocalPath
+	// if giteeLocalPath == "" {
+	//	giteeLocalPath = "./gitee-repo" // 默认本地路径
+	// }
+
 	githubRepoURL := config.AppConfig.Git.GitHub.RepoURL
 	githubUsername := config.AppConfig.Git.GitHub.Username
 	githubToken := config.AppConfig.Git.GitHub.Token
@@ -270,10 +271,11 @@ func initDefaultConfigs() error {
 	if githubBranch == "" {
 		githubBranch = "main" // 默认分支
 	}
-	githubLocalPath := config.AppConfig.Git.GitHub.LocalPath
-	if githubLocalPath == "" {
-		githubLocalPath = "./github-repo" // 默认本地路径
-	}
+	// API模式下不再需要本地路径
+	// githubLocalPath := config.AppConfig.Git.GitHub.LocalPath
+	// if githubLocalPath == "" {
+	//	githubLocalPath = "./github-repo" // 默认本地路径
+	// }
 	
 
 
@@ -365,11 +367,12 @@ func initDefaultConfigs() error {
 			ConfigValue: giteeBranch,
 			Description: "Gitee仓库分支",
 		},
-		{
-			ConfigKey:   "gitee_local_path",
-			ConfigValue: giteeLocalPath,
-			Description: "Gitee本地仓库路径",
-		},
+		// API模式下不再需要本地路径配置
+		// {
+		//	ConfigKey:   "gitee_local_path",
+		//	ConfigValue: giteeLocalPath,
+		//	Description: "Gitee本地仓库路径",
+		// },
 		
 		// GitHub配置
 		{
@@ -398,11 +401,12 @@ func initDefaultConfigs() error {
 			ConfigValue: githubBranch,
 			Description: "GitHub仓库分支",
 		},
-		{
-			ConfigKey:   "github_local_path",
-			ConfigValue: githubLocalPath,
-			Description: "GitHub本地仓库路径",
-		},
+		// API模式下不再需要本地路径配置
+		// {
+		//	ConfigKey:   "github_local_path",
+		//	ConfigValue: githubLocalPath,
+		//	Description: "GitHub本地仓库路径",
+		// },
 		
 		// 同步配置
 		{

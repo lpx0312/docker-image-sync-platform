@@ -102,7 +102,7 @@ type GiteeConfig struct {
 	Token     string `mapstructure:"token"` // 访问令牌，优先使用Token认证
 	Email     string `mapstructure:"email"`
 	Branch    string `mapstructure:"branch"`
-	LocalPath string `mapstructure:"local_path"`
+	// LocalPath string `mapstructure:"local_path"` // API模式下不再需要
 }
 
 // GitHubConfig GitHub配置
@@ -112,7 +112,7 @@ type GitHubConfig struct {
 	Token     string `mapstructure:"token"`
 	Email     string `mapstructure:"email"`
 	Branch    string `mapstructure:"branch"`
-	LocalPath string `mapstructure:"local_path"`
+	// LocalPath string `mapstructure:"local_path"` // API模式下不再需要
 }
 
 // AliyunConfig 阿里云配置

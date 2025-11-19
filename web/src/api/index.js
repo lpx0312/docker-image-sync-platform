@@ -373,7 +373,7 @@ export const systemAPI = {
    * @param {string} config.token - 访问令牌
    * @param {string} config.email - 邮箱
    * @param {string} config.branch - 分支名称
-   * @param {string} config.local_path - 本地仓库路径
+   * @param {string} config.local_path - 本地仓库路径（API模式下不再需要，但保留向后兼容性）
    * @returns {Promise} 返回Git操作测试结果
    */
   testGitOperations: (config) => api.post('/config/git-test-operations', config),

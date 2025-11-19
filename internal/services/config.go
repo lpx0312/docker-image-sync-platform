@@ -88,7 +88,7 @@ type GitConfig struct {
 	Token     string `json:"token"`      // 访问令牌（用于GitHub，加密存储）
 	Email     string `json:"email"`      // 提交邮箱
 	Branch    string `json:"branch"`     // 默认分支
-	LocalPath string `json:"local_path"` // 本地路径
+	// LocalPath string `json:"local_path"` // 本地路径 - API模式下不再需要
 }
 
 // AliyunConfig 阿里云服务配置结构
@@ -403,13 +403,13 @@ func (cs *ConfigService) SetGitConfig(platform string, config GitConfig) error {
 		}
 	}()
 
-	// 设置各个配置项
+	// 设置各个配置项（API模式下不再需要local_path）
 	configs := map[string]interface{}{
 		fmt.Sprintf("%s_repo_url", platform):   config.RepoURL,
 		fmt.Sprintf("%s_username", platform):   config.Username,
 		fmt.Sprintf("%s_email", platform):      config.Email,
 		fmt.Sprintf("%s_branch", platform):     config.Branch,
-		fmt.Sprintf("%s_local_path", platform): config.LocalPath,
+		// fmt.Sprintf("%s_local_path", platform): config.LocalPath,  // API模式下不再需要
 	}
 
 	// 根据平台类型设置认证字段
@@ -483,18 +483,19 @@ func (cs *ConfigService) SetGitConfig(platform string, config GitConfig) error {
 func (cs *ConfigService) GetGitConfig(platform string) (GitConfig, error) {
 	var config GitConfig
 	
-	// 读取各个配置项
+	// 读取各个配置项（API模式下不再需要local_path）
 	repoURL, _ := cs.GetConfig(fmt.Sprintf("%s_repo_url", platform))
 	username, _ := cs.GetConfig(fmt.Sprintf("%s_username", platform))
 	email, _ := cs.GetConfig(fmt.Sprintf("%s_email", platform))
 	branch, _ := cs.GetConfig(fmt.Sprintf("%s_branch", platform))
-	localPath, _ := cs.GetConfig(fmt.Sprintf("%s_local_path", platform))
+	// localPath, _ := cs.GetConfig(fmt.Sprintf("%s_local_path", platform))  // API模式下不再需要
 
 	config.RepoURL = repoURL
 	config.Username = username
 	config.Email = email
 	config.Branch = branch
-	config.LocalPath = localPath
+	// config.LocalPath = localPath  // API模式下不再需要
+	config.LocalPath = ""  // 设置为空字符串，保持向后兼容性
 
 	// 根据平台类型读取认证字段
 	if platform == "github" {
