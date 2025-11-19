@@ -32,12 +32,14 @@ import (
 
 	"docker-image-sync-platform/internal/config"   // 配置管理
 	"docker-image-sync-platform/internal/database" // 数据库操作
+	"docker-image-sync-platform/internal/logger"   // 日志管理
 	"docker-image-sync-platform/internal/services" // 业务服务
 	"github.com/gin-gonic/gin"                     // Gin Web框架
 	"github.com/go-git/go-git/v5"                  // Git操作
 	gitconfig "github.com/go-git/go-git/v5/config" // Git配置
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http" // Git HTTP认证
 	"github.com/go-git/go-git/v5/storage/memory"   // Git内存存储
+	"go.uber.org/zap"                              // Zap日志库
 )
 
 // ConfigHandler 配置处理器
@@ -1438,4 +1440,200 @@ func (h *ConfigHandler) testAliyunBearerAuth(registryURL, namespace, username, p
 	
 	apiBody, _ := io.ReadAll(apiResp.Body)
 	return fmt.Errorf("Bearer token认证失败，状态码: %d, 响应: %s", apiResp.StatusCode, string(apiBody))
+}
+
+// GetGitOptimizationConfig 获取Git优化配置
+//
+// HTTP方法: GET
+// 路径: /api/v1/config/git-optimization
+//
+// 响应:
+//   - 200: 返回Git优化配置信息
+//   - 500: 服务器内部错误
+//
+// 响应数据包含:
+//   - use_optimized: 是否使用优化服务
+//   - available_modes: 可用的操作模式列表
+//   - current_mode: 当前操作模式
+//   - performance_metrics: 性能指标统计
+func (h *ConfigHandler) GetGitOptimizationConfig(c *gin.Context) {
+	// 检查是否使用优化服务
+	useOptimized := h.gitServiceFactory.IsUsingOptimized()
+
+	// 获取性能指标
+	var metrics map[string]interface{}
+	if optimizedService, err := h.gitServiceFactory.GetOptimizedGitService(); err == nil {
+		metrics = optimizedService.GetPerformanceMetrics()
+	}
+
+	// 构建响应数据
+	response := gin.H{
+		"use_optimized":    useOptimized,
+		"available_modes":  []string{"sparse", "full", "auto"},
+		"current_mode":     "auto", // 可以从配置获取
+		"performance_metrics": metrics,
+		"optimization_enabled": true, // 系统是否支持优化
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    response,
+		"message": "Git优化配置获取成功",
+	})
+}
+
+// UpdateGitOptimizationConfig 更新Git优化配置
+//
+// HTTP方法: PUT
+// 路径: /api/v1/config/git-optimization
+//
+// 请求体:
+//   - use_optimized: 是否使用优化服务
+//
+// 响应:
+//   - 200: 配置更新成功
+//   - 400: 请求参数错误
+//   - 500: 服务器内部错误
+func (h *ConfigHandler) UpdateGitOptimizationConfig(c *gin.Context) {
+	var req struct {
+		UseOptimized bool `json:"use_optimized" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Logger.Error("解析Git优化配置请求参数失败", zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "请求参数格式错误",
+		})
+		return
+	}
+
+	// 更新配置
+	h.gitServiceFactory.SetUseOptimized(req.UseOptimized)
+
+	logger.Logger.Info("Git优化配置已更新",
+		zap.Bool("use_optimized", req.UseOptimized))
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"use_optimized": req.UseOptimized,
+		},
+		"message": "Git优化配置更新成功",
+	})
+}
+
+// GetGitPerformanceMetrics 获取Git性能指标
+//
+// HTTP方法: GET
+// 路径: /api/v1/config/git-performance
+//
+// 响应:
+//   - 200: 返回性能指标数据
+//   - 500: 服务器内部错误
+//
+// 响应数据包含:
+//   - sparse_operations: 稀疏检出操作次数
+//   - full_operations: 完整克隆操作次数
+//   - fallback_count: 降级次数
+//   - cache_hits: 缓存命中次数
+//   - cache_misses: 缓存未命中次数
+//   - average_sparse_time: 平均稀疏检出时间
+//   - average_full_time: 平均完整克隆时间
+func (h *ConfigHandler) GetGitPerformanceMetrics(c *gin.Context) {
+	// 获取优化服务
+	optimizedService, err := h.gitServiceFactory.GetOptimizedGitService()
+	if err != nil {
+		logger.Logger.Error("获取优化Git服务失败", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "优化服务未可用",
+		})
+		return
+	}
+
+	// 获取性能指标
+	metrics := optimizedService.GetPerformanceMetrics()
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    metrics,
+		"message": "性能指标获取成功",
+	})
+}
+
+// TestGitNetworkQuality 测试Git网络质量
+//
+// HTTP方法: GET
+// 路径: /api/v1/config/git-network-test
+//
+// 响应:
+//   - 200: 返回网络质量测试结果
+//   - 500: 服务器内部错误
+//
+// 响应数据包含:
+//   - quality: 网络质量等级
+//   - latency: 连接延迟
+//   - recommendation: 推荐的操作策略
+func (h *ConfigHandler) TestGitNetworkQuality(c *gin.Context) {
+	// 获取优化服务
+	optimizedService, err := h.gitServiceFactory.GetOptimizedGitService()
+	if err != nil {
+		logger.Logger.Error("获取优化Git服务失败", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "优化服务未可用",
+		})
+		return
+	}
+
+	// 检测网络质量
+	quality, err := optimizedService.DetectNetworkQuality()
+	if err != nil {
+		logger.Logger.Error("网络质量检测失败", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "网络质量检测失败",
+		})
+		return
+	}
+
+	// 根据网络质量推荐策略
+	var recommendation string
+	switch quality {
+	case services.NetworkQualityGood:
+		recommendation = "网络质量优秀，建议使用稀疏检出模式以获得最佳性能"
+	case services.NetworkQualityMedium:
+		recommendation = "网络质量一般，建议使用稀疏检出模式，必要时会自动降级"
+	case services.NetworkQualityPoor:
+		recommendation = "网络质量较差，建议使用完整克隆模式以确保稳定性"
+	default:
+		recommendation = "网络质量未知，建议使用自动模式让系统智能选择"
+	}
+
+	response := gin.H{
+		"quality":       h.getQualityString(quality),
+		"recommendation": recommendation,
+		"test_time":     time.Now().Format("2006-01-02 15:04:05"),
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    response,
+		"message": "网络质量检测完成",
+	})
+}
+
+// getQualityString 获取网络质量字符串表示
+func (h *ConfigHandler) getQualityString(quality services.NetworkQuality) string {
+	switch quality {
+	case services.NetworkQualityGood:
+		return "good"
+	case services.NetworkQualityMedium:
+		return "medium"
+	case services.NetworkQualityPoor:
+		return "poor"
+	default:
+		return "unknown"
+	}
 }

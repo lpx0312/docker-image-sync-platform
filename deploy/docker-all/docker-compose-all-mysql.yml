@@ -10,8 +10,8 @@ services:
     image: docker-image-sync-platform:all-latest
     container_name: docker-sync-all
     ports:
-      - "80:80"      # Nginx 前端服务
-      - "8080:8080"  # 后端 API 服务 (可选，用于直接访问)
+      - "8001:80"     # Nginx 前端服务
+      - "8081:8080"   # 后端 API 服务 (可选，用于直接访问)
     environment:
       # 基础配置
       - TZ=Asia/Shanghai

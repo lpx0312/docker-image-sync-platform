@@ -817,19 +817,48 @@ func (h *SyncHandler) updateImagesFile(records []models.ImageSyncRecord) (string
 	}
 
 	// ====================================================================
-	// 提交到Git仓库
+	// 提交到Git仓库（优化版本）
 	// ====================================================================
 
-	// 获取当前配置的Git服务
+	// 优先尝试使用优化后的Git服务
+	var commitSHA string
+	var err error
+
+	// 检查是否启用优化服务
+	if h.gitServiceFactory.IsUsingOptimized() {
+		// 获取优化后的Git服务
+		optimizedService, err := h.gitServiceFactory.GetOptimizedGitService()
+		if err != nil {
+			logger.Logger.Warn("获取优化Git服务失败，回退到原服务", zap.Error(err))
+		} else {
+			// 使用优化服务更新文件
+			commitSHA, err = optimizedService.UpdateImagesFileOptimized(imageLines)
+			if err == nil {
+				logger.Logger.Info("使用优化Git服务成功更新文件",
+					zap.String("commit_sha", commitSHA))
+				return commitSHA, nil
+			}
+			logger.Logger.Warn("优化Git服务更新失败，回退到原服务", zap.Error(err))
+		}
+	}
+
+	// 降级到原有Git服务
 	gitService, err := h.gitServiceFactory.GetGitService()
 	if err != nil {
 		logger.Logger.Error("获取Git服务失败", zap.Error(err))
 		return "", fmt.Errorf("获取Git服务失败: %v", err)
 	}
 
-	// 调用Git服务更新images.txt文件并推送到远程仓库
+	// 调用原有Git服务更新images.txt文件并推送到远程仓库
 	// 这将触发GitHub Actions工作流开始执行
-	return gitService.UpdateImagesFile(imageLines)
+	commitSHA, err = gitService.UpdateImagesFile(imageLines)
+	if err != nil {
+		return "", fmt.Errorf("原Git服务更新失败: %v", err)
+	}
+
+	logger.Logger.Info("使用原有Git服务成功更新文件",
+		zap.String("commit_sha", commitSHA))
+	return commitSHA, nil
 }
 
 // monitorGitHubActions 异步监控GitHub Actions工作流执行状态
