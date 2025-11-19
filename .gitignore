@@ -68,7 +68,7 @@ coverage.out
 *.temp
 # 忽略所有以 temp 开头的目录及其内容
 temp*/
-
+null
 # Database files
 *.db
 *.sqlite

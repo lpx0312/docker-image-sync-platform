@@ -20,6 +20,7 @@ package services
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -430,6 +431,99 @@ func (g *GitHubAPIService) TestConnection() error {
 	}
 
 	logger.Logger.Info("GitHub API连接测试成功")
+	return nil
+}
+
+// TestSimpleConnection 简单的GitHub API连通性测试（仅验证凭据）
+func (g *GitHubAPIService) TestSimpleConnection() error {
+	logger.Logger.Info("开始简单的GitHub API连通性测试")
+
+	// 构造用户信息API URL - 这个API非常轻量，只验证token有效性
+	apiURL := fmt.Sprintf("%s/user", g.apiURL)
+
+	// 创建HTTP请求
+	req, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		return fmt.Errorf("创建HTTP请求失败: %w", err)
+	}
+
+	// 设置请求头
+	req.Header.Set("Authorization", "token "+g.token)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	// 执行请求
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("执行API请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("GitHub API凭据验证失败，状态码: %d", resp.StatusCode)
+	}
+
+	logger.Logger.Info("GitHub API凭据验证成功")
+	return nil
+}
+
+// GitAPIService 通用Git API服务（用于连通性测试）
+type GitAPIService struct{}
+
+// NewGitAPIService 创建通用Git API服务实例
+func NewGitAPIService() *GitAPIService {
+	return &GitAPIService{}
+}
+
+// ParseGitHubRepoURL 解析GitHub仓库URL提取用户名
+func (s *GitAPIService) ParseGitHubRepoURL(repoURL string) (string, error) {
+	// 移除.git后缀和协议前缀
+	repoURL = strings.TrimSuffix(repoURL, ".git")
+	repoURL = strings.Replace(repoURL, "https://github.com/", "", 1)
+	repoURL = strings.Replace(repoURL, "http://github.com/", "", 1)
+
+	parts := strings.Split(repoURL, "/")
+	if len(parts) != 2 {
+		return "", fmt.Errorf("无效的GitHub仓库URL: %s", repoURL)
+	}
+
+	return parts[0], nil
+}
+
+// TestGitHubConnection 测试GitHub连接（仅验证凭据，不操作仓库）
+func (s *GitAPIService) TestGitHubConnection(ctx context.Context, username, token string) error {
+	logger.Logger.Info("开始GitHub API连通性测试", zap.String("username", username))
+
+	// 创建HTTP客户端，支持上下文取消
+	client := &http.Client{
+		Timeout: 15 * time.Second,
+	}
+
+	// 构造用户信息API URL - 这个API非常轻量，只验证token有效性
+	apiURL := fmt.Sprintf("https://api.github.com/user")
+
+	// 创建HTTP请求
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	if err != nil {
+		return fmt.Errorf("创建HTTP请求失败: %w", err)
+	}
+
+	// 设置请求头
+	req.Header.Set("Authorization", "token "+token)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("User-Agent", "Docker-Image-Sync-Platform/1.0")
+
+	// 执行请求
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("执行API请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("GitHub API凭据验证失败，状态码: %d", resp.StatusCode)
+	}
+
+	logger.Logger.Info("GitHub API凭据验证成功", zap.String("username", username))
 	return nil
 }
 
