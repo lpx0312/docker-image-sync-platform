@@ -66,6 +66,8 @@ coverage.out
 # Temporary files
 *.tmp
 *.temp
+# 忽略所有以 temp 开头的目录及其内容
+temp*/
 
 # Database files
 *.db

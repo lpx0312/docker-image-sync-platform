@@ -257,6 +257,17 @@ go run main.go
 #### 前后端重启
 - **前端重启**: 固定使用 3000端口,重启前需要先终止占用3000端口的进程,然后在重启前端服务
 - **后端重启**: 固定使用 8080端口,重启前需要先终止占用8080端口的进程,然后在重启后端服务
+停止方法
+```
+  # 查找占用端口的进程PID
+  netstat -ano | findstr ":端口号"
+
+  # 直接使用PID停止进程
+  powershell -Command "Stop-Process -Id [PID] -Force"
+
+  # 或者查找并停止特定端口的所有进程
+  powershell -Command "Get-Process | Where-Object {$_.ProcessName -eq 'node' -or $_.ProcessName -eq 'go'} | Stop-Process -Force"
+```
 
 #### 代码更新
 - **前端修改**: 重启前后端
@@ -271,6 +282,10 @@ go run main.go
 - **表单验证**: 配置表单的完整性和功能测试
 - **API 接口测试**: 验证前后端数据交互
 - **界面渲染测试**: 确认修改生效
+
+使用Chrome DevTools MCP生成的所有文件，放在当前目录的temp_chrome_devtools目录下,没有这个目录，需要先创建这个目录。
+
+
 
 #### 测试功能定位
 如需测试特定功能或界面，且你不清楚在哪里，可询问我
@@ -328,3 +343,6 @@ go run main.go
 - CORS protection
 - Request logging and monitoring
 - Input validation and sanitization
+
+
+## 使用中文回答和询问

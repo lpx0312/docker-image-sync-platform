@@ -376,7 +376,16 @@ export const systemAPI = {
    * @param {string} config.local_path - 本地仓库路径（API模式下不再需要，但保留向后兼容性）
    * @returns {Promise} 返回Git操作测试结果
    */
-  testGitOperations: (config) => api.post('/config/git-test-operations', config),
+  testGitOperations: (config) => {
+    console.log('API调用 testGitOperations, 配置:', config)
+    return api.post('/config/git-test-operations', config).then(response => {
+      console.log('API响应 testGitOperations:', response.data)
+      return response
+    }).catch(error => {
+      console.error('API调用 testGitOperations 失败:', error)
+      throw error
+    })
+  },
 
   // ====================================================================
   // 阿里云配置管理接口

@@ -162,13 +162,22 @@ const emit = defineEmits(['update:visible', 'close', 'view-commit'])
 const overallTitle = computed(() => {
   if (!props.testResult) return '测试结果'
 
-  if (props.testResult.pull_success &&
-      props.testResult.commit_success &&
-      props.testResult.test_images_txt) {
+  console.log('计算overallTitle, testResult:', props.testResult)
+  const pullSuccess = props.testResult.pull_success
+  const commitSuccess = props.testResult.commit_success
+  const testImagesTxt = props.testResult.test_images_txt
+  const errorMessage = props.testResult.error_message
+
+  console.log('各步骤状态:', { pullSuccess, commitSuccess, testImagesTxt, errorMessage })
+
+  if (pullSuccess && commitSuccess && testImagesTxt) {
+    console.log('返回: 测试全部通过')
     return '测试全部通过'
-  } else if (props.testResult.error_message) {
+  } else if (errorMessage) {
+    console.log('返回: 测试部分失败')
     return '测试部分失败'
   } else {
+    console.log('返回: 测试完成')
     return '测试完成'
   }
 })
@@ -229,6 +238,11 @@ const viewCommit = () => {
 watch(() => props.visible, (newVal) => {
   if (newVal) {
     console.log('Git测试结果弹窗打开', props.testResult)
+    console.log('test_images_txt值:', props.testResult?.test_images_txt)
+    console.log('pull_success值:', props.testResult?.pull_success)
+    console.log('commit_success值:', props.testResult?.commit_success)
+    console.log('push_success值:', props.testResult?.push_success)
+    console.log('error_message值:', props.testResult?.error_message)
   }
 })
 </script>
