@@ -247,6 +247,12 @@ func initDefaultConfigs() error {
 	aliyunUsername := config.AppConfig.Aliyun.Username
 	aliyunPassword := config.AppConfig.Aliyun.Password
 
+	// 从配置文件中读取Git仓库类型
+	gitRepositoryType := config.AppConfig.Git.RepositoryType
+	if gitRepositoryType == "" {
+		gitRepositoryType = "gitee" // 默认使用Gitee
+	}
+
 	// 从配置文件中读取Git配置
 	giteeRepoURL := config.AppConfig.Git.Gitee.RepoURL
 	giteeUsername := config.AppConfig.Git.Gitee.Username
@@ -329,7 +335,7 @@ func initDefaultConfigs() error {
 		// Git仓库配置
 		{
 			ConfigKey:   "git_repository_type",
-			ConfigValue: "gitee",
+			ConfigValue: gitRepositoryType,
 			Description: "Git仓库类型 (gitee/github)",
 		},
 

@@ -283,7 +283,7 @@ go run main.go
 - **API 接口测试**: 验证前后端数据交互
 - **界面渲染测试**: 确认修改生效
 
-使用Chrome DevTools MCP生成的所有文件，放在当前目录的temp_chrome_devtools目录下,没有这个目录，需要先创建这个目录。
+使用Chrome DevTools MCP生成的所有文件，放在当前目录的ChromeDevTools-Files目录下,没有这个目录，需要先创建这个目录。
 
 
 

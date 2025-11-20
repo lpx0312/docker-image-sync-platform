@@ -69,6 +69,7 @@ coverage.out
 # 忽略所有以 temp 开头的目录及其内容
 temp*/
 null
+ChromeDevTools-Files
 # Database files
 *.db
 *.sqlite

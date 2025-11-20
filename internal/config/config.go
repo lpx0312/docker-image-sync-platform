@@ -90,8 +90,9 @@ type DatabaseConfig struct {
 
 // GitConfig Git配置
 type GitConfig struct {
-	Gitee  GiteeConfig  `mapstructure:"gitee"`
-	GitHub GitHubConfig `mapstructure:"github"`
+	RepositoryType string     `mapstructure:"repository_type"`
+	Gitee          GiteeConfig `mapstructure:"gitee"`
+	GitHub         GitHubConfig `mapstructure:"github"`
 }
 
 // GiteeConfig Gitee配置
