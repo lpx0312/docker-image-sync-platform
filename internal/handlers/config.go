@@ -219,6 +219,9 @@ func (h *ConfigHandler) UpdateGitRepositoryConfig(c *gin.Context) {
 		return
 	}
 
+	// 清理Git文件API服务缓存，确保下次调用时使用新配置创建服务实例
+	h.gitServiceFactory.ClearGitFileServiceCache()
+
 	// ====================================================================
 	// 返回成功响应
 	// ====================================================================
@@ -537,6 +540,9 @@ func (h *ConfigHandler) UpdateGiteeConfig(c *gin.Context) {
 		return
 	}
 
+	// 清理Git文件API服务缓存，确保下次调用时使用新配置创建服务实例
+	h.gitServiceFactory.ClearGitFileServiceCache()
+
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "success",
 		"message": "Gitee configuration updated successfully",
@@ -587,6 +593,9 @@ func (h *ConfigHandler) UpdateGitHubConfig(c *gin.Context) {
 		})
 		return
 	}
+
+	// 清理Git文件API服务缓存，确保下次调用时使用新配置创建服务实例
+	h.gitServiceFactory.ClearGitFileServiceCache()
 
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "success",

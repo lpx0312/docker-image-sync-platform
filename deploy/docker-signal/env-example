@@ -22,7 +22,8 @@ MYSQL_PASSWORD=Ab123456
 # ----------------------------------------------------------------------------
 # Git仓库配置 (Gitee) - 用于存储镜像列表
 # ----------------------------------------------------------------------------
-
+# Git仓库类型 (必填): gitee 或 github
+GIT_REPOSITORY_TYPE=github
 # Gitee仓库URL (必填)
 GITEE_REPO_URL=https://gitee.com/lpx03/docker_image_pusher.git
 
@@ -41,12 +42,12 @@ GITEE_BRANCH=main
 # Git仓库类型 (必填): gitee 或 github
 GIT_REPOSITORY_TYPE=github
 # GitHub仓库URL (可选)
-GITHUB_REPO_URL=https://github.com/lpx0312/docker_image_pusher.git
+GITHUB_REPO_URL=https://github.com/lpx0312/docker-sync-platform.git
 # GitHub认证信息 (使用Personal Access Token)
 GITHUB_USERNAME=lpx0312
 GITHUB_EMAIL=lpx_0312@163.com
 GITHUB_TOKEN=REDACTED_GITHUB_TOKEN
-GITHUB_BRANCH=main
+GITHUB_BRANCH=docker-sync
 GITHUB_LOCAL_PATH=/app/data/github-repo
 
 # ----------------------------------------------------------------------------

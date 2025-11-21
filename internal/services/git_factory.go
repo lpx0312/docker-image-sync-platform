@@ -276,3 +276,17 @@ func (f *GitServiceFactory) TestGitFileService() error {
 
 	return gitFileService.TestConnection()
 }
+
+// ClearGitFileServiceCache 清理Git文件API服务缓存
+// 当配置更新时调用此方法，确保下次调用时重新创建服务实例
+func (f *GitServiceFactory) ClearGitFileServiceCache() {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+
+	if f.gitFileService != nil {
+		logger.Logger.Info("清理Git文件API服务缓存",
+			zap.String("previous_service", fmt.Sprintf("%T", f.gitFileService)))
+		f.gitFileService = nil
+		logger.Logger.Info("Git文件API服务缓存已清理")
+	}
+}
