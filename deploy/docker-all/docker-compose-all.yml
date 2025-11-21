@@ -7,7 +7,7 @@ services:
       dockerfile: deploy/docker-all/Dockerfile-all
       args:
         - BUILDKIT_INLINE_CACHE=1
-    image: docker-image-sync-platform-all:latest
+    image: docker-image-sync-platform:all-latest
     container_name: docker-sync-all
     ports:
       - "80:80"      # Nginx 前端服务
@@ -59,7 +59,6 @@ services:
     volumes:
       # 持久化日志
       - ./temp_logs:/app/logs
-      - ./temp_data:/app/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]

@@ -81,9 +81,9 @@ services:
       - ALIYUN_USERNAME=${ALIYUN_USERNAME:-lipanx}
       - ALIYUN_PASSWORD=${ALIYUN_PASSWORD:-Lipanxiang1102}
     volumes:
-      - ./config.yaml:/app/config.yaml:ro
+    #  - ./config.yaml:/app/config.yaml:ro
       - ./temp_logs:/app/logs
-      - ./temp_data:/app/data
+    #  - ./temp_data:/app/data
     networks:
       - docker-sync-network
     healthcheck:
