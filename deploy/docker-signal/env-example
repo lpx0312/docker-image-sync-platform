@@ -34,12 +34,12 @@ GITEE_PASSWORD="Abc2020##"
 GITEE_TOKEN=63fde4aa0198d257ea4d8f25af2077a9
 GITEE_EMAIL=lpx_0312@163.com
 GITEE_BRANCH=main
-GITEE_LOCAL_PATH=/app/data/gitee-repo
 
 # ----------------------------------------------------------------------------
 # Git仓库配置 (GitHub) - 备用或主要Git仓库
 # ----------------------------------------------------------------------------
-
+# Git仓库类型 (必填): gitee 或 github
+GIT_REPOSITORY_TYPE=github
 # GitHub仓库URL (可选)
 GITHUB_REPO_URL=https://github.com/lpx0312/docker_image_pusher.git
 # GitHub认证信息 (使用Personal Access Token)

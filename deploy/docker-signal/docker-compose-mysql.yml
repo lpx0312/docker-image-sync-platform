@@ -26,10 +26,10 @@ services:
     container_name: docker-sync-mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-Ab123456}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-docker_sync}
       MYSQL_USER: ${MYSQL_USER:-docker_sync}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-Ab123456}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-123456}
       MYSQL_CHARSET: ${MYSQL_CHARSET:-utf8mb4}
       MYSQL_COLLATION: ${MYSQL_COLLATION:-utf8mb4_bin}
     ports:
@@ -100,6 +100,8 @@ services:
       - DB_CHARSET=${DB_CHARSET:-utf8mb4}
       - DB_PARSE_TIME=${DB_PARSE_TIME:-true}
       - DB_LOC=${DB_LOC:-Local}
+      # Git仓库配置
+      - GIT_REPOSITORY_TYPE=${GIT_REPOSITORY_TYPE:-github}      
       # Git配置 (Gitee)
       - GITEE_REPO_URL=${GITEE_REPO_URL:-https://gitee.com/lpx03/docker_image_pusher.git}
       - GITEE_USERNAME=${GITEE_USERNAME:-13297049661}

@@ -60,6 +60,8 @@ services:
       - DB_CHARSET=${DB_CHARSET:-utf8mb4}
       - DB_PARSE_TIME=${DB_PARSE_TIME:-true}
       - DB_LOC=${DB_LOC:-Local}
+      # Git仓库配置
+      - GIT_REPOSITORY_TYPE=${GIT_REPOSITORY_TYPE:-github}      
       # Git配置 (Gitee)
       - GITEE_REPO_URL=${GITEE_REPO_URL:-https://gitee.com/lpx03/docker_image_pusher.git}
       - GITEE_USERNAME=${GITEE_USERNAME:-13297049661}
