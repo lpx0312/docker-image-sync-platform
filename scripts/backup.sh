@@ -61,10 +61,10 @@ DATE=$(date +%Y%m%d_%H%M%S)
 BACKUP_NAME="docker_sync_backup_$DATE"
 
 # MySQL数据库连接配置
-MYSQL_CONTAINER="docker-sync-mysql"    # MySQL容器名称
-MYSQL_USER="root"                      # 数据库用户名
-MYSQL_PASSWORD="root123456"            # 数据库密码
-MYSQL_DATABASE="docker_sync"           # 数据库名称
+MYSQL_CONTAINER="docker-sync-mysql-dev"    # MySQL容器名称
+MYSQL_USER="root"                           # 数据库用户名
+MYSQL_PASSWORD="123456"                      # 数据库密码 (与config.yaml保持一致)
+MYSQL_DATABASE="docker_sync"                 # 数据库名称
 
 # 备份保留策略 (保留最近N天的备份文件)
 RETENTION_DAYS=7
@@ -120,19 +120,29 @@ backup_database() {
 # 输出: ${BACKUP_NAME}_configs.tar.gz
 backup_configs() {
     log "开始备份配置文件..."
-    
-    # 使用tar命令打包压缩配置文件
-    # -c: 创建新的归档文件
-    # -z: 使用gzip压缩
-    # -f: 指定归档文件名
-    # 2>/dev/null || true: 忽略文件不存在的错误
-    tar -czf "$BACKUP_DIR/${BACKUP_NAME}_configs.tar.gz" \
-        config.yaml \           # 应用主配置文件
-        .env 2>/dev/null || true \  # 环境变量配置文件 (可能不存在)
-        docker-compose.yml \    # Docker编排配置
-        nginx.conf              # Nginx配置文件
-    
-    log "配置文件备份完成: ${BACKUP_NAME}_configs.tar.gz"
+
+    # 构建tar命令的文件列表
+    local files_to_backup=""
+    local config_files=("config.yaml" ".env" "docker-compose.yml" "nginx.conf")
+    local existing_files=()
+
+    # 检查哪些配置文件存在
+    for file in "${config_files[@]}"; do
+        if [ -f "$file" ]; then
+            existing_files+=("$file")
+        fi
+    done
+
+    # 如果没有找到任何配置文件，记录并返回
+    if [ ${#existing_files[@]} -eq 0 ]; then
+        log "没有找到配置文件需要备份"
+        return 0
+    fi
+
+    # 使用tar命令打包压缩存在的配置文件
+    tar -czf "$BACKUP_DIR/${BACKUP_NAME}_configs.tar.gz" "${existing_files[@]}"
+
+    log "配置文件备份完成: ${BACKUP_NAME}_configs.tar.gz (包含 ${#existing_files[@]} 个文件)"
 }
 
 # ============================================================================
@@ -159,19 +169,19 @@ backup_logs() {
 # Git仓库备份功能
 # ============================================================================
 
-# 备份Git仓库数据
-# 功能: 备份git_repo目录，包含克隆的远程仓库数据
-# 输出: ${BACKUP_NAME}_git_repo.tar.gz
-backup_git_repo() {
-    log "开始备份Git仓库..."
-    
-    # 检查git_repo目录是否存在且不为空
-    if [ -d "git_repo" ] && [ "$(ls -A git_repo)" ]; then
-        # 打包压缩整个git_repo目录
-        tar -czf "$BACKUP_DIR/${BACKUP_NAME}_git_repo.tar.gz" git_repo/
-        log "Git仓库备份完成: ${BACKUP_NAME}_git_repo.tar.gz"
+# 备份Git临时数据
+# 功能: 备份temp目录，包含Git操作临时数据
+# 输出: ${BACKUP_NAME}_temp.tar.gz
+backup_temp_data() {
+    log "开始备份临时数据..."
+
+    # 检查temp目录是否存在且不为空
+    if [ -d "temp" ] && [ "$(ls -A temp 2>/dev/null)" ]; then
+        # 打包压缩整个temp目录
+        tar -czf "$BACKUP_DIR/${BACKUP_NAME}_temp.tar.gz" temp/
+        log "临时数据备份完成: ${BACKUP_NAME}_temp.tar.gz"
     else
-        log "没有Git仓库需要备份"
+        log "没有临时数据需要备份"
     fi
 }
 
@@ -258,7 +268,7 @@ main() {
     backup_database      # 备份MySQL数据库
     backup_configs       # 备份配置文件
     backup_logs         # 备份日志文件
-    backup_git_repo     # 备份Git仓库
+    backup_temp_data    # 备份临时数据
     create_full_backup  # 创建完整备份包
     
     # 验证备份是否成功
@@ -282,7 +292,7 @@ show_help() {
     echo "  -d, --database 仅备份数据库"
     echo "  -c, --config   仅备份配置文件"
     echo "  -l, --logs     仅备份日志文件"
-    echo "  -g, --git      仅备份Git仓库"
+    echo "  -g, --git      仅备份临时数据"
     echo ""
     echo "示例:"
     echo "  $0              # 完整备份"
@@ -306,7 +316,7 @@ case "${1:-}" in
         backup_logs
         ;;
     -g|--git)
-        backup_git_repo
+        backup_temp_data
         ;;
     "")
         main

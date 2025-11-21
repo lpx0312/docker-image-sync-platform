@@ -63,7 +63,9 @@ CHECK_INTERVAL=60  # 检查间隔（秒）
 ALERT_THRESHOLD=5  # 连续失败次数阈值
 
 # 创建日志目录
-mkdir -p logs
+if [ ! -d logs ]; then
+    mkdir -p logs
+fi
 
 # 计数器
 failure_count=0
@@ -88,7 +90,12 @@ send_alert() {
 # 检查服务健康状态
 check_health() {
     if response=$(curl -s --connect-timeout 10 "$API_URL/health" 2>/dev/null); then
-        if echo "$response" | jq -e '.status' | grep -q "ok"; then
+        # 检查响应是否包含成功状态（根据实际API响应格式调整）
+        if echo "$response" | jq -e '.status' 2>/dev/null | grep -q "ok\|healthy"; then
+            return 0
+        elif echo "$response" | jq -e '.message' 2>/dev/null | grep -q "ok\|success"; then
+            return 0
+        elif [[ "$response" == *"ok"* ]] || [[ "$response" == *"success"* ]]; then
             return 0
         fi
     fi
@@ -98,26 +105,44 @@ check_health() {
 # 获取系统状态
 get_system_stats() {
     local stats=""
-    
+
     # 获取镜像统计
     if response=$(curl -s --connect-timeout 10 "$API_URL/images/stats" 2>/dev/null); then
-        total=$(echo "$response" | jq -r '.total // 0')
-        success=$(echo "$response" | jq -r '.success // 0')
-        failed=$(echo "$response" | jq -r '.failed // 0')
-        syncing=$(echo "$response" | jq -r '.syncing // 0')
-        
+        if command -v jq >/dev/null 2>&1; then
+            # 有jq工具时使用jq解析
+            total=$(echo "$response" | jq -r '.total // 0' 2>/dev/null)
+            success=$(echo "$response" | jq -r '.success // 0' 2>/dev/null)
+            failed=$(echo "$response" | jq -r '.failed // 0' 2>/dev/null)
+            syncing=$(echo "$response" | jq -r '.syncing // 0' 2>/dev/null)
+        else
+            # 没有jq工具时使用字符串解析
+            total=$(echo "$response" | grep -o '"total":[0-9]*' | cut -d':' -f2)
+            success=$(echo "$response" | grep -o '"success":[0-9]*' | cut -d':' -f2)
+            failed=$(echo "$response" | grep -o '"failed":[0-9]*' | cut -d':' -f2)
+            syncing=$(echo "$response" | grep -o '"syncing":[0-9]*' | cut -d':' -f2)
+
+            # 设置默认值
+            : "${total:=0}"
+            : "${success:=0}"
+            : "${failed:=0}"
+            : "${syncing:=0}"
+        fi
+
         stats="镜像统计: 总计=$total, 成功=$success, 失败=$failed, 同步中=$syncing"
+    else
+        stats="镜像统计: API连接失败"
     fi
-    
+
     # 获取Docker容器状态
     if command -v docker >/dev/null 2>&1; then
-        if docker-compose ps 2>/dev/null | grep -q "Up"; then
-            stats="$stats | Docker: 运行中"
+        # 检查MySQL容器状态
+        if docker ps | grep -q "mysql-dev"; then
+            stats="$stats | MySQL容器: 运行中"
         else
-            stats="$stats | Docker: 停止"
+            stats="$stats | MySQL容器: 停止"
         fi
     fi
-    
+
     echo "$stats"
 }
 
@@ -157,6 +182,19 @@ monitor() {
 
 # 信号处理
 trap 'log "监控服务停止"; exit 0' INT TERM
+
+# 检查命令行参数
+if [ "$1" = "--once" ]; then
+    log "执行单次检查"
+    if check_health; then
+        stats=$(get_system_stats)
+        log "服务正常 | $stats"
+    else
+        log "服务异常"
+        exit 1
+    fi
+    exit 0
+fi
 
 # 启动监控
 log "启动监控服务，检查间隔: ${CHECK_INTERVAL}秒"

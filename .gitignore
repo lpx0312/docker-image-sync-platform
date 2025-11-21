@@ -78,7 +78,7 @@ ChromeDevTools-Files
 # Temporary directories
 temp/
 tmp/
-
+backups/
 # Database
 *.db
 *.sqlite

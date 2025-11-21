@@ -33,7 +33,75 @@
 # 启用严格模式：任何命令失败都会导致脚本退出
 set -e
 
+
+
+
 echo "🚀 启动开发环境..."
+
+# ============================================================================
+# MySQL就绪检查函数
+# ============================================================================
+check_mysql_ready() {
+    local max_attempts=30
+    local attempt=0
+    local mysql_host="127.0.0.1"
+    local mysql_port="3306"
+
+    echo "   🔄 检查MySQL服务就绪状态..."
+
+    while [ $attempt -lt $max_attempts ]; do
+        attempt=$((attempt + 1))
+
+        # 检查端口3306是否可用（最简单通用的方法）
+        if command -v docker >/dev/null 2>&1; then
+            # 如果容器存在，检查容器状态
+            if docker ps | grep -q "docker-sync-mysql-dev"; then
+                # 容器正在运行，等待一段时间让MySQL启动
+                sleep 3
+                echo "   ✅ MySQL容器运行中"
+                return 0
+            fi
+        fi
+
+        # 检查端口是否开放（使用curl尝试连接）
+        if command -v curl >/dev/null 2>&1; then
+            # 简单的TCP连接测试
+            if timeout 3 bash -c "</dev/tcp/$mysql_host/$mysql_port" 2>/dev/null; then
+                echo "   ✅ MySQL端口可访问"
+                return 0
+            fi
+        fi
+
+        # 使用PowerShell测试连接（Windows环境）
+        if command -v powershell >/dev/null 2>&1; then
+            if powershell -Command "
+                try {
+                    \$tcpClient = New-Object System.Net.Sockets.TcpClient
+                    \$tcpClient.Connect('$mysql_host', $mysql_port)
+                    \$tcpClient.Close()
+                    exit 0
+                } catch {
+                    exit 1
+                }
+            " 2>/dev/null; then
+                echo "   ✅ MySQL端口可访问"
+                return 0
+            fi
+        fi
+
+        # 如果是Windows环境，给Docker容器更多启动时间
+        if [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]]; then
+            echo "   ⏳ 等待MySQL容器启动... (尝试 $attempt/$max_attempts)"
+            sleep 3
+        else
+            echo "   ⏳ 等待MySQL启动... (尝试 $attempt/$max_attempts)"
+            sleep 2
+        fi
+    done
+
+    echo "   ⚠️  MySQL服务检查超时，但继续执行..."
+    return 1
+}
 
 # ============================================================================
 # 第一步：环境检查
@@ -72,9 +140,9 @@ fi
 
 # 检查Docker是否安装（可选，用于数据库）
 if command -v docker &> /dev/null; then
-    echo "   ✅ Docker已安装，将使用Docker启动MySQL"
+    echo "   ✅ Docker已安装，将使用Docker启动MySQL（如需要）"
 else
-    echo "   ⚠️  Docker未安装，请确保本地已安装MySQL数据库"
+    echo "   ⚠️  Docker未安装，将使用本地MySQL数据库"
 fi
 
 # ============================================================================
@@ -99,12 +167,9 @@ echo "   ✅ 配置文件检查完成"
 echo "📁 创建必要的目录..."
 
 # 创建日志目录
-mkdir -p logs
-echo "   ✅ 日志目录: logs/"
-
-# 创建Git仓库临时目录
-mkdir -p ./temp
-echo "   ✅ Git仓库目录: ./temp"
+if [ ! -d logs ]; then
+    mkdir -p logs
+fi
 
 # ============================================================================
 # 第四步：数据库启动
@@ -114,20 +179,29 @@ echo "🗄️  启动MySQL数据库..."
 
 # 如果Docker可用，使用Docker启动MySQL
 if command -v docker &> /dev/null; then
-    # 尝试启动MySQL容器，如果已存在则跳过
-    docker run -d \
-        --name docker-sync-mysql-dev \
-        -p 3306:3306 \
-        -e MYSQL_ROOT_PASSWORD=root123456 \
-        -e MYSQL_DATABASE=docker_sync \
-        -e MYSQL_USER=docker_sync \
-        -e MYSQL_PASSWORD=sync123456 \
-        mysql:8.0 2>/dev/null || echo "   ℹ️  MySQL容器已存在或启动失败，继续执行..."
-    echo "   ⏳ 等待MySQL启动..."
-    sleep 10
-    echo "   ✅ MySQL数据库已启动"
+    # 检查MySQL容器是否存在
+    if docker ps | grep -q "docker-sync-mysql-dev"; then
+        echo "   ✅ MySQL容器已在运行"
+        # 检查MySQL服务是否就绪
+        check_mysql_ready
+    else
+        echo "   🐳 启动MySQL容器..."
+        docker run -d \
+            --name docker-sync-mysql-dev \
+            -p 3306:3306 \
+            -e MYSQL_ROOT_PASSWORD=123456 \
+            -e MYSQL_DATABASE=docker_sync \
+            -e MYSQL_USER=docker_sync \
+            -e MYSQL_PASSWORD=123456 \
+            mysql:8.0
+
+        # 检查MySQL服务是否就绪
+        check_mysql_ready
+    fi
 else
-    echo "   ⚠️  请确保本地MySQL服务已启动，数据库名为: docker_sync"
+    echo "   ⚠️  Docker未安装，请确保本地MySQL服务已启动，数据库名为: docker_sync"
+    # 检查本地MySQL是否就绪
+    check_mysql_ready
 fi
 
 # ============================================================================
@@ -135,7 +209,15 @@ fi
 # ============================================================================
 
 echo "📦 安装Go依赖..."
-go mod tidy
+go env -w GOPROXY=https://goproxy.cn,https://goproxy.io,https://mirrors.aliyun.com/goproxy/,direct
+# 清理旧缓存
+# go clean -modcache
+# 强制校验依赖
+# go mod verify
+# 下载依赖
+# go mod download
+# 强制刷新依赖
+go mod tidy -v
 echo "   ✅ Go依赖安装完成"
 
 # ============================================================================
@@ -167,15 +249,12 @@ echo "🎨 启动Vue前端开发服务器..."
 cd web
 
 # 检查并安装前端依赖
-if [ ! -d node_modules ]; then
-    echo "📦 安装前端依赖..."
-    npm install
-    echo "   ✅ 前端依赖安装完成"
-fi
+npm install --registry=--registry=https://registry.npmmirror.com/
 
 # 在后台启动前端开发服务器
 # Vite开发服务器支持热重载和快速构建
 npm run dev &
+
 FRONTEND_PID=$!
 
 echo "   ✅ 前端开发服务器已启动 (PID: $FRONTEND_PID)"
