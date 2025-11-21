@@ -122,12 +122,7 @@ if command -v docker &> /dev/null; then
         -e MYSQL_DATABASE=docker_sync \
         -e MYSQL_USER=docker_sync \
         -e MYSQL_PASSWORD=sync123456 \
-        -v $(pwd)/sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql \
-        -v $(pwd)/sql/migrate_add_architecture_default.sql:/docker-entrypoint-initdb.d/02-migrate-architecture.sql \
-        -v $(pwd)/sql/migrate_add_batch_sync_support.sql:/docker-entrypoint-initdb.d/03-migrate-batch-sync.sql \
-        -v $(pwd)/sql/migrate_add_deleted_at.sql:/docker-entrypoint-initdb.d/04-migrate-deleted-at.sql \
         mysql:8.0 2>/dev/null || echo "   ℹ️  MySQL容器已存在或启动失败，继续执行..."
-    
     echo "   ⏳ 等待MySQL启动..."
     sleep 10
     echo "   ✅ MySQL数据库已启动"

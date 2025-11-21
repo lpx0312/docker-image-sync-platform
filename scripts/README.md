@@ -7,7 +7,6 @@
 ## 文件说明
 
 - `migrate_config.go` - 配置迁移的核心逻辑
-- `run_migration.sh` - 迁移执行脚本（推荐使用）
 - `README.md` - 本说明文档
 
 ## 迁移内容
@@ -52,9 +51,6 @@
 # 1. 确保在项目根目录
 cd /path/to/docker-image-sync-platform
 
-# 2. 执行迁移脚本
-./scripts/run_migration.sh
-```
 
 ### 方法二：手动执行
 

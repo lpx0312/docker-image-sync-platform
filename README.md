@@ -363,8 +363,7 @@ make docker-stop
 ### 健康检查
 
 ```bash
-# 检查所有服务状态
-./scripts/health-check.sh
+
 
 # 检查API健康状态
 curl http://localhost:8080/api/v1/health
@@ -435,9 +434,6 @@ docker-image-sync-platform/
 │   ├── models/          # 数据模型
 │   └── services/        # 业务服务
 ├── scripts/             # 运维脚本
-│   ├── health-check.sh  # 健康检查
-│   ├── monitor.sh       # 监控脚本
-│   └── backup.sh        # 备份脚本
 ├── sql/                 # SQL脚本
 └── web/                 # 前端项目
     ├── src/
