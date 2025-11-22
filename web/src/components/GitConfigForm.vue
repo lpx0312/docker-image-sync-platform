@@ -27,22 +27,14 @@
         <div class="card-header">
           <span class="header-title">Gitee配置</span>
           <div class="header-actions">
-            <el-button 
-              type="success" 
-              size="small" 
+            <el-button
+              type="success"
+              size="small"
               @click="saveGiteeConfig"
               :loading="savingConfig.gitee"
               :disabled="!isGiteeConfigChanged"
             >
-              保存配置
-            </el-button>
-            <el-button 
-              type="primary" 
-              size="small" 
-              @click="testConnection('gitee')"
-              :loading="testingConnection.gitee"
-            >
-              测试连接
+              保存并测试配置
             </el-button>
           </div>
         </div>
@@ -133,15 +125,7 @@
               :loading="savingConfig.github"
               :disabled="!isGitHubConfigChanged"
             >
-              保存配置
-            </el-button>
-            <el-button
-              type="primary"
-              size="small"
-              @click="testConnection('github')"
-              :loading="testingConnection.github"
-            >
-              测试连接
+              保存并测试配置
             </el-button>
           </div>
         </div>
@@ -266,11 +250,6 @@ const githubConfig = ref({
   branch: ''
 })
 
-const testingConnection = ref({
-  gitee: false,
-  github: false
-})
-
 const testingGitOperations = ref({
   gitee: false,
   github: false
@@ -385,19 +364,68 @@ const markGitHubConfigChanged = () => {
 const saveGiteeConfig = async () => {
   try {
     savingConfig.value.gitee = true
+    connectionStatus.value.gitee = null
+
+    // 验证必填字段
+    if (!giteeConfig.value.repo_url || !giteeConfig.value.username || !giteeConfig.value.password) {
+      ElMessage.error('请填写完整的Gitee配置信息')
+      return
+    }
+
+    // 先测试连接
+    ElMessage.info('正在测试Gitee连接...')
+    const testData = {
+      type: 'gitee',
+      repo_url: giteeConfig.value.repo_url,
+      username: giteeConfig.value.username,
+      password: giteeConfig.value.password,
+      email: giteeConfig.value.email || ''
+    }
+
+    const testResponse = await systemAPI.testGitConnection(testData)
+
+    if (testResponse.status !== 'success') {
+      connectionStatus.value.gitee = {
+        title: '连接测试失败',
+        type: 'error',
+        message: testResponse.message || '连接测试失败，请检查配置'
+      }
+      ElMessage.error('连接测试失败，配置未保存')
+      return
+    }
+
+    // 连接测试通过，保存配置
     const response = await systemAPI.updateGiteeConfig(giteeConfig.value)
-    
+
     if (response.status === 'success') {
       // 更新原始配置
       originalGiteeConfig.value = { ...giteeConfig.value }
       isGiteeConfigChanged.value = false
       updateLastSaved()
-      ElMessage.success('Gitee配置已保存')
+
+      // 显示成功状态
+      connectionStatus.value.gitee = {
+        title: '配置保存成功',
+        type: 'success',
+        message: 'Gitee配置已保存并通过连接测试'
+      }
+
+      ElMessage.success('Gitee配置已保存并通过连接测试')
     } else {
+      connectionStatus.value.gitee = {
+        title: '保存失败',
+        type: 'error',
+        message: '连接测试通过，但保存配置失败：' + response.message
+      }
       ElMessage.error('保存Gitee配置失败：' + response.message)
     }
   } catch (error) {
     console.error('保存Gitee配置失败:', error)
+    connectionStatus.value.gitee = {
+      title: '操作失败',
+      type: 'error',
+      message: error.response?.data?.message || error.message || '保存配置失败'
+    }
     ElMessage.error('保存配置失败：' + (error.response?.data?.message || error.message || '未知错误'))
   } finally {
     savingConfig.value.gitee = false
@@ -407,104 +435,74 @@ const saveGiteeConfig = async () => {
 const saveGitHubConfig = async () => {
   try {
     savingConfig.value.github = true
+    connectionStatus.value.github = null
+
+    // 验证必填字段
+    if (!githubConfig.value.repo_url || !githubConfig.value.username || !githubConfig.value.token) {
+      ElMessage.error('请填写完整的GitHub配置信息')
+      return
+    }
+
+    // 先测试连接
+    ElMessage.info('正在测试GitHub连接...')
+    const testData = {
+      type: 'github',
+      repo_url: githubConfig.value.repo_url,
+      username: githubConfig.value.username,
+      token: githubConfig.value.token,
+      email: githubConfig.value.email || ''
+    }
+
+    const testResponse = await systemAPI.testGitConnection(testData)
+
+    if (testResponse.status !== 'success') {
+      connectionStatus.value.github = {
+        title: '连接测试失败',
+        type: 'error',
+        message: testResponse.message || '连接测试失败，请检查配置'
+      }
+      ElMessage.error('连接测试失败，配置未保存')
+      return
+    }
+
+    // 连接测试通过，保存配置
     const response = await systemAPI.updateGitHubConfig(githubConfig.value)
-    
+
     if (response.status === 'success') {
       // 更新原始配置
       originalGitHubConfig.value = { ...githubConfig.value }
       isGitHubConfigChanged.value = false
       updateLastSaved()
-      ElMessage.success('GitHub配置已保存')
+
+      // 显示成功状态
+      connectionStatus.value.github = {
+        title: '配置保存成功',
+        type: 'success',
+        message: 'GitHub配置已保存并通过连接测试'
+      }
+
+      ElMessage.success('GitHub配置已保存并通过连接测试')
     } else {
+      connectionStatus.value.github = {
+        title: '保存失败',
+        type: 'error',
+        message: '连接测试通过，但保存配置失败：' + response.message
+      }
       ElMessage.error('保存GitHub配置失败：' + response.message)
     }
   } catch (error) {
     console.error('保存GitHub配置失败:', error)
+    connectionStatus.value.github = {
+      title: '操作失败',
+      type: 'error',
+      message: error.response?.data?.message || error.message || '保存配置失败'
+    }
     ElMessage.error('保存配置失败：' + (error.response?.data?.message || error.message || '未知错误'))
   } finally {
     savingConfig.value.github = false
   }
 }
 
-const testConnection = async (type) => {
-  try {
-    testingConnection.value[type] = true
-    connectionStatus.value[type] = null
-    
-    // 获取当前表单配置
-    const config = type === 'gitee' ? giteeConfig.value : githubConfig.value
-    
-    // 验证必填字段
-    if (!config.repo_url || !config.username) {
-      connectionStatus.value[type] = {
-        title: '连接失败',
-        type: 'error',
-        message: '请填写仓库地址和用户名'
-      }
-      ElMessage.error('请填写仓库地址和用户名')
-      return
-    }
-    
-    if (type === 'gitee' && !config.password) {
-      connectionStatus.value[type] = {
-        title: '连接失败',
-        type: 'error',
-        message: '请填写Gitee密码'
-      }
-      ElMessage.error('请填写Gitee密码')
-      return
-    }
-    
-    if (type === 'github' && !config.token) {
-      connectionStatus.value[type] = {
-        title: '连接失败',
-        type: 'error',
-        message: '请填写GitHub访问令牌'
-      }
-      ElMessage.error('请填写GitHub访问令牌')
-      return
-    }
-    
-    // 构建测试请求数据
-    const testData = {
-      type: type,
-      repo_url: config.repo_url,
-      username: config.username,
-      email: config.email || ''
-    }
-    
-    if (type === 'gitee') {
-      testData.password = config.password
-    } else {
-      testData.token = config.token
-    }
-    
-    const response = await systemAPI.testGitConnection(testData)
-    
-    if (response.status === 'success') {
-      connectionStatus.value[type] = {
-        title: '连接成功',
-        type: 'success',
-        message: response.message || '连接测试通过，配置正确'
-      }
-    } else {
-      connectionStatus.value[type] = {
-        title: '连接失败',
-        type: 'error',
-        message: response.message || '连接测试失败，请检查配置'
-      }
-    }
-  } catch (error) {
-    console.error(`测试${type}连接失败:`, error)
-    connectionStatus.value[type] = {
-      title: '连接失败',
-      type: 'error',
-      message: error.response?.data?.message || error.message || '连接测试失败'
-    }
-  } finally {
-    testingConnection.value[type] = false
-  }
-}
 
 const testGitOperations = async (type) => {
   try {
