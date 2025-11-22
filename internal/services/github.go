@@ -213,6 +213,13 @@ func NewGitHubService(configService *ConfigService) *GitHubService {
 func (s *GitHubService) GetWorkflowRun(commitSHA string) (string, string, error) {
 	url := fmt.Sprintf("%s/repos/%s/%s/actions/runs", s.baseURL, s.owner, s.repo)
 
+	// 添加调试日志
+	logger.Logger.Info("开始查询GitHub Actions运行",
+		zap.String("api_url", url),
+		zap.String("commit_sha", commitSHA),
+		zap.String("owner", s.owner),
+		zap.String("repo", s.repo))
+
 	// ====================================================================
 	// 重试查询机制
 	// ====================================================================
@@ -224,6 +231,11 @@ func (s *GitHubService) GetWorkflowRun(commitSHA string) (string, string, error)
 		// ================================================================
 		// API调用
 		// ================================================================
+
+		logger.Logger.Info("执行GitHub API调用",
+			zap.String("url", url),
+			zap.String("commit_sha", commitSHA),
+			zap.Int("retry", i+1))
 
 		resp, err := s.client.R().
 			SetQueryParam("head_sha", commitSHA).
@@ -245,6 +257,11 @@ func (s *GitHubService) GetWorkflowRun(commitSHA string) (string, string, error)
 				zap.String("response", string(resp.Body())))
 			return "", "", fmt.Errorf("GitHub API响应错误: %d", resp.StatusCode())
 		}
+
+		// 添加调试日志 - 查看完整响应
+		logger.Logger.Info("GitHub API响应成功",
+			zap.Int("status_code", resp.StatusCode()),
+			zap.String("response_body", string(resp.Body())))
 
 		// ================================================================
 		// 响应解析

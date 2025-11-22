@@ -222,7 +222,11 @@ func (g *GitHubAPIService) ReadImagesFile() (string, error) {
 func (g *GitHubAPIService) UpdateImagesFile(content, commitMessage string) (string, error) {
 	logger.Logger.Info("开始使用GitHub API更新images.txt文件",
 		zap.Int("content_length", len(content)),
-		zap.String("commit_message", commitMessage))
+		zap.String("commit_message", commitMessage),
+		zap.String("owner", g.owner),
+		zap.String("repo", g.repo),
+		zap.String("branch", g.branch),
+		zap.String("api_url", g.apiURL))
 
 	// 先获取当前文件的SHA
 	currentSHA, err := g.getCurrentFileSHA()
@@ -282,7 +286,11 @@ func (g *GitHubAPIService) UpdateImagesFile(content, commitMessage string) (stri
 
 	logger.Logger.Info("成功更新images.txt文件",
 		zap.String("commit_sha", updateResp.Commit.SHA),
-		zap.String("commit_url", updateResp.Commit.URL))
+		zap.String("commit_url", updateResp.Commit.URL),
+		zap.String("owner", g.owner),
+		zap.String("repo", g.repo),
+		zap.String("branch", g.branch),
+		zap.String("api_url", g.apiURL))
 
 	return updateResp.Commit.SHA, nil
 }
@@ -750,7 +758,11 @@ func (g *GiteeAPIService) UpdateImagesFile(content, commitMessage string) (strin
 
 	logger.Logger.Info("成功更新images.txt文件",
 		zap.String("commit_sha", updateResp.Commit.SHA),
-		zap.String("commit_url", updateResp.Commit.URL))
+		zap.String("commit_url", updateResp.Commit.URL),
+		zap.String("owner", g.owner),
+		zap.String("repo", g.repo),
+		zap.String("branch", g.branch),
+		zap.String("api_url", g.apiURL))
 
 	return updateResp.Commit.SHA, nil
 }
@@ -1084,7 +1096,8 @@ func getGiteeConfig(encryptionService *EncryptionService) (*GiteeConfig, error) 
 }
 
 // parseGitHubRepoURL 解析GitHub仓库URL
-func parseGitHubRepoURL(repoURL string) (string, string, error) {
+// ParseGitHubRepoURL 解析GitHub仓库URL
+func ParseGitHubRepoURL(repoURL string) (string, string, error) {
 	// 支持格式：https://github.com/owner/repo.git
 	if !strings.Contains(repoURL, "github.com") {
 		return "", "", fmt.Errorf("无效的GitHub仓库URL: %s", repoURL)
@@ -1100,6 +1113,11 @@ func parseGitHubRepoURL(repoURL string) (string, string, error) {
 	}
 
 	return parts[0], parts[1], nil
+}
+
+// parseGitHubRepoURL 内部使用的版本，保持向后兼容
+func parseGitHubRepoURL(repoURL string) (string, string, error) {
+	return ParseGitHubRepoURL(repoURL)
 }
 
 // parseGiteeRepoURL 解析Gitee仓库URL

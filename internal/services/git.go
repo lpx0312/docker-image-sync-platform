@@ -25,6 +25,7 @@ package services
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net/url"
 	"os"
@@ -379,7 +380,7 @@ func (s *GitService) InitRepository() error {
 //   - 镜像同步任务提交新的镜像列表
 //   - 批量镜像同步的版本控制
 //   - 触发GitHub Actions工作流
-func (s *GitService) UpdateImagesFile(newImages []string) (string, error) {
+func (s *GitService) UpdateImagesFile(ctx context.Context, newImages []string) (string, error) {
 	// ====================================================================
 	// 仓库状态检查和初始化
 	// ====================================================================
@@ -407,7 +408,7 @@ func (s *GitService) UpdateImagesFile(newImages []string) (string, error) {
 		logger.Logger.Error("拉取最新代码失败，尝试重新初始化仓库", zap.Error(err))
 
 		// 如果拉取失败，可能是仓库状态异常，尝试重新初始化
-		if err := s.CleanRepository(); err != nil {
+		if err := s.CleanRepository(context.Background()); err != nil {
 			logger.Logger.Warn("清理仓库失败", zap.Error(err))
 		}
 
@@ -1078,7 +1079,7 @@ func (s *GitService) pushWithRetry(commitSHA string) error {
 //   - 调试Git操作问题
 //   - 仓库健康检查
 //   - 管理界面状态展示
-func (s *GitService) GetRepoStatus() (map[string]interface{}, error) {
+func (s *GitService) GetRepoStatus(ctx context.Context) (map[string]interface{}, error) {
 	// ====================================================================
 	// 仓库状态检查
 	// ====================================================================
@@ -1157,9 +1158,43 @@ func (s *GitService) GetRepoStatus() (map[string]interface{}, error) {
 //   - 切换到新的仓库地址
 //   - 清理磁盘空间
 //   - 系统维护和故障恢复
-func (s *GitService) CleanRepository() error {
+func (s *GitService) CleanRepository(ctx context.Context) error {
 	if s.repoPath != "" {
 		return os.RemoveAll(s.repoPath)
 	}
+	return nil
+}
+
+// PullLatest 拉取最新的远程仓库内容
+// 实现GitServiceInterface接口
+func (s *GitService) PullLatest(ctx context.Context) error {
+	return s.pullLatest()
+}
+
+// TestConnection 测试Git连接
+// 实现GitServiceInterface接口的可选方法
+func (s *GitService) TestConnection() error {
+	// 获取Git配置
+	repoURL, username, token, _, _, _, err := s.getCurrentGitConfig()
+	if err != nil {
+		return fmt.Errorf("获取Git配置失败: %v", err)
+	}
+
+	// 尝试连接远程仓库
+	_, err = git.PlainCloneContext(context.Background(), "/tmp/test-connection", false, &git.CloneOptions{
+		URL:  repoURL,
+		Auth: &http.BasicAuth{
+			Username: username,
+			Password: token,
+		},
+		Depth: 1,
+	})
+
+	if err != nil {
+		return fmt.Errorf("连接Git仓库失败: %v", err)
+	}
+
+	// 清理测试目录
+	os.RemoveAll("/tmp/test-connection")
 	return nil
 }

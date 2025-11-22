@@ -52,15 +52,13 @@ import (
 // - 集成Git服务和GitHub Actions自动化
 // - 支持动态Git仓库选择（Gitee/GitHub）
 type SyncHandler struct {
-	gitServiceFactory *services.GitServiceFactory // Git服务工厂，用于动态选择Git服务
-	githubService     *services.GitHubService     // GitHub服务，用于工作流集成
+	gitServiceFactory *services.GitServiceFactory // Git服务工厂，用于动态选择Git服务和GitHub Actions监控
 }
 
 // NewSyncHandler 创建新的同步处理器实例
 //
 // 参数:
-//   - gitServiceFactory: Git服务工厂实例，用于动态选择Git服务
-//   - githubService: GitHub服务实例，用于GitHub Actions工作流集成
+//   - gitServiceFactory: Git服务工厂实例，用于动态选择Git服务和GitHub Actions监控
 //
 // 返回:
 //   - *SyncHandler: 初始化完成的同步处理器实例
@@ -68,12 +66,10 @@ type SyncHandler struct {
 // 使用示例:
 //
 //	gitFactory := services.NewGitServiceFactory()
-//	githubSvc := services.NewGitHubService(config)
-//	syncHandler := NewSyncHandler(gitFactory, githubSvc)
-func NewSyncHandler(gitServiceFactory *services.GitServiceFactory, githubService *services.GitHubService) *SyncHandler {
+//	syncHandler := NewSyncHandler(gitFactory)
+func NewSyncHandler(gitServiceFactory *services.GitServiceFactory) *SyncHandler {
 	return &SyncHandler{
 		gitServiceFactory: gitServiceFactory,
-		githubService:     githubService,
 	}
 }
 
@@ -658,26 +654,11 @@ func (h *SyncHandler) processSyncTask(taskID string) {
 	// 记录任务开始处理的日志
 	logger.Logger.Info("开始处理同步任务", zap.String("task_id", taskID))
 
-	// ====================================================================
-	// 更新任务状态为运行中
-	// ====================================================================
-
 	// 记录任务开始时间
 	now := time.Now()
 
-	// 更新数据库中的任务状态和开始时间
-	if err := database.DB.Model(&models.SyncTask{}).
-		Where("task_id = ?", taskID).
-		Updates(map[string]interface{}{
-			"status":     models.TaskStatusRunning, // 设置为运行中状态
-			"started_at": &now,                     // 记录开始时间
-		}).Error; err != nil {
-		logger.Logger.Error("更新任务状态失败", zap.Error(err))
-		return
-	}
-
 	// ====================================================================
-	// 查询任务基本信息
+	// 查询任务基本信息（在事务外，不涉及状态更新）
 	// ====================================================================
 
 	// 获取任务的详细信息，用于后续处理
@@ -689,7 +670,7 @@ func (h *SyncHandler) processSyncTask(taskID string) {
 	}
 
 	// ====================================================================
-	// 查询待同步的镜像记录
+	// 查询待同步的镜像记录（在事务外，不涉及状态更新）
 	// ====================================================================
 
 	// 获取所有状态为"待同步"的镜像记录
@@ -702,45 +683,106 @@ func (h *SyncHandler) processSyncTask(taskID string) {
 		return
 	}
 
+	// 检查是否有镜像需要处理
+	if len(records) == 0 {
+		logger.Logger.Warn("没有找到待同步的镜像记录", zap.String("task_id", taskID))
+		h.handleSyncError(taskID, "没有找到待同步的镜像记录")
+		return
+	}
+
 	// ====================================================================
-	// 更新镜像状态为同步中
+	// 使用数据库事务处理关键状态更新
 	// ====================================================================
 
-	// 批量更新所有镜像记录的状态为"同步中"
-	// 并记录开始同步的时间
+	// 开始数据库事务
+	tx := database.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+			logger.Logger.Error("事务发生panic，已回滚", zap.String("task_id", taskID), zap.Any("panic", r))
+			h.handleSyncError(taskID, fmt.Sprintf("事务执行时发生panic: %v", r))
+		}
+	}()
+
+	// 步骤1: 更新任务状态为运行中
+	if err := tx.Model(&models.SyncTask{}).
+		Where("task_id = ?", taskID).
+		Updates(map[string]interface{}{
+			"status":     models.TaskStatusRunning, // 设置为运行中状态
+			"started_at": &now,                     // 记录开始时间
+		}).Error; err != nil {
+		tx.Rollback()
+		logger.Logger.Error("更新任务状态失败，事务已回滚", zap.String("task_id", taskID), zap.Error(err))
+		h.handleSyncError(taskID, fmt.Sprintf("更新任务状态失败: %v", err))
+		return
+	}
+
+	// 步骤2: 批量更新所有镜像记录的状态为"同步中"
+	// 使用事务确保原子性操作
+	var failedRecords []uint
 	for _, record := range records {
-		if err := database.DB.Model(&models.ImageSyncRecord{}).
+		if err := tx.Model(&models.ImageSyncRecord{}).
 			Where("id = ?", record.ID).
 			Updates(map[string]interface{}{
 				"sync_status": models.SyncStatusSyncing, // 设置为同步中状态
 				"started_at":  &now,                     // 记录开始时间
 			}).Error; err != nil {
-			logger.Logger.Error("更新镜像状态失败", zap.Error(err))
+			logger.Logger.Error("更新镜像状态失败",
+				zap.String("task_id", taskID),
+				zap.Uint("record_id", record.ID),
+				zap.String("image", record.OriginalImage),
+				zap.Error(err))
+			failedRecords = append(failedRecords, record.ID)
 		}
 	}
 
+	// 检查是否有镜像状态更新失败
+	if len(failedRecords) > 0 {
+		tx.Rollback()
+		errorMsg := fmt.Sprintf("批量更新镜像状态失败，失败的记录ID: %v", failedRecords)
+		logger.Logger.Error("批量更新镜像状态失败，事务已回滚",
+			zap.String("task_id", taskID),
+			zap.Any("failed_record_ids", failedRecords))
+		h.handleSyncError(taskID, errorMsg)
+		return
+	}
+
+	// 提交事务（此时任务和镜像状态已更新）
+	if err := tx.Commit().Error; err != nil {
+		logger.Logger.Error("提交事务失败", zap.String("task_id", taskID), zap.Error(err))
+		h.handleSyncError(taskID, fmt.Sprintf("提交事务失败: %v", err))
+		return
+	}
+
+	logger.Logger.Info("数据库事务提交成功",
+		zap.String("task_id", taskID),
+		zap.Int("image_count", len(records)))
+
 	// ====================================================================
-	// 生成并提交images.txt文件
+	// 生成并提交images.txt文件（事务提交后执行）
 	// ====================================================================
 
 	// 根据镜像记录生成images.txt文件内容并提交到Git仓库
 	// 这将触发GitHub Actions工作流开始执行镜像同步
 	commitSHA, err := h.updateImagesFile(records)
 	if err != nil {
-		h.handleSyncError(taskID, fmt.Sprintf("更新images.txt失败: %v", err))
+		// Git操作失败，但数据库事务已提交，此时需要回滚数据库状态
+		logger.Logger.Error("更新images.txt失败，需要回滚数据库状态", zap.String("task_id", taskID), zap.Error(err))
+		h.handleSyncError(taskID, fmt.Sprintf("Git操作失败: %v", err))
 		return
 	}
 
 	// ====================================================================
-	// 更新任务的Git提交信息
+	// 更新任务的Git提交信息（单独事务）
 	// ====================================================================
 
 	// 将Git提交的SHA值保存到任务记录中
-	// 用于后续的GitHub Actions监控和状态追踪
+	// 使用单独的事务，因为此时主要事务已经提交
 	if err := database.DB.Model(&models.SyncTask{}).
 		Where("task_id = ?", taskID).
 		Update("commit_sha", commitSHA).Error; err != nil {
-		logger.Logger.Error("更新commit SHA失败", zap.Error(err))
+		logger.Logger.Error("更新commit SHA失败，但不影响主要流程", zap.String("task_id", taskID), zap.Error(err))
+		// 这里不返回错误，因为主要的同步流程已经完成
 	}
 
 	// ====================================================================
@@ -752,7 +794,10 @@ func (h *SyncHandler) processSyncTask(taskID string) {
 	go h.monitorGitHubActions(taskID, commitSHA)
 
 	// 记录任务提交成功的日志
-	logger.Logger.Info("同步任务已提交到Git", zap.String("task_id", taskID), zap.String("commit_sha", commitSHA))
+	logger.Logger.Info("同步任务已提交到Git，事务已成功提交",
+		zap.String("task_id", taskID),
+		zap.String("commit_sha", commitSHA),
+		zap.Int("image_count", len(records)))
 }
 
 // updateImagesFile 生成并提交images.txt文件到Git仓库
@@ -848,37 +893,17 @@ func (h *SyncHandler) updateImagesFile(records []models.ImageSyncRecord) (string
 	}
 
 	// 检查是否启用优化服务
-	useOptimized := h.gitServiceFactory.IsUsingOptimized()
-	if useOptimized {
-		logger.Logger.Info("使用稀疏检出模式更新文件")
-		optimizedService, err := h.gitServiceFactory.GetOptimizedGitService()
-		if err != nil {
-			logger.Logger.Error("获取优化Git服务失败，回退到原服务", zap.Error(err))
-		} else {
-			commitSHA, err = optimizedService.UpdateImagesFileOptimized(imageLines)
-			if err == nil {
-				logger.Logger.Info("使用稀疏检出模式成功更新文件",
-					zap.String("commit_sha", commitSHA),
-					zap.String("mode", "sparse_checkout"))
-				return commitSHA, nil
-			}
-			logger.Logger.Error("稀疏检出模式更新失败，回退到原服务",
-				zap.Error(err),
-				zap.String("fallback_reason", "sparse_checkout_failed"))
-		}
-	}
-
-	// 最终降级到原有Git服务
-	logger.Logger.Info("使用完整克隆模式更新文件")
-	gitService, err := h.gitServiceFactory.GetGitService()
+	// 使用统一的Git服务接口
+	ctx := context.Background()
+	gitServiceInterface, err := h.gitServiceFactory.GetGitServiceInterface()
 	if err != nil {
-		logger.Logger.Error("获取Git服务失败", zap.Error(err))
-		return "", fmt.Errorf("获取Git服务失败: %v", err)
+		logger.Logger.Error("获取Git服务接口失败", zap.Error(err))
+		return "", fmt.Errorf("获取Git服务接口失败: %v", err)
 	}
 
-	// 调用原有Git服务更新images.txt文件并推送到远程仓库
+	// 调用统一的Git服务接口更新images.txt文件并推送到远程仓库
 	// 这将触发GitHub Actions工作流开始执行
-	commitSHA, err = gitService.UpdateImagesFile(imageLines)
+	commitSHA, err = gitServiceInterface.UpdateImagesFile(ctx, imageLines)
 	if err != nil {
 		return "", fmt.Errorf("原Git服务更新失败: %v", err)
 	}
@@ -965,7 +990,8 @@ func (h *SyncHandler) monitorGitHubActions(taskID, commitSHA string) {
 	// ====================================================================
 
 	// 根据提交SHA查找对应的工作流运行
-	runID, runURL, err := h.githubService.GetWorkflowRun(commitSHA)
+	githubAPIService := h.gitServiceFactory.GetGitHubAPIService()
+	runID, runURL, err := githubAPIService.GetWorkflowRun(commitSHA)
 	if err != nil {
 		logger.Logger.Error("获取GitHub Actions运行信息失败", zap.Error(err))
 		h.handleSyncError(taskID, fmt.Sprintf("获取GitHub Actions运行信息失败: %v", err))
@@ -1003,7 +1029,8 @@ func (h *SyncHandler) monitorGitHubActions(taskID, commitSHA string) {
 	// 在最大等待时间内持续检查工作流状态
 	for time.Since(startTime) < maxWaitTime {
 		// 获取当前工作流运行状态
-		status, err := h.githubService.GetWorkflowRunStatus(runID)
+		githubAPIService := h.gitServiceFactory.GetGitHubAPIService()
+		status, err := githubAPIService.GetWorkflowRunStatus(runID)
 		if err != nil {
 			logger.Logger.Error("获取GitHub Actions状态失败", zap.Error(err))
 			time.Sleep(checkInterval)
@@ -1022,7 +1049,8 @@ func (h *SyncHandler) monitorGitHubActions(taskID, commitSHA string) {
 
 		if status == "completed" {
 			// 获取工作流执行结论（成功/失败）
-			conclusion, err := h.githubService.GetWorkflowRunConclusion(runID)
+			githubAPIService := h.gitServiceFactory.GetGitHubAPIService()
+			conclusion, err := githubAPIService.GetWorkflowRunConclusion(runID)
 			if err != nil {
 				logger.Logger.Error("获取GitHub Actions结论失败", zap.Error(err))
 				h.handleSyncError(taskID, fmt.Sprintf("获取GitHub Actions结论失败: %v", err))
@@ -1180,25 +1208,43 @@ func (h *SyncHandler) handleSyncSuccess(taskID string) {
 }
 
 // handleSyncError 处理同步错误
+// 使用数据库事务确保任务状态和镜像状态更新的原子性
 func (h *SyncHandler) handleSyncError(taskID, errorMessage string) {
 	logger.Logger.Error("同步任务失败",
 		zap.String("task_id", taskID),
 		zap.String("error", errorMessage))
 
-	// 更新任务状态为失败
+	// 开始数据库事务
+	tx := database.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+			logger.Logger.Error("错误处理事务发生panic，已回滚",
+				zap.String("task_id", taskID),
+				zap.Any("panic", r))
+		}
+	}()
+
+	// 记录错误时间
 	now := time.Now()
-	if err := database.DB.Model(&models.SyncTask{}).
+
+	// 步骤1: 更新任务状态为失败
+	if err := tx.Model(&models.SyncTask{}).
 		Where("task_id = ?", taskID).
 		Updates(map[string]interface{}{
 			"status":        models.TaskStatusFailed,
 			"completed_at":  &now,
 			"error_message": errorMessage,
 		}).Error; err != nil {
-		logger.Logger.Error("更新任务失败状态失败", zap.Error(err))
+		tx.Rollback()
+		logger.Logger.Error("更新任务失败状态失败，事务已回滚",
+			zap.String("task_id", taskID),
+			zap.Error(err))
+		return
 	}
 
-	// 更新所有相关镜像记录为失败
-	if err := database.DB.Model(&models.ImageSyncRecord{}).
+	// 步骤2: 更新所有相关镜像记录为失败
+	if err := tx.Model(&models.ImageSyncRecord{}).
 		Where("task_id = ? AND sync_status IN (?)", taskID, []string{
 			models.SyncStatusPending,
 			models.SyncStatusSyncing,
@@ -1208,8 +1254,23 @@ func (h *SyncHandler) handleSyncError(taskID, errorMessage string) {
 			"completed_at":  &now,
 			"error_message": errorMessage,
 		}).Error; err != nil {
-		logger.Logger.Error("更新镜像失败状态失败", zap.Error(err))
+		tx.Rollback()
+		logger.Logger.Error("更新镜像失败状态失败，事务已回滚",
+			zap.String("task_id", taskID),
+			zap.Error(err))
+		return
 	}
+
+	// 提交事务
+	if err := tx.Commit().Error; err != nil {
+		logger.Logger.Error("提交错误处理事务失败",
+			zap.String("task_id", taskID),
+			zap.Error(err))
+		return
+	}
+
+	logger.Logger.Info("同步任务错误处理完成，事务已提交",
+		zap.String("task_id", taskID))
 }
 
 // generateACRImage 生成阿里云ACR镜像地址

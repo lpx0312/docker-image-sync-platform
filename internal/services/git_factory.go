@@ -6,6 +6,8 @@ import (
 	"docker-image-sync-platform/internal/models"
 	"fmt"
 	"sync"
+
+	"github.com/sirupsen/logrus"
 	"go.uber.org/zap"
 )
 
@@ -16,8 +18,10 @@ type GitServiceFactory struct {
 	githubService     *GitService          // GitHub服务实例（如果需要的话）
 	optimizedService  *GitOptimizedService  // 优化后的Git服务实例
 	gitFileService    GitFileService       // Git文件API服务实例
+	gitHubAPIService  *GitHubService       // GitHub API服务实例（用于Actions监控）
 	encryptionService *EncryptionService   // 加密服务，用于创建GitService时传入
 	mutex             sync.RWMutex          // 读写锁，保护服务实例
+	gitHubAPIMutex    sync.RWMutex          // GitHub API服务锁
 	configCache       string                // 配置缓存，避免频繁查询数据库
 	cacheMutex        sync.RWMutex          // 配置缓存锁
 	useOptimized      bool                 // 是否使用优化服务
@@ -50,6 +54,39 @@ func (f *GitServiceFactory) GetGitService() (*GitService, error) {
 	return f.getOriginalGitService()
 }
 
+// GetGitServiceInterface 获取统一的Git服务接口
+// 返回实现GitServiceInterface接口的服务实例
+func (f *GitServiceFactory) GetGitServiceInterface() (GitServiceInterface, error) {
+	// 如果启用优化服务，返回优化服务
+	if f.useOptimized {
+		return f.GetOptimizedGitService()
+	}
+
+	// 否则返回原有服务
+	repoType, err := f.getGitRepositoryType()
+	if err != nil {
+		return nil, fmt.Errorf("获取Git仓库配置失败: %v", err)
+	}
+
+	f.mutex.RLock()
+	defer f.mutex.RUnlock()
+
+	switch repoType {
+	case "gitee":
+		if f.giteeService == nil {
+			f.giteeService = NewGitService(f.encryptionService)
+		}
+		return f.giteeService, nil
+	case "github":
+		if f.githubService == nil {
+			f.githubService = NewGitService(f.encryptionService)
+		}
+		return f.githubService, nil
+	default:
+		return nil, fmt.Errorf("不支持的Git仓库类型: %s", repoType)
+	}
+}
+
 // getOptimizedGitService 获取优化后的Git服务
 func (f *GitServiceFactory) getOptimizedGitService() (*GitService, error) {
 	// 获取当前配置的Git仓库类型
@@ -67,11 +104,11 @@ func (f *GitServiceFactory) getOptimizedGitService() (*GitService, error) {
 	}
 
 	// 记录使用优化服务的信息
-	logger.Logger.Info("使用优化后的Git服务（稀疏检出模式）", zap.String("repo_type", repoType))
+	logger.Logger.Info("使用Git服务工厂选择合适的实现", zap.String("repo_type", repoType))
 
-	// 为了兼容现有代码的接口，我们需要返回一个适配器或者创建兼容的服务
-	// 由于 GitOptimizedService 和 GitService 的接口不同，我们暂时返回原有服务
-	// 但确保在 sync.go 中直接调用 GitOptimizedService 的方法
+	// 根据仓库类型返回相应的Git服务实例
+	// GitService和GitOptimizedService都实现了GitServiceInterface接口
+	// 工厂模式确保了接口的兼容性和可扩展性
 
 	switch repoType {
 	case "gitee":
@@ -288,5 +325,48 @@ func (f *GitServiceFactory) ClearGitFileServiceCache() {
 			zap.String("previous_service", fmt.Sprintf("%T", f.gitFileService)))
 		f.gitFileService = nil
 		logger.Logger.Info("Git文件API服务缓存已清理")
+	}
+}
+
+// GetGitHubAPIService 获取GitHub API服务实例（用于Actions监控）
+// 使用缓存机制，避免重复创建服务实例
+func (f *GitServiceFactory) GetGitHubAPIService() *GitHubService {
+	f.gitHubAPIMutex.RLock()
+	if f.gitHubAPIService != nil {
+		defer f.gitHubAPIMutex.RUnlock()
+		return f.gitHubAPIService
+	}
+	f.gitHubAPIMutex.RUnlock()
+
+	// 需要创建新的服务实例
+	f.gitHubAPIMutex.Lock()
+	defer f.gitHubAPIMutex.Unlock()
+
+	// 双重检查，防止并发创建多个实例
+	if f.gitHubAPIService == nil {
+		// 创建临时的logrus logger实例
+		tempLogger := logrus.New()
+		tempLogger.SetLevel(logrus.InfoLevel)
+
+		configService := NewConfigService(database.DB, f.encryptionService, tempLogger)
+		f.gitHubAPIService = NewGitHubService(configService)
+		logger.Logger.Info("GitHub API服务实例已创建",
+			zap.String("service_type", fmt.Sprintf("%T", f.gitHubAPIService)))
+	}
+
+	return f.gitHubAPIService
+}
+
+// ClearGitHubAPIServiceCache 清理GitHub API服务缓存
+// 当GitHub配置更新时调用此方法，确保下次调用时重新创建服务实例
+func (f *GitServiceFactory) ClearGitHubAPIServiceCache() {
+	f.gitHubAPIMutex.Lock()
+	defer f.gitHubAPIMutex.Unlock()
+
+	if f.gitHubAPIService != nil {
+		logger.Logger.Info("清理GitHub API服务缓存",
+			zap.String("previous_service", fmt.Sprintf("%T", f.gitHubAPIService)))
+		f.gitHubAPIService = nil
+		logger.Logger.Info("GitHub API服务缓存已清理")
 	}
 }

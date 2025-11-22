@@ -25,6 +25,7 @@ package services
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -317,7 +318,7 @@ func (s *GitOptimizedService) ChooseOptimalStrategy() GitMode {
 //   - 支持自动降级
 //   - 缓存机制提升性能
 //   - 完善的错误处理和重试
-func (s *GitOptimizedService) UpdateImagesFileOptimized(newImages []string) (string, error) {
+func (s *GitOptimizedService) UpdateImagesFileOptimized(ctx context.Context, newImages []string) (string, error) {
 	startTime := time.Now()
 	logger.Logger.Info("开始优化后的镜像文件更新",
 		zap.Int("image_count", len(newImages)))
@@ -1352,4 +1353,81 @@ func (s *GitOptimizedService) UpdateImagesFileForTesting(newImages []string, des
 	logger.Logger.Info("Git操作测试提交成功", zap.String("commit_sha", commitSHA), zap.String("description", description))
 
 	return commitSHA, nil
+}
+
+// ============================================================================
+// GitServiceInterface 接口实现
+// ============================================================================
+
+// UpdateImagesFile 基础方法，调用优化版本
+// 实现GitServiceInterface接口
+func (s *GitOptimizedService) UpdateImagesFile(ctx context.Context, newImages []string) (string, error) {
+	return s.UpdateImagesFileOptimized(ctx, newImages)
+}
+
+// PullLatest 拉取最新内容
+// 实现GitServiceInterface接口
+func (s *GitOptimizedService) PullLatest(ctx context.Context) error {
+	// 使用稀疏检出模式拉取
+	return s.initSparseRepository()
+}
+
+// GetRepoStatus 获取仓库状态
+// 实现GitServiceInterface接口
+func (s *GitOptimizedService) GetRepoStatus(ctx context.Context) (map[string]interface{}, error) {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+
+	status := map[string]interface{}{
+		"service_type":        "GitOptimizedService",
+		"mode":                s.getModeString(),
+		"cache_enabled":       s.config.EnableCache,
+		"cache_valid":         s.isCacheValid(),
+		"last_fetch_time":     s.cache.LastFetchTime,
+		"performance_metrics": s.GetPerformanceMetrics(),
+	}
+
+	if s.repo != nil {
+		status["repository_initialized"] = true
+		status["repository_path"] = s.repoPath
+	} else {
+		status["repository_initialized"] = false
+	}
+
+	return status, nil
+}
+
+// CleanRepository 清理仓库
+// 实现GitServiceInterface接口
+func (s *GitOptimizedService) CleanRepository(ctx context.Context) error {
+	return s.CleanRepositoryOptimized()
+}
+
+// TestConnection 测试Git连接
+// 实现GitServiceInterface接口的可选方法
+func (s *GitOptimizedService) TestConnection() error {
+	// 获取Git配置
+	repoURL, username, token, _, _, _, err := s.getCurrentGitConfig()
+	if err != nil {
+		return fmt.Errorf("获取Git配置失败: %v", err)
+	}
+
+	// 尝试连接远程仓库（稀疏检出模式）
+	testPath := "/tmp/git-optimized-test-connection"
+	defer os.RemoveAll(testPath)
+
+	_, err = git.PlainCloneContext(context.Background(), testPath, false, &git.CloneOptions{
+		URL:  repoURL,
+		Auth: &http.BasicAuth{
+			Username: username,
+			Password: token,
+		},
+		Depth: 1,
+	})
+
+	if err != nil {
+		return fmt.Errorf("连接Git仓库失败: %v", err)
+	}
+
+	return nil
 }

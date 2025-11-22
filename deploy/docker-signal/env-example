@@ -48,7 +48,6 @@ GITHUB_USERNAME=lpx0312
 GITHUB_EMAIL=lpx_0312@163.com
 GITHUB_TOKEN=REDACTED_GITHUB_TOKEN
 GITHUB_BRANCH=docker-sync
-GITHUB_LOCAL_PATH=/app/data/github-repo
 
 # ----------------------------------------------------------------------------
 # 阿里云容器镜像服务 (ACR) 配置

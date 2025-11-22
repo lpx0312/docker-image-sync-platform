@@ -597,6 +597,9 @@ func (h *ConfigHandler) UpdateGitHubConfig(c *gin.Context) {
 	// 清理Git文件API服务缓存，确保下次调用时使用新配置创建服务实例
 	h.gitServiceFactory.ClearGitFileServiceCache()
 
+	// 清理GitHub API服务缓存，确保下次调用时重新创建GitHub服务实例
+	h.gitServiceFactory.ClearGitHubAPIServiceCache()
+
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "success",
 		"message": "GitHub configuration updated successfully",
@@ -1573,19 +1576,25 @@ func (h *ConfigHandler) TestGitOperations(c *gin.Context) {
 		zap.String("username", req.Username),
 		zap.String("branch", req.Branch))
 
-	// 获取Git文件API服务（优化方案：使用API而非完整克隆）
-	gitFileService, err := h.gitServiceFactory.GetGitFileService()
+	// 解析仓库URL获取owner和repo
+	owner, repo, err := services.ParseGitHubRepoURL(req.RepoURL)
 	if err != nil {
-		logger.Logger.Error("获取Git文件API服务失败", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{
+		logger.Logger.Error("解析GitHub仓库URL失败", zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
-			"message": "获取Git文件服务失败",
+			"message": "解析GitHub仓库URL失败",
 			"error":   err.Error(),
 		})
 		return
 	}
 
-	logger.Logger.Info("使用Git API服务进行轻量化测试")
+	// 使用前端传递的参数直接创建Git文件服务实例，确保使用正确的分支
+	gitFileService := services.NewGitHubAPIService(req.Token, owner, repo, req.Branch)
+
+	logger.Logger.Info("使用Git API服务进行轻量化测试",
+		zap.String("owner", owner),
+		zap.String("repo", repo),
+		zap.String("branch", req.Branch))
 
 	// 测试结果结构
 	result := gin.H{

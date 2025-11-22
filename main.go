@@ -121,13 +121,9 @@ func main() {
 	// 负责数据库配置的CRUD操作和加密解密
 	configService := services.NewConfigService(database.DB, encryptionService, logrusLogger)
 
-	// 初始化GitHub服务
-	// 负责GitHub Actions工作流的监控和管理
-	githubService := services.NewGitHubService(configService)
-
 	// 初始化HTTP请求处理器
 	// 每个处理器负责特定的业务逻辑
-	syncHandler := handlers.NewSyncHandler(gitServiceFactory, githubService)    // 同步操作处理器
+	syncHandler := handlers.NewSyncHandler(gitServiceFactory)    // 同步操作处理器
 	imageHandler := handlers.NewImageHandler()                                  // 镜像管理处理器
 	configHandler := handlers.NewConfigHandler(gitServiceFactory, configService) // 配置管理处理器
 
@@ -282,8 +278,9 @@ func main() {
 					}
 				}
 
-				// 调用GitHub服务获取工作流运行列表
-				runs, err := githubService.ListWorkflowRuns(page, perPage)
+				// 从Git服务工厂获取GitHub API服务
+				githubAPIService := gitServiceFactory.GetGitHubAPIService()
+				runs, err := githubAPIService.ListWorkflowRuns(page, perPage)
 				if err != nil {
 					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 					return
@@ -297,8 +294,9 @@ func main() {
 			github.GET("/runs/:runId", func(c *gin.Context) {
 				runID := c.Param("runId")
 
-				// 调用GitHub服务获取工作流运行详情
-				run, err := githubService.GetWorkflowRunDetails(runID)
+				// 从Git服务工厂获取GitHub API服务
+				githubAPIService := gitServiceFactory.GetGitHubAPIService()
+				run, err := githubAPIService.GetWorkflowRunDetails(runID)
 				if err != nil {
 					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 					return
@@ -310,8 +308,9 @@ func main() {
 			// GET /api/v1/github/rate-limit - 获取GitHub API速率限制状态
 			// 查询当前GitHub API的调用次数限制和剩余次数
 			github.GET("/rate-limit", func(c *gin.Context) {
-				// 调用GitHub服务检查API速率限制
-				rateLimit, err := githubService.CheckRateLimit()
+				// 从Git服务工厂获取GitHub API服务
+				githubAPIService := gitServiceFactory.GetGitHubAPIService()
+				rateLimit, err := githubAPIService.CheckRateLimit()
 				if err != nil {
 					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 					return
