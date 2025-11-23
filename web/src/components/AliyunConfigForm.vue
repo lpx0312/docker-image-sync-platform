@@ -7,23 +7,14 @@
           <el-icon class="header-icon"><Monitor /></el-icon>
           <span class="header-title">阿里云镜像仓库配置</span>
           <div class="header-actions">
-            <el-button 
-              type="success" 
-              size="small" 
+            <el-button
+              type="success"
+              size="small"
               @click="saveConfig"
               :loading="savingConfig"
               :disabled="!isConfigChanged"
             >
-              保存配置
-            </el-button>
-            <el-button 
-              type="primary" 
-              size="small" 
-              @click="testConnection"
-              :loading="testingConnection"
-              :disabled="!aliyunConfig.registry_url || !aliyunConfig.username"
-            >
-              测试连接
+              保存并测试配置
             </el-button>
           </div>
         </div>
@@ -100,27 +91,7 @@
             </div>
           </el-form-item>
 
-          <el-form-item label="地域" required>
-            <el-select
-              v-model="aliyunConfig.region"
-              placeholder="选择阿里云地域"
-              @change="markConfigChanged"
-              style="width: 100%"
-            >
-              <el-option
-                v-for="region in regionOptions"
-                :key="region.value"
-                :label="region.label"
-                :value="region.value"
-              />
-            </el-select>
-            <div class="form-help">
-              <el-text size="small" type="info">
-                选择阿里云容器镜像服务所在的地域
-              </el-text>
-            </div>
-          </el-form-item>
-        </el-form>
+          </el-form>
 
         <!-- 连接状态显示 -->
         <div v-if="connectionStatus" class="connection-status">
@@ -155,7 +126,6 @@ import { systemAPI } from '@/api'
 
 const loading = ref(false)
 const lastSaved = ref('')
-const testingConnection = ref(false)
 const connectionStatus = ref(null)
 const savingConfig = ref(false)
 const isConfigChanged = ref(false)
@@ -166,36 +136,9 @@ const aliyunConfig = ref({
   registry_url: '',
   namespace: '',
   username: '',
-  password: '',
-  region: ''
+  password: ''
 })
 
-// 阿里云地域选项
-const regionOptions = [
-  { value: 'cn-hangzhou', label: '华东1（杭州）' },
-  { value: 'cn-shanghai', label: '华东2（上海）' },
-  { value: 'cn-qingdao', label: '华北1（青岛）' },
-  { value: 'cn-beijing', label: '华北2（北京）' },
-  { value: 'cn-zhangjiakou', label: '华北3（张家口）' },
-  { value: 'cn-huhehaote', label: '华北5（呼和浩特）' },
-  { value: 'cn-wulanchabu', label: '华北6（乌兰察布）' },
-  { value: 'cn-shenzhen', label: '华南1（深圳）' },
-  { value: 'cn-heyuan', label: '华南2（河源）' },
-  { value: 'cn-guangzhou', label: '华南3（广州）' },
-  { value: 'cn-chengdu', label: '西南1（成都）' },
-  { value: 'cn-hongkong', label: '中国香港' },
-  { value: 'ap-southeast-1', label: '新加坡' },
-  { value: 'ap-southeast-2', label: '澳大利亚（悉尼）' },
-  { value: 'ap-southeast-3', label: '马来西亚（吉隆坡）' },
-  { value: 'ap-southeast-5', label: '印度尼西亚（雅加达）' },
-  { value: 'ap-northeast-1', label: '日本（东京）' },
-  { value: 'ap-south-1', label: '印度（孟买）' },
-  { value: 'us-east-1', label: '美国（弗吉尼亚）' },
-  { value: 'us-west-1', label: '美国（硅谷）' },
-  { value: 'eu-west-1', label: '英国（伦敦）' },
-  { value: 'me-east-1', label: '阿联酋（迪拜）' },
-  { value: 'eu-central-1', label: '德国（法兰克福）' }
-]
 
 // ====================================================================
 // 生命周期钩子
@@ -222,8 +165,7 @@ const loadConfig = async () => {
         registry_url: response.data.registry_url || '',
         namespace: response.data.namespace || '',
         username: response.data.username || '',
-        password: response.data.password || '',
-        region: response.data.region || ''
+        password: response.data.password || ''
       }
       aliyunConfig.value = { ...configData }
       originalConfig.value = { ...configData }
@@ -243,33 +185,88 @@ const loadConfig = async () => {
 const saveConfig = async () => {
   try {
     savingConfig.value = true
-    
-    // 准备配置数据，映射字段名并处理占位符密码
+    connectionStatus.value = null
+
+    // 验证必填字段
+    if (!aliyunConfig.value.registry_url || !aliyunConfig.value.namespace ||
+        !aliyunConfig.value.username || !aliyunConfig.value.password) {
+      ElMessage.error('请填写完整的阿里云配置信息')
+      return
+    }
+
+    // 检查密码是否为占位符
+    if (aliyunConfig.value.password === '***') {
+      ElMessage.error('请输入新的阿里云密码以进行连接测试')
+      return
+    }
+
+    // 先测试连接
+    ElMessage.info('正在测试阿里云镜像仓库连接...')
+
+    // 准备测试配置数据
+    const testConfig = {
+      registry_url: aliyunConfig.value.registry_url,
+      namespace: aliyunConfig.value.namespace,
+      username: aliyunConfig.value.username,
+      password: aliyunConfig.value.password
+    }
+
+    const testResponse = await systemAPI.testAliyunConnection(testConfig)
+
+    if (testResponse.status !== 'success') {
+      connectionStatus.value = {
+        title: '连接测试失败',
+        type: 'error',
+        message: testResponse.message || '阿里云镜像仓库连接测试失败，请检查配置'
+      }
+      ElMessage.error('连接测试失败，配置未保存')
+      return
+    }
+
+    // 连接测试通过，准备保存配置数据
     const configData = {
       registry: aliyunConfig.value.registry_url,
       namespace: aliyunConfig.value.namespace,
       username: aliyunConfig.value.username,
-      password: aliyunConfig.value.password,
-      region: aliyunConfig.value.region
+      password: aliyunConfig.value.password
     }
-    
+
     // 如果密码是占位符则不发送
     if (configData.password === '***') {
       delete configData.password // 不发送占位符密码
     }
-    
+
     const response = await systemAPI.updateAliyunConfig(configData)
-    
+
     if (response.status === 'success') {
+      // 更新原始配置
       originalConfig.value = { ...aliyunConfig.value }
       isConfigChanged.value = false
       updateLastSaved()
-      ElMessage.success('阿里云配置已保存')
+
+      // 显示成功状态
+      connectionStatus.value = {
+        title: '配置保存成功',
+        type: 'success',
+        message: '阿里云配置已保存并通过连接测试'
+      }
+
+      ElMessage.success('阿里云配置已保存并通过连接测试')
     } else {
+      connectionStatus.value = {
+        title: '保存失败',
+        type: 'error',
+        message: '连接测试通过，但保存配置失败：' + response.message
+      }
       ElMessage.error('保存阿里云配置失败：' + response.message)
     }
   } catch (error) {
     console.error('保存阿里云配置失败:', error)
+    connectionStatus.value = {
+      title: '操作失败',
+      type: 'error',
+      message: error.response?.data?.message || error.message || '保存配置失败'
+    }
     ElMessage.error('保存配置失败：' + (error.response?.data?.message || error.message || '未知错误'))
   } finally {
     savingConfig.value = false
@@ -283,70 +280,6 @@ const markConfigChanged = () => {
   isConfigChanged.value = true
 }
 
-/**
- * 测试连接
- */
-const testConnection = async () => {
-  try {
-    testingConnection.value = true
-    connectionStatus.value = null
-    
-    // 简单验证配置完整性
-    if (!aliyunConfig.value.registry_url || !aliyunConfig.value.username || 
-        !aliyunConfig.value.password || !aliyunConfig.value.namespace) {
-      connectionStatus.value = {
-        title: '配置不完整',
-        type: 'warning',
-        message: '请填写完整的阿里云配置信息'
-      }
-      return
-    }
-    
-    // 检查密码是否为占位符
-    if (aliyunConfig.value.password === '***') {
-      connectionStatus.value = {
-        title: '需要输入密码',
-        type: 'warning',
-        message: '请输入新的阿里云密码以进行连接测试'
-      }
-      return
-    }
-    
-    // 调用后端API测试连接
-    const testConfig = {
-      registry_url: aliyunConfig.value.registry_url,
-      namespace: aliyunConfig.value.namespace,
-      username: aliyunConfig.value.username,
-      password: aliyunConfig.value.password,
-      region: aliyunConfig.value.region || 'cn-hangzhou'
-    }
-
-    const response = await systemAPI.testAliyunConnection(testConfig)
-    
-    if (response.status === 'success') {
-      connectionStatus.value = {
-        title: '连接成功',
-        type: 'success',
-        message: response.message || '阿里云镜像仓库连接测试通过，配置正确'
-      }
-    } else {
-      connectionStatus.value = {
-        title: '连接失败',
-        type: 'error',
-        message: response.message || '阿里云镜像仓库连接测试失败'
-      }
-    }
-  } catch (error) {
-    console.error('测试阿里云连接失败:', error)
-    connectionStatus.value = {
-      title: '连接失败',
-      type: 'error',
-      message: error.response?.data?.message || error.message || '连接测试失败'
-    }
-  } finally {
-    testingConnection.value = false
-  }
-}
 
 /**
  * 更新最后保存时间
