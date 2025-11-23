@@ -95,24 +95,6 @@ export const useImageStore = defineStore('image', () => {
 
   // 计算属性
   const hasImages = computed(() => images.value.length > 0)
-  
-  const filteredImages = computed(() => {
-    let result = images.value
-    
-    if (filters.value.status) {
-      result = result.filter(image => image.status === filters.value.status)
-    }
-    
-    if (filters.value.search) {
-      const search = filters.value.search.toLowerCase()
-      result = result.filter(image => 
-        image.source_image.toLowerCase().includes(search) ||
-        image.target_image.toLowerCase().includes(search)
-      )
-    }
-    
-    return result
-  })
 
   // 动作
   const loadImages = async (params = {}) => {
@@ -278,7 +260,6 @@ export const useImageStore = defineStore('image', () => {
     
     // 计算属性
     hasImages,
-    filteredImages,
     
     // 动作
     loadImages,

@@ -427,7 +427,7 @@ const handleSearch = () => {
     currentPage.value = 1
     imageStore.updatePagination(1, pageSize.value)
     imageStore.loadImages()
-  }, 500)
+  }, 300)
 }
 
 // 状态筛选

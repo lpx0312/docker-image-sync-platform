@@ -170,10 +170,10 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 	}
 
 	// 搜索关键词过滤
-	// 支持在原始镜像名和ACR镜像名中进行模糊搜索
+	// 支持在原始镜像名、ACR镜像名、标签和描述中进行模糊搜索
 	if search != "" {
-		query = query.Where("original_image LIKE ? OR acr_image LIKE ?",
-			"%"+search+"%", "%"+search+"%")
+		query = query.Where("original_image LIKE ? OR acr_image LIKE ? OR tag LIKE ? OR description LIKE ? OR task_id LIKE ?",
+			"%"+search+"%", "%"+search+"%", "%"+search+"%", "%"+search+"%", "%"+search+"%")
 	}
 
 	// ====================================================================
@@ -243,8 +243,8 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 				}
 			}
 			if search != "" {
-				filteredQuery = filteredQuery.Where("original_image LIKE ? OR acr_image LIKE ?",
-					"%"+search+"%", "%"+search+"%")
+				filteredQuery = filteredQuery.Where("original_image LIKE ? OR acr_image LIKE ? OR tag LIKE ? OR description LIKE ? OR task_id LIKE ?",
+					"%"+search+"%", "%"+search+"%", "%"+search+"%", "%"+search+"%", "%"+search+"%")
 			}
 
 			// 统计过滤后的总记录数
@@ -323,8 +323,8 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 
 		// 搜索关键词过滤
 		if search != "" {
-			filteredQuery = filteredQuery.Where("original_image LIKE ? OR acr_image LIKE ?",
-				"%"+search+"%", "%"+search+"%")
+			filteredQuery = filteredQuery.Where("original_image LIKE ? OR acr_image LIKE ? OR tag LIKE ? OR description LIKE ? OR task_id LIKE ?",
+				"%"+search+"%", "%"+search+"%", "%"+search+"%", "%"+search+"%", "%"+search+"%")
 		}
 
 		// 统计总记录数
