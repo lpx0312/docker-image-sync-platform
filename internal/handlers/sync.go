@@ -206,6 +206,7 @@ func (h *SyncHandler) SubmitBatchSync(c *gin.Context) {
 			InputOrder:    i + 1,                    // 在批量任务中的顺序
 			Priority:      img.Priority,             // 同步优先级
 			MaxRetries:    req.RetryCount,           // 最大重试次数
+			Description:   img.Description,          // 同步说明描述
 			OriginalInput: originalInput,            // 保存用户原始输入（根据架构格式化）
 		}
 
@@ -1529,6 +1530,7 @@ func (h *SyncHandler) SubmitMockBatchSync(c *gin.Context) {
 			TaskID:        taskID,
 			Priority:      img.Priority,
 			MaxRetries:    req.RetryCount,
+			Description:   img.Description, // 添加描述字段
 		}
 
 		if err := database.DB.Create(record).Error; err != nil {

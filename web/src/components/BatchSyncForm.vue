@@ -173,6 +173,20 @@
         </div>
       </el-form-item>
 
+      <el-form-item label="同步说明" prop="description">
+        <el-input
+          v-model="batchForm.description"
+          type="textarea"
+          :rows="3"
+          placeholder="可选：描述此次批量同步的目的或说明"
+          maxlength="500"
+          show-word-limit
+        />
+        <div class="form-tip">
+          描述此次批量同步的目的，将应用到所有镜像任务
+        </div>
+      </el-form-item>
+
       <el-form-item label="失败重试" prop="autoRetry">
         <el-switch
           v-model="batchForm.autoRetry"
@@ -243,7 +257,8 @@ const batchForm = reactive({
   maxConcurrent: 3,
   architectureMode: 'amd64',
   autoRetry: true,
-  maxRetries: 2
+  maxRetries: 2,
+  description: ''
 })
 
 // 镜像输入
@@ -639,7 +654,8 @@ const submitBatchSync = async () => {
               source_image: imageName,
               target_tag: tag || 'latest',
               architecture: image.architecture,
-              priority: 1
+              priority: 1,
+              description: batchForm.description
             }]
           } else {
             // 兼容旧的字符串格式
@@ -662,7 +678,8 @@ const submitBatchSync = async () => {
                   source_image: imageName,
                   target_tag: tag || 'latest',
                   architecture: architecture,
-                  priority: 1
+                  priority: 1,
+                  description: batchForm.description
                 }]
               }
             } else {
@@ -672,7 +689,8 @@ const submitBatchSync = async () => {
                 source_image: imageName,
                 target_tag: tag || 'latest',
                 architecture: 'amd64',
-                priority: 1
+                priority: 1,
+                description: batchForm.description
               }]
             }
           }
@@ -683,7 +701,8 @@ const submitBatchSync = async () => {
         const baseImage = {
           source_image: imageName,
           target_tag: tag || 'latest',
-          priority: 1
+          priority: 1,
+          description: batchForm.description
         }
         
         if (batchForm.architectureMode === 'both') {
@@ -745,7 +764,8 @@ const submitMockBatchSync = async () => {
               source_image: imageName,
               target_tag: tag || 'latest',
               architecture: image.architecture,
-              priority: 1
+              priority: 1,
+              description: batchForm.description
             }]
           } else {
             // 兼容旧的字符串格式
@@ -768,7 +788,8 @@ const submitMockBatchSync = async () => {
                   source_image: imageName,
                   target_tag: tag || 'latest',
                   architecture: architecture,
-                  priority: 1
+                  priority: 1,
+                  description: batchForm.description
                 }]
               }
             } else {
@@ -778,7 +799,8 @@ const submitMockBatchSync = async () => {
                 source_image: imageName,
                 target_tag: tag || 'latest',
                 architecture: 'amd64',
-                priority: 1
+                priority: 1,
+                description: batchForm.description
               }]
             }
           }
@@ -789,7 +811,8 @@ const submitMockBatchSync = async () => {
         const baseImage = {
           source_image: imageName,
           target_tag: tag || 'latest',
-          priority: 1
+          priority: 1,
+          description: batchForm.description
         }
         
         if (batchForm.architectureMode === 'both') {
@@ -834,7 +857,8 @@ const resetForm = () => {
     maxConcurrent: 3,
     architectureMode: 'amd64',
     autoRetry: true,
-    maxRetries: 2
+    maxRetries: 2,
+    description: ''
   })
   clearImages()
   inputMode.value = 'manual'

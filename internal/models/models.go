@@ -329,6 +329,7 @@ type ImageSyncItem struct {
 	TargetTag    string `json:"target_tag"`                      // 目标标签，可选
 	Architecture string `json:"architecture"`                    // 目标架构，可选
 	Priority     int    `json:"priority"`                        // 优先级，数字越大优先级越高
+	Description  string `json:"description"`                     // 同步说明，描述同步目的和用途
 }
 
 // API响应模型定义
