@@ -172,7 +172,8 @@ const submitSync = async () => {
     // 构造同步数据
     const syncData = {
       images: [syncForm.sourceImage],
-      architecture: syncForm.architecture
+      architecture: syncForm.architecture,
+      description: syncForm.description
     }
     
     console.log('Sync data:', syncData)

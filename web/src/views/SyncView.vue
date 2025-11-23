@@ -191,7 +191,16 @@
               <div class="image-name">{{ getTargetImage(row) }}</div>
             </template>
           </el-table-column>
-          
+
+          <el-table-column prop="description" label="同步说明" min-width="150" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span v-if="row.description" class="description-text">
+                {{ row.description }}
+              </span>
+              <span v-else class="no-description">-</span>
+            </template>
+          </el-table-column>
+
           <el-table-column prop="architecture" label="架构" width="80" sortable="custom">
             <template #default="{ row }">
               <el-tag :type="row.architecture === 'arm64' ? 'warning' : 'info'" size="small">
@@ -981,5 +990,15 @@ onUnmounted(() => {
 
 .dialog-footer .el-button {
   margin-left: 8px;
+}
+
+.description-text {
+  color: #606266;
+  font-size: 13px;
+}
+
+.no-description {
+  color: #c0c4cc;
+  font-style: italic;
 }
 </style>

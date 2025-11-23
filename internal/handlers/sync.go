@@ -342,6 +342,7 @@ func (h *SyncHandler) SubmitSync(c *gin.Context) {
 			SyncStatus:    models.SyncStatusPending, // 初始状态：等待同步
 			InputOrder:    i + 1,                    // 在任务中的顺序
 			OriginalInput: originalInput,            // 保存用户原始输入（根据架构格式化）
+			Description:   req.Description,          // 同步说明描述
 		}
 
 		// 保存镜像同步记录到数据库

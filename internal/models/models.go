@@ -71,6 +71,7 @@ type ImageSyncRecord struct {
 	InputOrder    int            `json:"input_order" gorm:"default:0;index"`                                                                                // 原始输入顺序，用于批量处理时保持顺序
 	SyncStatus    string         `json:"sync_status" gorm:"type:enum('pending','syncing','success','failed','retrying','skipped');default:'pending';index"` // 同步状态，建立索引以提高状态查询性能
 	ErrorMessage  string         `json:"error_message" gorm:"type:text"`                                                                                    // 错误信息，支持长文本存储
+	Description   string         `json:"description" gorm:"type:varchar(500)"`                                                                              // 同步说明，描述同步目的和用途
 	TaskID        string         `json:"task_id" gorm:"type:varchar(100);index"`                                                                            // 关联的任务ID，建立索引以提高任务查询性能
 	Priority      int            `json:"priority" gorm:"default:0"`                                                                                         // 优先级，数字越大优先级越高
 	RetryCount    int            `json:"retry_count" gorm:"default:0"`                                                                                      // 当前重试次数
