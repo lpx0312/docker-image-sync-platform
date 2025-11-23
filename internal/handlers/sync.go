@@ -996,7 +996,9 @@ func (h *SyncHandler) monitorGitHubActions(taskID, commitSHA string) {
 	runID, runURL, err := githubAPIService.GetWorkflowRun(commitSHA)
 	if err != nil {
 		logger.Logger.Error("获取GitHub Actions运行信息失败", zap.Error(err))
-		h.handleSyncError(taskID, fmt.Sprintf("获取GitHub Actions运行信息失败: %v", err))
+		// 对于无法获取工作流信息的情况，仍然尝试验证镜像状态
+		errorMessage := fmt.Sprintf("获取GitHub Actions运行信息失败: %v", err)
+		h.handlePartialSyncFailure(taskID, errorMessage)
 		return
 	}
 
@@ -1055,7 +1057,9 @@ func (h *SyncHandler) monitorGitHubActions(taskID, commitSHA string) {
 			conclusion, err := githubAPIService.GetWorkflowRunConclusion(runID)
 			if err != nil {
 				logger.Logger.Error("获取GitHub Actions结论失败", zap.Error(err))
-				h.handleSyncError(taskID, fmt.Sprintf("获取GitHub Actions结论失败: %v", err))
+				// 对于无法获取结论的情况，仍然尝试验证镜像状态
+				errorMessage := fmt.Sprintf("获取GitHub Actions结论失败: %v", err)
+				h.handlePartialSyncFailure(taskID, errorMessage)
 				return
 			}
 
@@ -1063,7 +1067,9 @@ func (h *SyncHandler) monitorGitHubActions(taskID, commitSHA string) {
 			if conclusion == "success" {
 				h.handleSyncSuccess(taskID) // 处理同步成功
 			} else {
-				h.handleSyncError(taskID, fmt.Sprintf("GitHub Actions执行失败，结论: %s", conclusion))
+				// 即使工作流结论是失败，也要逐个验证镜像状态
+				errorMessage := fmt.Sprintf("GitHub Actions执行失败，结论: %s", conclusion)
+				h.handlePartialSyncFailure(taskID, errorMessage)
 			}
 			return
 		}
@@ -1073,7 +1079,18 @@ func (h *SyncHandler) monitorGitHubActions(taskID, commitSHA string) {
 		// ================================================================
 
 		if status == "cancelled" || status == "failure" {
-			h.handleSyncError(taskID, fmt.Sprintf("GitHub Actions执行失败，状态: %s", status))
+			// 获取工作流执行结论以提供更详细的错误信息
+			githubAPIService := h.gitServiceFactory.GetGitHubAPIService()
+			conclusion, err := githubAPIService.GetWorkflowRunConclusion(runID)
+			var errorMessage string
+			if err != nil {
+				errorMessage = fmt.Sprintf("GitHub Actions执行失败，状态: %s，无法获取详细结论", status)
+			} else {
+				errorMessage = fmt.Sprintf("GitHub Actions执行失败，状态: %s，结论: %s", status, conclusion)
+			}
+
+			// 使用新的部分失败处理函数，逐个验证镜像状态而不是全部标记为失败
+			h.handlePartialSyncFailure(taskID, errorMessage)
 			return
 		}
 
@@ -1085,8 +1102,8 @@ func (h *SyncHandler) monitorGitHubActions(taskID, commitSHA string) {
 	// 处理监控超时
 	// ====================================================================
 
-	// 如果在最大等待时间内工作流仍未完成，标记为超时错误
-	h.handleSyncError(taskID, "GitHub Actions执行超时")
+	// 如果在最大等待时间内工作流仍未完成，也要尝试验证镜像状态
+	h.handlePartialSyncFailure(taskID, "GitHub Actions执行超时")
 }
 
 // handleSyncSuccess 处理GitHub Actions工作流执行成功后的逻辑
@@ -1273,6 +1290,155 @@ func (h *SyncHandler) handleSyncError(taskID, errorMessage string) {
 
 	logger.Logger.Info("同步任务错误处理完成，事务已提交",
 		zap.String("task_id", taskID))
+}
+
+// handlePartialSyncFailure 处理GitHub Actions工作流执行失败后的镜像状态验证
+//
+// 当GitHub Actions工作流失败时，该方法会逐个验证每个镜像是否真正
+// 同步到了阿里云容器镜像服务(ACR)，而不是简单地将所有镜像标记为失败。
+//
+// 参数:
+//   - taskID: 同步任务ID
+//   - workflowErrorMessage: GitHub Actions工作流的错误信息
+//
+// 处理流程:
+//  1. 查询任务下的所有镜像记录
+//  2. 逐个验证镜像是否存在于ACR（即使GitHub Actions失败了，有些镜像可能已经成功）
+//  3. 根据实际验证结果更新每个镜像的状态
+//  4. 更新任务的整体状态为部分成功或失败
+//  5. 记录详细的执行日志
+func (h *SyncHandler) handlePartialSyncFailure(taskID, workflowErrorMessage string) {
+	logger.Logger.Info("开始处理部分同步失败",
+		zap.String("task_id", taskID),
+		zap.String("workflow_error", workflowErrorMessage))
+
+	// ====================================================================
+	// 查询任务的镜像记录
+	// ====================================================================
+
+	// 获取任务下所有的镜像同步记录
+	var records []models.ImageSyncRecord
+	if err := database.DB.Where("task_id = ?", taskID).Find(&records).Error; err != nil {
+		logger.Logger.Error("查询镜像记录失败", zap.Error(err))
+		return
+	}
+
+	if len(records) == 0 {
+		logger.Logger.Warn("任务下没有找到镜像记录", zap.String("task_id", taskID))
+		return
+	}
+
+	// ====================================================================
+	// 验证镜像同步结果
+	// ====================================================================
+
+	// 统计成功和失败的镜像数量
+	successCount := 0
+	failedCount := 0
+	now := time.Now()
+
+	// 逐个验证每个镜像是否成功同步到ACR
+	for _, record := range records {
+		// 生成目标ACR镜像地址（包含架构信息）
+		acrImage := h.generateACRImageWithArchitecture(record.OriginalImage, record.Tag, record.Architecture)
+
+		// 检查镜像是否真正存在于ACR中
+		exists := h.checkImageExistsInRegistry(acrImage)
+
+		// 计算同步耗时
+		var duration int64
+		if record.StartedAt != nil {
+			duration = int64(now.Sub(*record.StartedAt).Seconds())
+		}
+
+		// ================================================================
+		// 处理镜像验证成功的情况
+		// ================================================================
+
+		if exists {
+			// 镜像存在，标记为成功
+			if err := database.DB.Model(&models.ImageSyncRecord{}).
+				Where("id = ?", record.ID).
+				Updates(map[string]interface{}{
+					"sync_status":  models.SyncStatusSuccess,
+					"completed_at": &now,
+					"duration":     duration,
+					"acr_image":    acrImage,
+				}).Error; err != nil {
+				logger.Logger.Error("更新镜像成功状态失败", zap.Error(err))
+			} else {
+				successCount++
+				logger.Logger.Info("镜像验证成功",
+					zap.String("task_id", taskID),
+					zap.String("image", record.OriginalImage),
+					zap.String("acr_image", acrImage))
+			}
+		} else {
+			// 镜像不存在，标记为失败
+			individualErrorMessage := fmt.Sprintf("GitHub Actions工作流失败: %s; 镜像未成功同步到ACR", workflowErrorMessage)
+			if err := database.DB.Model(&models.ImageSyncRecord{}).
+				Where("id = ?", record.ID).
+				Updates(map[string]interface{}{
+					"sync_status":   models.SyncStatusFailed,
+					"completed_at":  &now,
+					"duration":      duration,
+					"acr_image":     acrImage,
+					"error_message": individualErrorMessage,
+				}).Error; err != nil {
+				logger.Logger.Error("更新镜像失败状态失败", zap.Error(err))
+			} else {
+				failedCount++
+				logger.Logger.Info("镜像验证失败",
+					zap.String("task_id", taskID),
+					zap.String("image", record.OriginalImage),
+					zap.String("error", individualErrorMessage))
+			}
+		}
+	}
+
+	// ====================================================================
+	// 更新任务状态
+	// ====================================================================
+
+	// 根据成功/失败数量确定任务状态
+	var taskStatus string
+	var finalErrorMessage string
+
+	if successCount == 0 {
+		// 全部失败
+		taskStatus = models.TaskStatusFailed
+		finalErrorMessage = workflowErrorMessage
+	} else if failedCount == 0 {
+		// 全部成功（GitHub Actions报错但实际都成功了）
+		taskStatus = models.TaskStatusCompleted
+		finalErrorMessage = ""
+	} else {
+		// 部分成功部分失败
+		taskStatus = models.TaskStatusPartialSuccess
+		finalErrorMessage = fmt.Sprintf("GitHub Actions工作流失败，但%d个镜像成功同步，%d个镜像失败。工作流错误: %s",
+			successCount, failedCount, workflowErrorMessage)
+	}
+
+	// 更新任务状态
+	if err := database.DB.Model(&models.SyncTask{}).
+		Where("task_id = ?", taskID).
+		Updates(map[string]interface{}{
+			"status":           taskStatus,
+			"completed_at":     &now,
+			"completed_images": successCount,
+			"failed_images":    failedCount,
+			"progress":         100.0,
+			"error_message":    finalErrorMessage,
+		}).Error; err != nil {
+		logger.Logger.Error("更新任务状态失败", zap.Error(err))
+	}
+
+	logger.Logger.Info("部分同步失败处理完成",
+		zap.String("task_id", taskID),
+		zap.String("final_status", taskStatus),
+		zap.Int("success_count", successCount),
+		zap.Int("failed_count", failedCount),
+		zap.Int("total_count", len(records)))
 }
 
 // generateACRImage 生成阿里云ACR镜像地址
