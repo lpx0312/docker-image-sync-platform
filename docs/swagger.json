@@ -1,0 +1,1199 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Docker Image Sync Platform API",
+    "description": "Docker镜像同步平台的RESTful API文档",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Docker Image Sync Platform Team",
+      "email": "support@example.com"
+    }
+  },
+  "host": "localhost:8080",
+  "basePath": "/api/v1",
+  "schemes": ["http", "https"],
+  "consumes": ["application/json"],
+  "produces": ["application/json"],
+  "tags": [
+    {
+      "name": "Sync",
+      "description": "镜像同步操作"
+    },
+    {
+      "name": "Images",
+      "description": "镜像管理"
+    },
+    {
+      "name": "GitHub",
+      "description": "GitHub集成"
+    },
+    {
+      "name": "Config",
+      "description": "系统配置"
+    },
+    {
+      "name": "Health",
+      "description": "健康检查"
+    }
+  ],
+  "paths": {
+    "/sync/submit": {
+      "post": {
+        "tags": ["Sync"],
+        "summary": "提交单个镜像同步任务",
+        "description": "提交一个Docker镜像同步任务",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/SyncRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "同步任务提交成功",
+            "schema": {
+              "$ref": "#/definitions/TaskStatusResponse"
+            }
+          },
+          "400": {
+            "description": "请求参数错误"
+          },
+          "500": {
+            "description": "服务器内部错误"
+          }
+        }
+      }
+    },
+    "/sync/batch": {
+      "post": {
+        "tags": ["Sync"],
+        "summary": "提交批量镜像同步任务",
+        "description": "提交多个Docker镜像的批量同步任务",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/BatchSyncRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "批量同步任务提交成功",
+            "schema": {
+              "$ref": "#/definitions/BatchSyncResponse"
+            }
+          }
+        }
+      }
+    },
+    "/sync/status/{taskId}": {
+      "get": {
+        "tags": ["Sync"],
+        "summary": "查询同步任务状态",
+        "description": "根据任务ID查询同步任务的执行状态",
+        "parameters": [
+          {
+            "name": "taskId",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "description": "任务ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "任务状态查询成功",
+            "schema": {
+              "$ref": "#/definitions/TaskStatusResponse"
+            }
+          }
+        }
+      }
+    },
+    "/sync/history": {
+      "get": {
+        "tags": ["Sync"],
+        "summary": "获取同步历史记录",
+        "description": "获取历史同步任务的记录列表",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "type": "integer",
+            "default": 1,
+            "description": "页码"
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "type": "integer",
+            "default": 10,
+            "description": "每页数量"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "type": "string",
+            "enum": ["pending", "running", "success", "failed", "retrying", "skipped"],
+            "description": "任务状态筛选"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "同步历史记录获取成功",
+            "schema": {
+              "$ref": "#/definitions/SyncHistoryResponse"
+            }
+          }
+        }
+      }
+    },
+    "/images/list": {
+      "get": {
+        "tags": ["Images"],
+        "summary": "获取镜像列表",
+        "description": "获取已同步的镜像列表，支持分页和筛选",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "type": "integer",
+            "default": 1,
+            "description": "页码"
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "type": "integer",
+            "default": 10,
+            "description": "每页数量"
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "type": "string",
+            "description": "搜索关键词"
+          },
+          {
+            "name": "architecture",
+            "in": "query",
+            "type": "string",
+            "enum": ["amd64", "arm64"],
+            "description": "架构筛选"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "type": "string",
+            "enum": ["pending", "syncing", "success", "failed", "retrying", "skipped"],
+            "description": "同步状态筛选"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "镜像列表获取成功",
+            "schema": {
+              "$ref": "#/definitions/ImageListResponse"
+            }
+          }
+        }
+      }
+    },
+    "/images/{id}": {
+      "get": {
+        "tags": ["Images"],
+        "summary": "获取镜像详情",
+        "description": "根据ID获取单个镜像的详细信息",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "integer",
+            "description": "镜像记录ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "镜像详情获取成功",
+            "schema": {
+              "$ref": "#/definitions/ImageSyncRecord"
+            }
+          },
+          "404": {
+            "description": "镜像不存在"
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Images"],
+        "summary": "删除镜像记录",
+        "description": "根据ID删除镜像记录（软删除）",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "integer",
+            "description": "镜像记录ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "镜像删除成功"
+          },
+          "404": {
+            "description": "镜像不存在"
+          }
+        }
+      }
+    },
+    "/images/{id}/retry": {
+      "post": {
+        "tags": ["Images"],
+        "summary": "重试镜像同步",
+        "description": "重新执行失败的镜像同步任务",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "integer",
+            "description": "镜像记录ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "重试任务提交成功"
+          }
+        }
+      }
+    },
+    "/config/all": {
+      "get": {
+        "tags": ["Config"],
+        "summary": "获取所有系统配置",
+        "description": "获取系统的所有配置信息",
+        "responses": {
+          "200": {
+            "description": "系统配置获取成功",
+            "schema": {
+              "$ref": "#/definitions/AllConfigsResponse"
+            }
+          }
+        }
+      }
+    },
+    "/config/git": {
+      "get": {
+        "tags": ["Config"],
+        "summary": "获取Git配置",
+        "description": "获取Git仓库相关配置信息",
+        "responses": {
+          "200": {
+            "description": "Git配置获取成功",
+            "schema": {
+              "$ref": "#/definitions/GitConfigResponse"
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["Config"],
+        "summary": "更新Git配置",
+        "description": "更新Git仓库相关配置信息",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/GitConfigRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Git配置更新成功"
+          },
+          "400": {
+            "description": "请求参数错误"
+          }
+        }
+      }
+    },
+    "/config/aliyun-db": {
+      "get": {
+        "tags": ["Config"],
+        "summary": "获取阿里云配置",
+        "description": "获取阿里云容器镜像服务配置信息",
+        "responses": {
+          "200": {
+            "description": "阿里云配置获取成功",
+            "schema": {
+              "$ref": "#/definitions/AliyunConfigResponse"
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["Config"],
+        "summary": "更新阿里云配置",
+        "description": "更新阿里云容器镜像服务配置信息",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/AliyunConfigRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "阿里云配置更新成功"
+          }
+        }
+      }
+    },
+    "/config/git/test": {
+      "post": {
+        "tags": ["Config"],
+        "summary": "测试Git连接",
+        "description": "测试Git仓库连接是否正常",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/GitTestRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Git连接测试结果",
+            "schema": {
+              "$ref": "#/definitions/GitTestResponse"
+            }
+          }
+        }
+      }
+    },
+    "/github/runs": {
+      "get": {
+        "tags": ["GitHub"],
+        "summary": "获取GitHub Actions工作流运行列表",
+        "description": "获取GitHub Actions的工作流运行历史记录",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "type": "integer",
+            "default": 1,
+            "description": "页码"
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "type": "integer",
+            "default": 10,
+            "description": "每页数量"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "type": "string",
+            "enum": ["queued", "in_progress", "completed"],
+            "description": "运行状态筛选"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "工作流运行列表获取成功",
+            "schema": {
+              "$ref": "#/definitions/GitHubRunsResponse"
+            }
+          }
+        }
+      }
+    },
+    "/github/runs/{runId}": {
+      "get": {
+        "tags": ["GitHub"],
+        "summary": "获取GitHub Actions工作流运行详情",
+        "description": "根据运行ID获取GitHub Actions工作流的详细执行信息",
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "description": "工作流运行ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "工作流运行详情获取成功",
+            "schema": {
+              "$ref": "#/definitions/GitHubRunDetailResponse"
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "健康检查",
+        "description": "检查系统运行状态和健康度",
+        "responses": {
+          "200": {
+            "description": "系统健康状态",
+            "schema": {
+              "$ref": "#/definitions/HealthResponse"
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "SyncRequest": {
+      "type": "object",
+      "required": ["images"],
+      "properties": {
+        "images": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "要同步的Docker镜像列表"
+        },
+        "architecture": {
+          "type": "string",
+          "enum": ["amd64", "arm64"],
+          "default": "amd64",
+          "description": "目标架构"
+        },
+        "description": {
+          "type": "string",
+          "description": "同步任务描述"
+        }
+      }
+    },
+    "BatchSyncRequest": {
+      "type": "object",
+      "required": ["images"],
+      "properties": {
+        "images": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ImageSyncItem"
+          },
+          "description": "镜像同步项列表"
+        },
+        "max_concurrent": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "default": 3,
+          "description": "最大并发数"
+        },
+        "auto_retry": {
+          "type": "boolean",
+          "default": false,
+          "description": "是否自动重试失败的同步任务"
+        },
+        "retry_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3,
+          "default": 0,
+          "description": "重试次数"
+        }
+      }
+    },
+    "ImageSyncItem": {
+      "type": "object",
+      "required": ["source_image"],
+      "properties": {
+        "source_image": {
+          "type": "string",
+          "description": "源Docker镜像名称"
+        },
+        "target_tag": {
+          "type": "string",
+          "description": "目标镜像标签"
+        },
+        "architecture": {
+          "type": "string",
+          "enum": ["amd64", "arm64"],
+          "default": "amd64",
+          "description": "目标架构"
+        },
+        "priority": {
+          "type": "integer",
+          "default": 0,
+          "description": "同步优先级，数值越大优先级越高"
+        },
+        "description": {
+          "type": "string",
+          "description": "镜像描述信息"
+        }
+      }
+    },
+    "TaskStatusResponse": {
+      "type": "object",
+      "properties": {
+        "task_id": {
+          "type": "string",
+          "description": "任务ID"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "running", "success", "failed", "retrying", "skipped"],
+          "description": "任务状态"
+        },
+        "source_image": {
+          "type": "string",
+          "description": "源镜像名称"
+        },
+        "target_image": {
+          "type": "string",
+          "description": "目标镜像名称"
+        },
+        "architecture": {
+          "type": "string",
+          "description": "目标架构"
+        },
+        "github_action_url": {
+          "type": "string",
+          "description": "GitHub Actions工作流URL"
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "任务开始时间"
+        },
+        "completed_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "任务完成时间"
+        },
+        "error_message": {
+          "type": "string",
+          "description": "错误信息（如果有）"
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "涉及的镜像列表"
+        }
+      }
+    },
+    "BatchSyncResponse": {
+      "type": "object",
+      "properties": {
+        "task_id": {
+          "type": "string",
+          "description": "批量任务ID"
+        },
+        "message": {
+          "type": "string",
+          "description": "响应消息"
+        },
+        "image_count": {
+          "type": "integer",
+          "description": "镜像数量"
+        },
+        "estimated_time": {
+          "type": "string",
+          "description": "预计完成时间"
+        }
+      }
+    },
+    "ImageSyncRecord": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "记录ID"
+        },
+        "original_image": {
+          "type": "string",
+          "description": "原始镜像名称"
+        },
+        "acr_image": {
+          "type": "string",
+          "description": "ACR镜像名称"
+        },
+        "tag": {
+          "type": "string",
+          "description": "镜像标签"
+        },
+        "architecture": {
+          "type": "string",
+          "description": "架构"
+        },
+        "sync_status": {
+          "type": "string",
+          "enum": ["pending", "syncing", "success", "failed", "retrying", "skipped"],
+          "description": "同步状态"
+        },
+        "error_message": {
+          "type": "string",
+          "description": "错误信息"
+        },
+        "description": {
+          "type": "string",
+          "description": "描述信息"
+        },
+        "task_id": {
+          "type": "string",
+          "description": "关联任务ID"
+        },
+        "priority": {
+          "type": "integer",
+          "description": "优先级"
+        },
+        "retry_count": {
+          "type": "integer",
+          "description": "重试次数"
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "开始时间"
+        },
+        "completed_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "完成时间"
+        },
+        "duration": {
+          "type": "integer",
+          "description": "执行时长（毫秒）"
+        },
+        "image_size": {
+          "type": "integer",
+          "description": "镜像大小（字节）"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "创建时间"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "更新时间"
+        }
+      }
+    },
+    "ImageListResponse": {
+      "type": "object",
+      "properties": {
+        "total": {
+          "type": "integer",
+          "description": "总记录数"
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ImageSyncRecord"
+          },
+          "description": "镜像记录列表"
+        }
+      }
+    },
+    "SyncHistoryResponse": {
+      "type": "object",
+      "properties": {
+        "total": {
+          "type": "integer",
+          "description": "总记录数"
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SyncTask"
+          },
+          "description": "同步任务列表"
+        }
+      }
+    },
+    "SyncTask": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "任务ID"
+        },
+        "task_id": {
+          "type": "string",
+          "description": "任务唯一标识"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "running", "completed", "failed", "paused"],
+          "description": "任务状态"
+        },
+        "github_action_url": {
+          "type": "string",
+          "description": "GitHub Actions URL"
+        },
+        "github_run_id": {
+          "type": "string",
+          "description": "GitHub运行ID"
+        },
+        "commit_sha": {
+          "type": "string",
+          "description": "提交SHA"
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "开始时间"
+        },
+        "completed_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "完成时间"
+        },
+        "error_message": {
+          "type": "string",
+          "description": "错误信息"
+        },
+        "description": {
+          "type": "string",
+          "description": "任务描述"
+        },
+        "max_concurrent": {
+          "type": "integer",
+          "description": "最大并发数"
+        },
+        "total_images": {
+          "type": "integer",
+          "description": "总镜像数"
+        },
+        "completed_images": {
+          "type": "integer",
+          "description": "已完成镜像数"
+        },
+        "failed_images": {
+          "type": "integer",
+          "description": "失败镜像数"
+        },
+        "auto_retry": {
+          "type": "boolean",
+          "description": "是否自动重试"
+        },
+        "progress": {
+          "type": "number",
+          "format": "float",
+          "description": "进度百分比"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "创建时间"
+        }
+      }
+    },
+    "GitConfigRequest": {
+      "type": "object",
+      "properties": {
+        "repo_url": {
+          "type": "string",
+          "description": "Git仓库URL"
+        },
+        "username": {
+          "type": "string",
+          "description": "Git用户名"
+        },
+        "token": {
+          "type": "string",
+          "description": "Git访问令牌"
+        },
+        "email": {
+          "type": "string",
+          "description": "Git邮箱"
+        },
+        "branch": {
+          "type": "string",
+          "description": "Git分支名"
+        }
+      }
+    },
+    "GitConfigResponse": {
+      "type": "object",
+      "properties": {
+        "repo_url": {
+          "type": "string",
+          "description": "Git仓库URL"
+        },
+        "username": {
+          "type": "string",
+          "description": "Git用户名"
+        },
+        "email": {
+          "type": "string",
+          "description": "Git邮箱"
+        },
+        "branch": {
+          "type": "string",
+          "description": "Git分支名"
+        },
+        "has_token": {
+          "type": "boolean",
+          "description": "是否已配置token"
+        },
+        "last_test_time": {
+          "type": "string",
+          "format": "date-time",
+          "description": "上次测试时间"
+        },
+        "connection_status": {
+          "type": "string",
+          "description": "连接状态"
+        }
+      }
+    },
+    "GitTestRequest": {
+      "type": "object",
+      "required": ["repo_url", "username", "token"],
+      "properties": {
+        "repo_url": {
+          "type": "string",
+          "description": "Git仓库URL"
+        },
+        "username": {
+          "type": "string",
+          "description": "Git用户名"
+        },
+        "token": {
+          "type": "string",
+          "description": "Git访问令牌"
+        },
+        "email": {
+          "type": "string",
+          "description": "Git邮箱"
+        },
+        "branch": {
+          "type": "string",
+          "description": "Git分支名"
+        }
+      }
+    },
+    "GitTestResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "description": "测试是否成功"
+        },
+        "message": {
+          "type": "string",
+          "description": "测试结果消息"
+        },
+        "clone_time": {
+          "type": "integer",
+          "description": "克隆耗时（毫秒）"
+        },
+        "push_time": {
+          "type": "integer",
+          "description": "推送耗时（毫秒）"
+        },
+        "error": {
+          "type": "string",
+          "description": "错误信息（如果有）"
+        }
+      }
+    },
+    "AliyunConfigRequest": {
+      "type": "object",
+      "properties": {
+        "access_key_id": {
+          "type": "string",
+          "description": "阿里云Access Key ID"
+        },
+        "access_key_secret": {
+          "type": "string",
+          "description": "阿里云Access Key Secret"
+        },
+        "registry": {
+          "type": "string",
+          "description": "容器镜像服务地址"
+        },
+        "namespace": {
+          "type": "string",
+          "description": "命名空间"
+        },
+        "username": {
+          "type": "string",
+          "description": "登录用户名"
+        },
+        "password": {
+          "type": "string",
+          "description": "登录密码"
+        }
+      }
+    },
+    "AliyunConfigResponse": {
+      "type": "object",
+      "properties": {
+        "access_key_id": {
+          "type": "string",
+          "description": "阿里云Access Key ID（脱敏显示）"
+        },
+        "access_key_secret": {
+          "type": "string",
+          "description": "阿里云Access Key Secret（脱敏显示）"
+        },
+        "registry": {
+          "type": "string",
+          "description": "容器镜像服务地址"
+        },
+        "namespace": {
+          "type": "string",
+          "description": "命名空间"
+        },
+        "username": {
+          "type": "string",
+          "description": "登录用户名"
+        },
+        "has_password": {
+          "type": "boolean",
+          "description": "是否已配置密码"
+        },
+        "connection_status": {
+          "type": "string",
+          "description": "连接状态"
+        }
+      }
+    },
+    "AllConfigsResponse": {
+      "type": "object",
+      "properties": {
+        "git": {
+          "$ref": "#/definitions/GitConfigResponse"
+        },
+        "aliyun": {
+          "$ref": "#/definitions/AliyunConfigResponse"
+        },
+        "system": {
+          "type": "object",
+          "description": "系统配置信息"
+        }
+      }
+    },
+    "GitHubRunsResponse": {
+      "type": "object",
+      "properties": {
+        "total": {
+          "type": "integer",
+          "description": "总记录数"
+        },
+        "workflow_runs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/WorkflowRun"
+          },
+          "description": "工作流运行列表"
+        }
+      }
+    },
+    "WorkflowRun": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "运行ID"
+        },
+        "name": {
+          "type": "string",
+          "description": "工作流名称"
+        },
+        "head_branch": {
+          "type": "string",
+          "description": "触发分支"
+        },
+        "head_sha": {
+          "type": "string",
+          "description": "触发提交SHA"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["queued", "in_progress", "completed"],
+          "description": "运行状态"
+        },
+        "conclusion": {
+          "type": "string",
+          "enum": ["success", "failure", "neutral", "cancelled", "skipped", "timed_out"],
+          "description": "运行结论"
+        },
+        "workflow_id": {
+          "type": "integer",
+          "description": "工作流ID"
+        },
+        "url": {
+          "type": "string",
+          "description": "运行URL"
+        },
+        "html_url": {
+          "type": "string",
+          "description": "HTML查看URL"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "创建时间"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "更新时间"
+        },
+        "run_number": {
+          "type": "integer",
+          "description": "运行编号"
+        },
+        "event": {
+          "type": "string",
+          "description": "触发事件"
+        }
+      }
+    },
+    "GitHubRunDetailResponse": {
+      "type": "object",
+      "properties": {
+        "workflow_run": {
+          "$ref": "#/definitions/WorkflowRun"
+        },
+        "jobs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/WorkflowJob"
+          },
+          "description": "作业列表"
+        }
+      }
+    },
+    "WorkflowJob": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "作业ID"
+        },
+        "name": {
+          "type": "string",
+          "description": "作业名称"
+        },
+        "status": {
+          "type": "string",
+          "description": "作业状态"
+        },
+        "conclusion": {
+          "type": "string",
+          "description": "作业结论"
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "开始时间"
+        },
+        "completed_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "完成时间"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/WorkflowStep"
+          },
+          "description": "步骤列表"
+        }
+      }
+    },
+    "WorkflowStep": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "步骤名称"
+        },
+        "status": {
+          "type": "string",
+          "description": "步骤状态"
+        },
+        "conclusion": {
+          "type": "string",
+          "description": "步骤结论"
+        },
+        "number": {
+          "type": "integer",
+          "description": "步骤编号"
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "开始时间"
+        },
+        "completed_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "完成时间"
+        }
+      }
+    },
+    "HealthResponse": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["healthy", "unhealthy"],
+          "description": "系统健康状态"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "检查时间"
+        },
+        "uptime": {
+          "type": "string",
+          "description": "系统运行时间"
+        },
+        "version": {
+          "type": "string",
+          "description": "系统版本"
+        },
+        "database_status": {
+          "type": "string",
+          "description": "数据库连接状态"
+        },
+        "git_connection": {
+          "type": "string",
+          "description": "Git连接状态"
+        },
+        "aliyun_connection": {
+          "type": "string",
+          "description": "阿里云连接状态"
+        }
+      }
+    }
+  }
+}

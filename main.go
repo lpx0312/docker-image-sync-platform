@@ -406,6 +406,19 @@ func main() {
 				"version":   "1.0.0",           // 应用版本号
 			})
 		})
+
+		// ====================================================================
+		// Swagger API文档
+		// ====================================================================
+		// GET /api/v1/docs - Swagger API文档界面
+		// 提供交互式的API文档，支持在线测试
+		api.Static("/docs", "./docs")
+
+		// GET /api/v1/docs.html - 直接访问Swagger UI
+		api.StaticFile("/docs.html", "./docs/swagger-ui.html")
+
+		// GET /api/v1/swagger.json - 获取Swagger JSON配置
+		api.StaticFile("/swagger.json", "./docs/swagger.json")
 	}
 
 	// ========================================================================
