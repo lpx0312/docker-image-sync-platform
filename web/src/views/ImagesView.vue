@@ -602,12 +602,42 @@ const batchCheckImages = async () => {
   }
 }
 
-// 复制到剪贴板
+// 复制到剪贴板（带降级处理，兼容 HTTP 内网环境）
 const copyToClipboard = async (text) => {
+  // 优先使用 Clipboard API
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(text)
+      ElMessage.success('已复制到剪贴板')
+      return
+    } catch (error) {
+      console.warn('navigator.clipboard 调用失败，尝试降级复制方案:', error)
+    }
+  }
+
+  // 降级方案：使用隐藏的 textarea + document.execCommand('copy')
   try {
-    await navigator.clipboard.writeText(text)
-    ElMessage.success('已复制到剪贴板')
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.style.position = 'fixed'
+    textarea.style.top = '-9999px'
+    textarea.style.left = '-9999px'
+    textarea.setAttribute('readonly', 'readonly')
+    document.body.appendChild(textarea)
+
+    textarea.select()
+    textarea.setSelectionRange(0, textarea.value.length)
+
+    const successful = document.execCommand('copy')
+    document.body.removeChild(textarea)
+
+    if (successful) {
+      ElMessage.success('已复制到剪贴板')
+    } else {
+      ElMessage.error('复制失败')
+    }
   } catch (error) {
+    console.error('降级复制方案失败:', error)
     ElMessage.error('复制失败')
   }
 }
