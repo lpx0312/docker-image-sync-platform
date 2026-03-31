@@ -192,6 +192,7 @@ fi
 echo "🗄️  启动MySQL数据库..."
 
 # 与 config.yaml 中 database.password 一致，否则后端用 root 连接会认证失败
+MYSQL_CONTAINER_NAME="docker-sync-mysql-dev"
 MYSQL_DEV_PASSWORD=$(awk '
 /^database:/{flag=1; next}
 flag && /^[a-zA-Z_]+:/ {flag=0}
@@ -208,7 +209,7 @@ verify_docker_mysql_auth() {
     local last_err=""
     while [ $n -lt $max ]; do
         # 注意：若用 last_err=$(cmd) 且 cmd 失败，在 set -e 下会退出；放在 if 中则安全
-        if last_err=$(docker_run exec -e MYSQL_PWD="${MYSQL_DEV_PASSWORD}" docker-sync-mysql-dev mysql -uroot -e "SELECT 1" 2>&1); then
+        if last_err=$(docker_run exec -e MYSQL_PWD="${MYSQL_DEV_PASSWORD}" "${MYSQL_CONTAINER_NAME}" mysql -uroot -e "SELECT 1" 2>&1); then
             echo "   ✅ 数据库 root 凭据与 config.yaml 一致"
             return 0
         fi
@@ -222,9 +223,9 @@ verify_docker_mysql_auth() {
     echo "   最后一次输出: $last_err"
     echo "   若含 1045 且曾用其它密码创建过该容器数据，请删卷重建（会清空开发库）:"
     if [ -n "${DOCKER_USE_SG}" ]; then
-        echo "     sg docker -c 'docker rm -f -v docker-sync-mysql-dev'"
+        echo "     sg docker -c 'docker rm -f -v ${MYSQL_CONTAINER_NAME}'"
     else
-        echo "     docker rm -f -v docker-sync-mysql-dev"
+        echo "     docker rm -f -v ${MYSQL_CONTAINER_NAME}"
     fi
     echo "   然后重新运行: bash scripts/dev.sh"
     exit 1
@@ -232,15 +233,20 @@ verify_docker_mysql_auth() {
 
 # 如果Docker可用，使用Docker启动MySQL（访问方式已在依赖检查阶段通过 DOCKER_USE_SG + docker_run 处理）
 if command -v docker &> /dev/null; then
-    # 检查MySQL容器是否存在
-    if docker_run ps | grep -q "docker-sync-mysql-dev"; then
-        echo "   ✅ MySQL容器已在运行"
-        # 检查MySQL服务是否就绪
+    # docker ps 仅含运行中容器；已存在但已停止时会误判并 docker run 导致名称冲突，故用 inspect 判断是否存在
+    if docker_run inspect "${MYSQL_CONTAINER_NAME}" >/dev/null 2>&1; then
+        RUNNING=$(docker_run inspect -f '{{.State.Running}}' "${MYSQL_CONTAINER_NAME}" 2>/dev/null || echo false)
+        if [ "${RUNNING}" = "true" ]; then
+            echo "   ✅ MySQL 容器已在运行，继续使用: ${MYSQL_CONTAINER_NAME}"
+        else
+            echo "   🐳 检测到已存在的 MySQL 容器（已停止），正在启动: ${MYSQL_CONTAINER_NAME}"
+            docker_run start "${MYSQL_CONTAINER_NAME}"
+        fi
         check_mysql_ready
     else
-        echo "   🐳 启动MySQL容器..."
+        echo "   🐳 创建并启动 MySQL 容器: ${MYSQL_CONTAINER_NAME}"
         docker_run run -d \
-            --name docker-sync-mysql-dev \
+            --name "${MYSQL_CONTAINER_NAME}" \
             -p 3306:3306 \
             -e MYSQL_ROOT_PASSWORD="${MYSQL_DEV_PASSWORD}" \
             -e MYSQL_DATABASE=docker_sync \
@@ -248,7 +254,6 @@ if command -v docker &> /dev/null; then
             -e MYSQL_PASSWORD="${MYSQL_DEV_PASSWORD}" \
             mysql:8.0
 
-        # 检查MySQL服务是否就绪
         check_mysql_ready
     fi
     verify_docker_mysql_auth
