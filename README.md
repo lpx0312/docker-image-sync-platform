@@ -282,7 +282,7 @@ cd web && npm run dev
 5. **访问开发环境**
 - 🌐 **前端开发服务器**: http://localhost:5173
 - 🔌 **后端API服务器**: http://localhost:8080
-- 📊 **API文档**: http://localhost:8080/swagger/index.html
+- 📊 **API文档**: http://localhost:8080/api/v1/docs.html
 
 ## 📖 使用指南
 

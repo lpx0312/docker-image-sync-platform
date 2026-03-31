@@ -1,175 +1,171 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+本文件为在本仓库中协作开发时向 Claude Code（claude.ai/code）提供的指引。
 
-## Project Overview
+## 项目概览
 
-This is a Docker image synchronization platform built with Go backend and Vue.js frontend. It provides automated synchronization of Docker images from various registries (Docker Hub, GCR, etc.) to Alibaba Cloud Container Registry (ACR) through GitHub Actions workflows.
+本项目为 Docker 镜像同步平台：后端 Go、前端 Vue.js，通过 GitHub Actions 工作流，将 Docker Hub、GCR 等来源的镜像自动同步到阿里云容器镜像服务（ACR）。
 
-## Architecture Overview
+## 架构概览
 
-### Backend (Go)
-- **Framework**: Gin (REST API)
-- **Database**: MySQL with GORM ORM
-- **Configuration**: Viper for config management
-- **Logging**: Zap for structured logging
-- **Git Operations**: go-git library with optimized caching
-- **Container Registry**: go-containerregistry
+### 后端（Go）
+- **框架**：Gin（REST API）
+- **数据库**：MySQL，ORM 为 GORM
+- **配置**：Viper
+- **日志**：Zap 结构化日志
+- **Git**：go-git，带缓存优化
+- **镜像仓库**：go-containerregistry
 
-### Frontend (Vue.js)
-- **Framework**: Vue 3 with Composition API
-- **UI Library**: Element Plus
-- **State Management**: Pinia
-- **Routing**: Vue Router
-- **Build Tool**: Vite
-- **HTTP Client**: Axios
+### 前端（Vue.js）
+- **框架**：Vue 3（Composition API）
+- **UI**：Element Plus
+- **状态**：Pinia
+- **路由**：Vue Router
+- **构建**：Vite
+- **HTTP**：Axios
 
-### Project Structure
+### 目录结构
 ```
 docker-image-sync-platform/
-├── main.go                    # Application entry point
-├── config.yaml               # Configuration file
-├── internal/                 # Backend internal packages
-│   ├── config/              # Configuration management
-│   ├── database/            # Database connection and migrations
-│   ├── handlers/            # HTTP request handlers
-│   ├── middleware/          # HTTP middleware (CORS, logging, rate limiting)
-│   ├── models/              # Data models and structs
-│   ├── services/            # Business logic services
-│   └── logger/              # Logging utilities
-├── web/                     # Frontend Vue.js application
+├── main.go                    # 应用入口
+├── config.yaml               # 配置文件
+├── internal/                 # 后端内部包
+│   ├── config/              # 配置管理
+│   ├── database/            # 数据库连接与迁移
+│   ├── handlers/            # HTTP 处理器
+│   ├── middleware/          # 中间件（CORS、日志、限流等）
+│   ├── models/              # 数据模型
+│   ├── services/            # 业务逻辑
+│   └── logger/              # 日志工具
+├── web/                     # 前端 Vue 应用
 │   ├── src/
-│   │   ├── api/            # API service layer
-│   │   ├── components/     # Vue components
-│   │   ├── router/         # Vue Router configuration
-│   │   ├── stores/         # Pinia stores
-│   │   └── views/          # Page views
+│   │   ├── api/            # API 封装
+│   │   ├── components/     # 组件
+│   │   ├── router/         # 路由
+│   │   ├── stores/         # Pinia
+│   │   └── views/          # 页面
 │   └── package.json
-├── deploy/                  # Docker deployment configurations
-├── scripts/                 # Utility scripts
-└── Makefile                # Build and development commands
+├── deploy/                  # Docker 部署相关
+├── scripts/                 # 脚本
+└── Makefile                # 构建与开发命令
 ```
 
-## Core Services
+## 核心服务
 
-### 1. Git Service Factory
+### 1. Git 服务工厂
 - `internal/services/git_factory.go`
-- Dynamically creates Git service instances (Gitee/GitHub)
-- Handles repository cloning and image file parsing
+- 动态创建 Gitee/GitHub 的 Git 服务实例
+- 负责克隆仓库与解析镜像清单文件
 
-### 2. GitHub Service
+### 2. GitHub 服务
 - `internal/services/github.go`
-- Monitors GitHub Actions workflows
-- Checks workflow status and retrieves logs
+- 监控 GitHub Actions 工作流
+- 查询运行状态与日志
 
-### 3. Config Service
+### 3. 配置服务
 - `internal/services/config.go`
-- Manages encrypted configuration storage
-- Handles database CRUD operations for settings
+- 加密存储配置
+- 对系统设置做数据库 CRUD
 
-### 4. Sync Handler
+### 4. 同步处理器
 - `internal/handlers/sync.go`
-- Processes image sync requests
-- Manages batch and individual sync operations
+- 处理镜像同步请求
+- 支持单条与批量同步
 
-### 5. Git Optimized Service
+### 5. Git 优化服务
 - `internal/services/git_optimized.go`
-- Provides optimized Git operations with caching and sparse checkout
-- Includes GitHub code operations testing functionality
-- Methods: `PullImagesFileForTesting()`, `UpdateImagesFileForTesting()`
+- 带缓存与稀疏检出的 Git 操作
+- 含 GitHub 代码操作测试：`PullImagesFileForTesting()`、`UpdateImagesFileForTesting()`
 
-## API Structure
+## API 结构
 
-### Base URL: `/api/v1`
+### 基础路径：`/api/v1`
 
-### Sync Operations
-- `POST /sync/submit` - Submit single image sync
-- `POST /sync/batch` - Submit batch image sync
-- `GET /sync/status/:taskId` - Get sync status
-- `GET /sync/history` - Get sync history
+### 同步
+- `POST /sync/submit` — 提交单镜像同步
+- `POST /sync/batch` — 批量同步
+- `GET /sync/status/:taskId` — 查询任务状态
+- `GET /sync/history` — 同步历史
 
-### Image Management
-- `GET /images/list` - List images with pagination
-- `GET /images/:id` - Get image details
-- `DELETE /images/:id` - Delete image record
-- `POST /images/:id/retry` - Retry failed sync
+### 镜像管理
+- `GET /images/list` — 分页列表
+- `GET /images/:id` — 详情
+- `DELETE /images/:id` — 删除记录
+- `POST /images/:id/retry` — 失败重试
 
-### Configuration
-- `GET /config/all` - Get all configurations
-- `GET /config/git` - Get Git configurations
-- `PUT /config/git/gitee` - Update Gitee config
-- `PUT /config/git/github` - Update GitHub config
-- `POST /config/git/test` - Test Git connection
-- `POST /config/git-test-operations` - Test GitHub code pull and commit operations
-- `PUT /config/aliyun-db` - Update Aliyun ACR config
+### 配置
+- `GET /config/all` — 全部配置
+- `GET /config/git` — Git 相关配置
+- `PUT /config/git/gitee` — 更新 Gitee
+- `PUT /config/git/github` — 更新 GitHub
+- `POST /config/git/test` — 测试 Git 连接
+- `POST /config/git-test-operations` — 测试 GitHub 拉取与提交
+- `PUT /config/aliyun-db` — 更新阿里云 ACR 配置
 
-### GitHub Integration
-- `GET /github/runs` - List workflow runs
-- `GET /github/runs/:runId` - Get workflow details
-- `GET /github/rate-limit` - Check API rate limits
+### GitHub
+- `GET /github/runs` — 工作流运行列表
+- `GET /github/runs/:runId` — 运行详情
+- `GET /github/rate-limit` — API 速率限制
 
-## Configuration
+## 配置
 
-### Main Config File: `config.yaml`
-Key sections:
-- `server`: HTTP server configuration
-- `database`: MySQL connection settings
-- `git`: Gitee/GitHub repository configuration
-- `aliyun`: Alibaba Cloud Registry settings
-- `log`: Logging configuration
-- `sync`: Sync task settings (timeouts, concurrency)
+### 主配置文件：`config.yaml`
+主要段落：
+- `server`：HTTP 服务
+- `database`：MySQL
+- `git`：Gitee/GitHub 仓库
+- `aliyun`：阿里云镜像仓库
+- `log`：日志
+- `sync`：同步任务（超时、并发等）
 
-### Security Notes
-- Sensitive data (passwords, tokens) are encrypted in database
-- Rate limiting applied to API endpoints
-- CORS configuration for frontend access
-- Request logging and error handling middleware
+### 安全说明
+- 敏感信息（密码、Token）在库中加密存储
+- API 限流
+- CORS 与前端访问控制
+- 请求日志与错误处理中间件
 
-## Database Models
+## 数据库模型
 
-### Core Tables
-- `image_sync_records`: Individual image sync records
-- `sync_tasks`: Batch sync task management
-- `system_configs`: Encrypted configuration storage
+### 核心表
+- `image_sync_records`：单条镜像同步记录
+- `sync_tasks`：批量任务
+- `system_configs`：加密配置
 
-### Key Fields
-- Sync status tracking (pending, running, success, failed)
-- GitHub Actions workflow integration
-- Multi-architecture support (amd64, arm64)
-- Retry mechanisms and priority levels
+### 关键字段
+- 同步状态（pending、running、success、failed）
+- 与 GitHub Actions 的关联
+- 多架构（amd64、arm64）
+- 重试与优先级
 
-## Frontend Components
+## 前端主要页面与组件
 
-### Main Views
-- `SyncView.vue` - Image sync operations
-- `ImagesView.vue` - Image management and status
-- `ConfigView.vue` - System configuration
-- `GitHubView.vue` - Workflow monitoring
+### 页面
+- `SyncView.vue` — 镜像同步
+- `ImagesView.vue` — 镜像管理与状态
+- `ConfigView.vue` — 系统配置
+- `GitHubView.vue` — 工作流监控
 
-### Key Components
-- `SingleSyncForm.vue` - Single image sync
-- `BatchSyncForm.vue` - Batch image sync
-- `GitConfigForm.vue` - Git repository configuration with GitHub testing feature
-- `GitTestResultDialog.vue` - GitHub operations test results display
-- `AliyunConfigForm.vue` - ACR configuration
+### 重要组件
+- `SingleSyncForm.vue` — 单镜像同步
+- `BatchSyncForm.vue` — 批量同步
+- `GitConfigForm.vue` — Git 配置与 GitHub 测试入口
+- `GitTestResultDialog.vue` — 测试结果展示
+- `AliyunConfigForm.vue` — ACR 配置
 
-## GitHub Code Operations Testing Feature
+## GitHub 代码操作测试功能
 
-### Overview
-The platform includes a comprehensive GitHub code operations testing feature that allows users to validate their GitHub configuration before using it for Docker image synchronization.
+### 说明
+在正式用于镜像同步前，可通过该功能校验 GitHub 配置是否可用。
 
-### Features
-- **Three-Step Testing Process**:
-  1. Pull images.txt file from GitHub repository
-  2. Commit test content to images.txt
-  3. Verify the commit and push changes
-- **Detailed Timing Information**: Records elapsed time for each operation (pull, commit, push)
-- **Comprehensive Error Reporting**: Provides detailed error messages for debugging
-- **User-Friendly Interface**: Modern Vue.js dialog with step-by-step results display
+### 能力
+- **三步流程**：从仓库拉取 `images.txt` → 写入测试内容并提交 → 推送并校验
+- **耗时**：记录 pull、commit、push 各步耗时
+- **错误信息**：便于排查
+- **界面**：Vue 弹窗分步展示结果
 
-### API Endpoint
-- **URL**: `POST /api/v1/config/git-test-operations`
-- **Request Parameters**:
+### 接口
+- **URL**：`POST /api/v1/config/git-test-operations`
+- **请求体示例**：
   ```json
   {
     "repo_url": "https://github.com/username/repository.git",
@@ -179,7 +175,7 @@ The platform includes a comprehensive GitHub code operations testing feature tha
     "branch": "main"
   }
   ```
-- **Response Structure**:
+- **响应示例**：
   ```json
   {
     "success": true,
@@ -199,150 +195,147 @@ The platform includes a comprehensive GitHub code operations testing feature tha
   }
   ```
 
-### Frontend Components
-- **GitConfigForm.vue**: GitHub configuration form with "测试代码拉取和提交" button
-- **GitTestResultDialog.vue**: Results display dialog showing:
-  - Overall test status with success indicators
-  - Step-by-step breakdown with timing
-  - Error messages and troubleshooting hints
-  - Commit SHA with GitHub link (when successful)
-  - Statistical information in tabular format
+### 前端
+- **GitConfigForm.vue**：GitHub 配置区含「测试代码拉取和提交」按钮
+- **GitTestResultDialog.vue**：整体状态、各步耗时、错误与排查提示、成功时的 commit SHA 与 GitHub 链接、表格统计等
 
-### Implementation Details
-- **Backend**: Uses temporary directories for testing (`/tmp/git-test-operations`)
-- **Git Operations**: Implements actual Git clone, commit, and push operations
-- **Error Handling**: Comprehensive error catching with user-friendly messages
-- **Security**: Tests use isolated temporary environments, no impact on production data
+### 实现要点
+- **后端**：测试目录如 `/tmp/git-test-operations`
+- **Git**：真实 clone、commit、push
+- **错误处理**：尽量给出可读说明
+- **安全**：隔离临时环境，不影响生产数据
 
-### Usage
-1. Navigate to the Configuration page in the web interface
-2. Configure GitHub repository settings (URL, username, token, email, branch)
-3. Click "测试代码拉取和提交" button in the GitHub configuration section
-4. Review detailed test results in the popup dialog
-5. Verify all operations succeed before using the configuration for image sync
+### 使用步骤
+1. 打开 Web 端「配置」页
+2. 填写 GitHub 仓库 URL、用户名、Token、邮箱、分支等
+3. 在 GitHub 配置区点击「测试代码拉取和提交」
+4. 在弹窗中查看各步结果
+5. 全部通过后再用于实际同步
 
-### Benefits
-- **Configuration Validation**: Ensures GitHub credentials and permissions are correct
-- **Early Error Detection**: Identifies connectivity or authentication issues before actual sync operations
-- **Performance Monitoring**: Provides timing metrics for Git operations
-- **User Confidence**: Gives users confidence that their GitHub integration will work properly
+### 价值
+- 校验凭据与权限
+- 在正式同步前发现网络与认证问题
+- 观察 Git 操作耗时
+- 提高对集成的信心
 
 ## 本地开发测试方法
 
 ### 开发环境
-- **操作系统**: Windows 11
-- **终端**: PowerShell
+- **操作系统**：Linux（常见发行版如 Ubuntu、Debian、Fedora 等均可）
+- **Shell**：bash（本仓库脚本与文档均以 bash 为准）
 
-### 服务启动流程
+### 服务启动
 
-#### 前端服务启动 (固定端口 3000)
+#### 前端（固定端口 3000）
 ```bash
 cd web
-npm install  # 首次运行需要安装依赖
+npm install   # 首次需安装依赖
 npm run dev
 ```
 
-#### 后端服务启动 (固定端口 8080)
+#### 后端（固定端口 8080）
 ```bash
 go run main.go
 ```
 
-### 开发注意事项
+### 开发注意
 
-#### 日志管理
-- **后端日志**: 存放在 `logs/app.log` 文件中
-- **日志查看**: 实时监控开发过程中的错误和信息
+#### 日志
+- **后端日志**：`logs/app.log`
+- **查看**：开发时可持续 tail 该文件排查问题
 
+#### 重启前后端前释放端口
+- **前端**：占用 **3000** 时，先结束占用进程再启动 `npm run dev`
+- **后端**：占用 **8080** 时，先结束占用进程再启动 `go run main.go`
 
-#### 前后端重启
-- **前端重启**: 固定使用 3000端口,重启前需要先终止占用3000端口的进程,然后在重启前端服务
-- **后端重启**: 固定使用 8080端口,重启前需要先终止占用8080端口的进程,然后在重启后端服务
-停止方法
+在 **bash** 下可用（需已安装 `lsof`，多数桌面/服务器 Linux 自带或可 `sudo apt install lsof`）：
+
+```bash
+# 查看占用某端口的进程（将 3000 或 8080 换成实际端口）
+lsof -iTCP:3000 -sTCP:LISTEN
+# 或
+ss -tlnp | grep ':3000'
+
+# 按 PID 结束进程（将 <PID> 换成上一步看到的 PID）
+kill <PID>
+# 仍不退出时可强制：
+kill -9 <PID>
 ```
-  # 查找占用端口的进程PID
-  netstat -ano | findstr ":端口号"
 
-  # 直接使用PID停止进程
-  powershell -Command "Stop-Process -Id [PID] -Force"
+一行结束监听某端口的进程（谨慎使用）：
 
-  # 或者查找并停止特定端口的所有进程
-  powershell -Command "Get-Process | Where-Object {$_.ProcessName -eq 'node' -or $_.ProcessName -eq 'go'} | Stop-Process -Force"
+```bash
+kill $(lsof -t -i:3000)   # 前端
+kill $(lsof -t -i:8080)   # 后端
 ```
 
-#### 代码更新
-- **前端修改**: 重启前后端
-- **后端修改**: 重启前后端
-- **只要修改了代码，都需要重新启动前后端**
+#### 代码变更与重启
+- 修改前端或后端代码后，一般需**重启对应服务**（按团队习惯也可同时重启两端）
+- 以实际热更新能力为准；无热更新时改代码后应重启
 
 ### 自动化测试
 
-#### Chrome DevTools 测试
-平台支持使用 Chrome DevTools MCP进行自动化测试：
-- **页面元素操作**: 点击、输入、导航等
-- **表单验证**: 配置表单的完整性和功能测试
-- **API 接口测试**: 验证前后端数据交互
-- **界面渲染测试**: 确认修改生效
+#### Chrome DevTools
+可用 Chrome DevTools MCP 做页面与接口相关自动化：
+- 点击、输入、导航等
+- 配置类表单的完整性校验
+- 前后端联调验证
+- 界面是否按预期渲染
 
-使用Chrome DevTools MCP生成的所有文件，放在当前目录的ChromeDevTools-Files目录下,没有这个目录，需要先创建这个目录。
+通过 Chrome DevTools MCP 生成的文件请放在项目根目录下的 `ChromeDevTools-Files/`（若不存在请先创建）。
 
-
-
-#### 测试功能定位
-如需测试特定功能或界面，且你不清楚在哪里，可询问我
-
+#### 功能位置
+若不确定某功能在界面何处，可直接询问维护者。
 
 #### 常见测试场景
-1. **配置管理测试**: Git配置保存、验证、切换功能
-2. **镜像同步测试**: 单个和批量同步操作
-3. **状态监控测试**: 同步进度和结果查看
-4. **错误处理测试**: 异常情况的处理和提示
+1. **配置**：Git 保存、校验、切换
+2. **同步**：单条与批量
+3. **状态**：进度与结果
+4. **异常**：错误提示是否合理
 
-### 开发工作流
+### 开发工作流建议
 
-1. **环境准备**: 确保端口未被占用，启动前后端服务
-2. **代码修改**: 按功能需求修改前端或后端代码
-3. **服务重启**: 修改后重新启动对应服务
-4. **功能测试**: 使用 Chrome DevTools 进行自动化验证
-5. **结果确认**: 确保功能正常运行，无报错信息
+1. **环境**：端口空闲，启动前后端
+2. **开发**：按需求改前端或后端
+3. **重启**：无热更新时重启对应服务
+4. **验证**：必要时用 Chrome DevTools MCP 等工具自测
+5. **确认**：功能与日志无异常
 
-## Deployment
+## 部署
 
-### Docker Options
-1. **Separate Containers**: `deploy/docker-signal/`
-   - Frontend and backend in separate containers
-   - Good for development and microservices
+### Docker 方式
+1. **前后端分离**：`deploy/docker-signal/`
+   - 前后端各一容器，适合开发与微服务拆分
 
-2. **All-in-One**: `deploy/docker-all/`
-   - Single container with both frontend and backend
-   - Simplified production deployment
+2. **一体化**：`deploy/docker-all/`
+   - 单容器内前后端，便于简化生产部署
 
-### Environment Variables
-- Database connection settings
-- Git repository credentials
-- Alibaba Cloud Registry configuration
-- Server and logging configuration
+### 环境变量
+- 数据库连接
+- Git 仓库凭据
+- 阿里云镜像配置
+- 服务与日志相关项
 
-## Troubleshooting
+## 故障排查
 
-### Common Issues
-1. **Database Connection**: Check MySQL service and credentials
-2. **Git Operations**: Verify repository access and permissions
-3. **Sync Failures**: Check GitHub Actions workflow status
-4. **Frontend Build**: Ensure Node.js dependencies installed
-5. **Port Conflicts**: Use netstat to identify and resolve conflicts
+### 常见问题
+1. **数据库**：MySQL 是否运行、账号密码与 `config.yaml` 是否一致
+2. **Git**：仓库地址、Token、分支与权限
+3. **同步失败**：GitHub Actions 运行状态与日志
+4. **前端构建**：Node 依赖是否安装完整
+5. **端口冲突**：用 `lsof`、`ss` 等查看并结束占用进程
 
-### Health Checks
-- API health endpoint: `/api/v1/health`
-- Service status: `make health-check`
-- Logs: `logs/app.log` or `make docker-logs`
+### 健康检查与日志
+- 健康检查接口：`/api/v1/health`
+- 服务状态：`make health-check`
+- 日志：`logs/app.log` 或 `make docker-logs`
 
-## Security Considerations
+## 安全说明
 
-- Rate limiting on sync endpoints
-- Encrypted storage of sensitive configuration
-- CORS protection
-- Request logging and monitoring
-- Input validation and sanitization
-
+- 同步相关接口限流
+- 敏感配置加密存储
+- CORS 配置
+- 请求日志与监控
+- 输入校验与清理
 
 ## 使用中文回答和询问

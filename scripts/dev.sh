@@ -33,16 +33,38 @@
 # 启用严格模式：任何命令失败都会导致脚本退出
 set -e
 
+# 固定项目根目录（无论从何处执行 bash scripts/dev.sh，config.yaml / go run 均一致）
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$ROOT_DIR" || {
+    echo "❌ 无法进入项目根目录: $ROOT_DIR"
+    exit 1
+}
 
-
+# 若当前 shell 未携带 docker 组（已加入 docker 组但未重登 / IDE 集成终端），仍可通过 sg docker 访问 daemon
+DOCKER_USE_SG=""
+docker_run() {
+    if [ -n "${DOCKER_USE_SG}" ]; then
+        local quoted="docker"
+        for a in "$@"; do
+            quoted+=" $(printf '%q' "$a")"
+        done
+        sg docker -c "$quoted"
+    else
+        docker "$@"
+    fi
+}
 
 echo "🚀 启动开发环境..."
 
 # ============================================================================
 # MySQL就绪检查函数
 # ============================================================================
+# 说明：仅「容器在运行」不等于 MySQL 已可接受连接；原逻辑 sleep 3 过短且与 config 密码
+# 不一致会导致后端 packets.go unexpected EOF / bad connection。此处轮询 TCP 3306 直至可连。
+# ============================================================================
 check_mysql_ready() {
-    local max_attempts=30
+    local max_attempts=45
     local attempt=0
     local mysql_host="127.0.0.1"
     local mysql_port="3306"
@@ -52,27 +74,13 @@ check_mysql_ready() {
     while [ $attempt -lt $max_attempts ]; do
         attempt=$((attempt + 1))
 
-        # 检查端口3306是否可用（最简单通用的方法）
-        if command -v docker >/dev/null 2>&1; then
-            # 如果容器存在，检查容器状态
-            if docker ps | grep -q "docker-sync-mysql-dev"; then
-                # 容器正在运行，等待一段时间让MySQL启动
-                sleep 3
-                echo "   ✅ MySQL容器运行中"
-                return 0
-            fi
+        # Linux / Git Bash: 等待 MySQL 真正监听（首次拉取镜像 + 初始化库可能需数十秒）
+        if timeout 2 bash -c "</dev/tcp/$mysql_host/$mysql_port" 2>/dev/null; then
+            sleep 2
+            echo "   ✅ MySQL 已监听 ${mysql_host}:${mysql_port}"
+            return 0
         fi
 
-        # 检查端口是否开放（使用curl尝试连接）
-        if command -v curl >/dev/null 2>&1; then
-            # 简单的TCP连接测试
-            if timeout 3 bash -c "</dev/tcp/$mysql_host/$mysql_port" 2>/dev/null; then
-                echo "   ✅ MySQL端口可访问"
-                return 0
-            fi
-        fi
-
-        # 使用PowerShell测试连接（Windows环境）
         if command -v powershell >/dev/null 2>&1; then
             if powershell -Command "
                 try {
@@ -84,19 +92,14 @@ check_mysql_ready() {
                     exit 1
                 }
             " 2>/dev/null; then
-                echo "   ✅ MySQL端口可访问"
+                sleep 2
+                echo "   ✅ MySQL 已监听 ${mysql_host}:${mysql_port}"
                 return 0
             fi
         fi
 
-        # 如果是Windows环境，给Docker容器更多启动时间
-        if [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]]; then
-            echo "   ⏳ 等待MySQL容器启动... (尝试 $attempt/$max_attempts)"
-            sleep 3
-        else
-            echo "   ⏳ 等待MySQL启动... (尝试 $attempt/$max_attempts)"
-            sleep 2
-        fi
+        echo "   ⏳ 等待 MySQL 监听 ${mysql_port}... (尝试 $attempt/$max_attempts)"
+        sleep 2
     done
 
     echo "   ⚠️  MySQL服务检查超时，但继续执行..."
@@ -138,9 +141,20 @@ if ! command -v npm &> /dev/null; then
     exit 1
 fi
 
-# 检查Docker是否安装（可选，用于数据库）
+# 检查Docker是否安装（可选，用于数据库）；无 docker 组时尝试 sg docker（比 newgrp 更适合 IDE 终端）
 if command -v docker &> /dev/null; then
-    echo "   ✅ Docker已安装，将使用Docker启动MySQL（如需要）"
+    if docker ps >/dev/null 2>&1; then
+        echo "   ✅ Docker已安装，将使用Docker启动MySQL（如需要）"
+    elif sg docker -c "docker ps" >/dev/null 2>&1; then
+        DOCKER_USE_SG=1
+        echo "   ✅ Docker已安装，将使用Docker启动MySQL（如需要）"
+        echo "   ℹ️  当前终端未携带 docker 组，已自动使用 sg docker（无需 newgrp / 重登）"
+    else
+        DOCKER_ERR=$(docker ps 2>&1) || true
+        echo "❌ 错误: 无法使用 Docker: $DOCKER_ERR"
+        echo "   请执行: sudo usermod -aG docker \$USER 后重新登录，或确认 Docker 服务已启动"
+        exit 1
+    fi
 else
     echo "   ⚠️  Docker未安装，将使用本地MySQL数据库"
 fi
@@ -177,27 +191,67 @@ fi
 
 echo "🗄️  启动MySQL数据库..."
 
-# 如果Docker可用，使用Docker启动MySQL
+# 与 config.yaml 中 database.password 一致，否则后端用 root 连接会认证失败
+MYSQL_DEV_PASSWORD=$(awk '
+/^database:/{flag=1; next}
+flag && /^[a-zA-Z_]+:/ {flag=0}
+flag && /password:/{gsub(/"/,"",$2); print $2; exit}
+' config.yaml 2>/dev/null)
+MYSQL_DEV_PASSWORD=${MYSQL_DEV_PASSWORD:-Ab123456}
+
+# 容器内数据目录只在首次启动时应用 MYSQL_ROOT_PASSWORD；与 config 不一致时后端会 1045，启动前用 docker exec 校验。
+# 新容器首次启动时，3306 可连后 mysqld 仍可能在初始化，单次校验易误报 1045，故轮询重试。
+verify_docker_mysql_auth() {
+    echo "   🔄 校验 root 密码与 config.yaml 是否一致..."
+    local n=0
+    local max=35
+    local last_err=""
+    while [ $n -lt $max ]; do
+        # 注意：若用 last_err=$(cmd) 且 cmd 失败，在 set -e 下会退出；放在 if 中则安全
+        if last_err=$(docker_run exec -e MYSQL_PWD="${MYSQL_DEV_PASSWORD}" docker-sync-mysql-dev mysql -uroot -e "SELECT 1" 2>&1); then
+            echo "   ✅ 数据库 root 凭据与 config.yaml 一致"
+            return 0
+        fi
+        n=$((n + 1))
+        if [ $n -lt $max ]; then
+            echo "   ⏳ MySQL 可能仍在初始化，2s 后重试 ($n/$max)..."
+            sleep 2
+        fi
+    done
+    echo "❌ 错误: 无法在容器内用 config.yaml 中的 root 密码连接 MySQL"
+    echo "   最后一次输出: $last_err"
+    echo "   若含 1045 且曾用其它密码创建过该容器数据，请删卷重建（会清空开发库）:"
+    if [ -n "${DOCKER_USE_SG}" ]; then
+        echo "     sg docker -c 'docker rm -f -v docker-sync-mysql-dev'"
+    else
+        echo "     docker rm -f -v docker-sync-mysql-dev"
+    fi
+    echo "   然后重新运行: bash scripts/dev.sh"
+    exit 1
+}
+
+# 如果Docker可用，使用Docker启动MySQL（访问方式已在依赖检查阶段通过 DOCKER_USE_SG + docker_run 处理）
 if command -v docker &> /dev/null; then
     # 检查MySQL容器是否存在
-    if docker ps | grep -q "docker-sync-mysql-dev"; then
+    if docker_run ps | grep -q "docker-sync-mysql-dev"; then
         echo "   ✅ MySQL容器已在运行"
         # 检查MySQL服务是否就绪
         check_mysql_ready
     else
         echo "   🐳 启动MySQL容器..."
-        docker run -d \
+        docker_run run -d \
             --name docker-sync-mysql-dev \
             -p 3306:3306 \
-            -e MYSQL_ROOT_PASSWORD=123456 \
+            -e MYSQL_ROOT_PASSWORD="${MYSQL_DEV_PASSWORD}" \
             -e MYSQL_DATABASE=docker_sync \
             -e MYSQL_USER=docker_sync \
-            -e MYSQL_PASSWORD=123456 \
+            -e MYSQL_PASSWORD="${MYSQL_DEV_PASSWORD}" \
             mysql:8.0
 
         # 检查MySQL服务是否就绪
         check_mysql_ready
     fi
+    verify_docker_mysql_auth
 else
     echo "   ⚠️  Docker未安装，请确保本地MySQL服务已启动，数据库名为: docker_sync"
     # 检查本地MySQL是否就绪
@@ -249,7 +303,7 @@ echo "🎨 启动Vue前端开发服务器..."
 cd web
 
 # 检查并安装前端依赖
-npm install --registry=--registry=https://registry.npmmirror.com/
+npm install --registry=https://registry.npmmirror.com/
 
 # 在后台启动前端开发服务器
 # Vite开发服务器支持热重载和快速构建
