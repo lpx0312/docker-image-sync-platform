@@ -62,12 +62,23 @@ import (
 // - Log: 日志系统配置（级别、文件管理）
 // - Sync: 同步任务配置（超时、策略等）
 type Config struct {
-	Server   ServerConfig   `mapstructure:"server"`   // HTTP服务器配置
-	Database DatabaseConfig `mapstructure:"database"` // 数据库连接配置
-	Git      GitConfig      `mapstructure:"git"`      // Git仓库配置
-	Aliyun   AliyunConfig   `mapstructure:"aliyun"`   // 阿里云配置
-	Log      LogConfig      `mapstructure:"log"`      // 日志配置
-	Sync     SyncConfig     `mapstructure:"sync"`     // 同步配置
+	Server   ServerConfig   `mapstructure:"server"`
+	Database DatabaseConfig `mapstructure:"database"`
+	Git      GitConfig      `mapstructure:"git"`
+	Aliyun   AliyunConfig   `mapstructure:"aliyun"`
+	Log      LogConfig      `mapstructure:"log"`
+	Sync     SyncConfig     `mapstructure:"sync"`
+	Auth     AuthConfig     `mapstructure:"auth"`
+}
+
+// AuthConfig 认证配置
+type AuthConfig struct {
+	JWTSecret            string `mapstructure:"jwt_secret"`
+	TokenExpiry          string `mapstructure:"token_expiry"`
+	RememberMeExpiry     string `mapstructure:"remember_me_expiry"`
+	AutoLogoutMinutes    int    `mapstructure:"auto_logout_minutes"`
+	DefaultAdminUsername string `mapstructure:"default_admin_username"`
+	DefaultAdminPassword string `mapstructure:"default_admin_password"`
 }
 
 // ServerConfig 服务器配置
@@ -221,6 +232,11 @@ func setupEnvKeyMapping() {
 	// 日志配置
 	viper.BindEnv("log.level", "LOG_LEVEL")
 	viper.BindEnv("log.file_path", "LOG_FILE_PATH")
+
+	// 认证配置
+	viper.BindEnv("auth.jwt_secret", "JWT_SECRET")
+	viper.BindEnv("auth.default_admin_username", "DEFAULT_ADMIN_USERNAME")
+	viper.BindEnv("auth.default_admin_password", "DEFAULT_ADMIN_PASSWORD")
 }
 
 // setDefaults 设置默认配置值
@@ -241,6 +257,13 @@ func setDefaults() {
 	viper.SetDefault("log.max_age", 28)
 
 	viper.SetDefault("sync.timeout_minutes", 30)
+
+	viper.SetDefault("auth.jwt_secret", "docker-sync-platform-jwt-secret-change-me")
+	viper.SetDefault("auth.token_expiry", "24h")
+	viper.SetDefault("auth.remember_me_expiry", "168h")
+	viper.SetDefault("auth.auto_logout_minutes", 30)
+	viper.SetDefault("auth.default_admin_username", "admin")
+	viper.SetDefault("auth.default_admin_password", "admin123")
 }
 
 // GetDSN 获取数据库连接字符串

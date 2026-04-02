@@ -1,91 +1,117 @@
-<!--
-/**
- * 主应用组件 (App.vue)
- * 
- * 功能说明：
- * - 应用程序的根组件和主要布局容器
- * - 提供全局导航和页面布局结构
- * - 管理路由导航和页面切换
- * - 定义应用的整体样式和主题
- * 
- * 布局结构：
- * - Header: 顶部导航栏，包含Logo和主菜单
- * - Main: 主内容区域，用于显示路由页面
- * - Footer: 底部信息栏，显示版权信息
- * 
- * 导航功能：
- * - 镜像同步：跳转到同步操作页面
- * - GitHub Actions：跳转到GitHub监控页面
- * - 响应式导航高亮显示
- * 
- * 技术栈：
- * - Vue 3 Composition API
- * - Element Plus UI组件库
- * - Vue Router 路由管理
- * 
- * @author Docker Image Sync Platform
- * @version 1.0.0
- */
--->
-
 <template>
   <div id="app">
-    <el-container class="layout-container">
-      <!-- 顶部导航栏 -->
+    <!-- 登录页不显示布局 -->
+    <router-view v-if="!showLayout" />
+
+    <!-- 主布局 -->
+    <el-container v-else class="layout-container">
       <el-header class="header">
         <div class="header-content">
           <div class="logo">
             <el-icon><Box /></el-icon>
             <span>Docker镜像同步平台</span>
           </div>
-          <el-menu
-            :default-active="activeIndex"
-            class="header-menu"
-            mode="horizontal"
-            @select="handleSelect"
-          >
-            <el-menu-item index="/sync">镜像同步</el-menu-item>
-            <el-menu-item index="/github">GitHub Actions</el-menu-item>
-            <el-menu-item index="/config">系统配置</el-menu-item>
-          </el-menu>
+          <div class="header-right">
+            <el-menu
+              :default-active="activeIndex"
+              class="header-menu"
+              mode="horizontal"
+              @select="handleSelect"
+            >
+              <el-menu-item index="/sync">镜像同步</el-menu-item>
+              <el-menu-item index="/github">GitHub Actions</el-menu-item>
+              <el-menu-item index="/config">系统配置</el-menu-item>
+              <el-menu-item v-if="authStore.isAdmin" index="/users">用户管理</el-menu-item>
+            </el-menu>
+            <el-dropdown class="user-dropdown" @command="handleUserCommand">
+              <span class="user-info">
+                <el-icon><UserFilled /></el-icon>
+                <span class="user-name">{{ authStore.username }}</span>
+                <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+              </span>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="password">
+                    <el-icon><Key /></el-icon>修改密码
+                  </el-dropdown-item>
+                  <el-dropdown-item divided command="logout">
+                    <el-icon><SwitchButton /></el-icon>退出登录
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
         </div>
       </el-header>
 
-      <!-- 主要内容区域 -->
       <el-main class="main-content">
         <router-view />
       </el-main>
 
-      <!-- 底部 -->
       <el-footer class="footer">
         <div class="footer-content">
           <span>© 2024 Docker镜像同步平台 - 基于Vue 3 + Go开发</span>
         </div>
       </el-footer>
     </el-container>
+
+    <!-- 修改密码对话框 -->
+    <ChangePasswordDialog
+      v-model:visible="showChangePassword"
+    />
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { Box } from '@element-plus/icons-vue'
+import { useAuthStore } from '@/stores/auth'
+import { Box, UserFilled, ArrowDown, Key, SwitchButton } from '@element-plus/icons-vue'
+import { ElMessageBox } from 'element-plus'
+import ChangePasswordDialog from '@/components/ChangePasswordDialog.vue'
 
 const router = useRouter()
 const route = useRoute()
+const authStore = useAuthStore()
 
+const showChangePassword = ref(false)
 const activeIndex = computed(() => route.path)
+const showLayout = computed(() => route.name !== 'Login' && authStore.isLoggedIn)
 
 const handleSelect = (key) => {
-  console.log('Navigation triggered:', key)
-  console.log('Current route:', route.path)
-  try {
-    router.push(key)
-    console.log('Navigation successful')
-  } catch (error) {
-    console.error('Navigation error:', error)
+  router.push(key)
+}
+
+const handleUserCommand = (command) => {
+  if (command === 'password') {
+    showChangePassword.value = true
+  } else if (command === 'logout') {
+    ElMessageBox.confirm('确定要退出登录吗？', '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning',
+    }).then(() => {
+      authStore.logout()
+      router.push('/login')
+    }).catch(() => {})
   }
 }
+
+function onActivity() {
+  authStore.updateActivityTime()
+}
+
+onMounted(() => {
+  window.addEventListener('mousemove', onActivity)
+  window.addEventListener('keydown', onActivity)
+  window.addEventListener('click', onActivity)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('mousemove', onActivity)
+  window.removeEventListener('keydown', onActivity)
+  window.removeEventListener('click', onActivity)
+})
 </script>
 
 <style scoped>
@@ -104,7 +130,7 @@ const handleSelect = (key) => {
   align-items: center;
   justify-content: space-between;
   height: 100%;
-  max-width: 1200px;
+  max-width: 1400px;
   margin: 0 auto;
   padding: 0 20px;
 }
@@ -115,6 +141,7 @@ const handleSelect = (key) => {
   font-size: 20px;
   font-weight: bold;
   color: #409eff;
+  white-space: nowrap;
 }
 
 .logo .el-icon {
@@ -122,8 +149,40 @@ const handleSelect = (key) => {
   font-size: 24px;
 }
 
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
 .header-menu {
   border-bottom: none;
+}
+
+.user-dropdown {
+  cursor: pointer;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: #606266;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background-color 0.2s;
+}
+
+.user-info:hover {
+  background-color: #f5f7fa;
+}
+
+.user-name {
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .main-content {

@@ -121,11 +121,15 @@ func main() {
 	// 负责数据库配置的CRUD操作和加密解密
 	configService := services.NewConfigService(database.DB, encryptionService, logrusLogger)
 
+	// 初始化认证服务和用户服务
+	authService := services.NewAuthService()
+	userService := services.NewUserService(database.DB, authService)
+
 	// 初始化HTTP请求处理器
-	// 每个处理器负责特定的业务逻辑
-	syncHandler := handlers.NewSyncHandler(gitServiceFactory)    // 同步操作处理器
-	imageHandler := handlers.NewImageHandler()                                  // 镜像管理处理器
-	configHandler := handlers.NewConfigHandler(gitServiceFactory, configService) // 配置管理处理器
+	syncHandler := handlers.NewSyncHandler(gitServiceFactory)
+	imageHandler := handlers.NewImageHandler()
+	configHandler := handlers.NewConfigHandler(gitServiceFactory, configService)
+	authHandler := handlers.NewAuthHandler(authService, userService)
 
 	// TODO: 定时任务初始化
 	// 可以在这里添加定时任务，用于：
@@ -183,242 +187,140 @@ func main() {
 	// API路由配置
 	// ========================================================================
 
-	// API版本分组：/api/v1
-	// 所有API接口都在此分组下，便于版本管理和升级
 	api := router.Group("/api/v1")
 	{
-		// ====================================================================
-		// 镜像同步相关API
-		// ====================================================================
-		sync := api.Group("/sync")
-		{
-			// 同步操作使用更严格的限流中间件
-			// 防止频繁的同步请求对系统造成压力
-
-			// POST /api/v1/sync/submit - 提交单个镜像同步任务
-			// 从Git仓库解析单个镜像配置并提交同步任务
-			sync.POST("/submit", middleware.SyncRateLimit(), syncHandler.SubmitSync)
-
-			// POST /api/v1/sync/batch - 提交批量镜像同步任务
-			// 从Git仓库解析多个镜像配置并批量提交同步任务
-			sync.POST("/batch", middleware.SyncRateLimit(), syncHandler.SubmitBatchSync)
-
-			// POST /api/v1/sync/batch/mock - 提交模拟批量同步任务
-			// 用于测试和演示，不执行实际的镜像同步操作
-			sync.POST("/batch/mock", middleware.SyncRateLimit(), syncHandler.SubmitMockBatchSync)
-
-			// GET /api/v1/sync/status/:taskId - 查询单个同步任务状态
-			// 实时查询指定任务的执行状态和进度
-			sync.GET("/status/:taskId", syncHandler.GetSyncStatus)
-
-			// GET /api/v1/sync/batch/status/:taskId - 查询批量同步任务状态
-			// 查询批量任务的整体状态和各子任务的执行情况
-			sync.GET("/batch/status/:taskId", syncHandler.GetBatchSyncStatus)
-
-			// GET /api/v1/sync/history - 获取同步历史记录
-			// 分页查询历史同步任务，支持状态筛选和时间范围查询
-			sync.GET("/history", syncHandler.GetSyncHistory)
-		}
-
-		// ====================================================================
-		// 镜像管理相关API
-		// ====================================================================
-		images := api.Group("/images")
-		{
-			// GET /api/v1/images/list - 获取镜像列表
-			// 分页查询镜像列表，支持状态筛选、关键词搜索等
-			images.GET("/list", imageHandler.GetImages)
-
-			// GET /api/v1/images/:id - 获取单个镜像详情
-			// 查询指定镜像的详细信息，包括同步历史、状态等
-			images.GET("/:id", imageHandler.GetImage)
-
-			// DELETE /api/v1/images/:id - 删除镜像记录
-			// 软删除指定的镜像记录（设置deleted_at字段）
-			images.DELETE("/:id", imageHandler.DeleteImage)
-
-			// GET /api/v1/images/stats - 获取镜像统计信息
-			// 返回镜像总数、各状态数量、成功率等统计数据
-			images.GET("/stats", imageHandler.GetImageStats)
-
-			// POST /api/v1/images/:id/retry - 重试镜像同步
-			// 重新提交失败的镜像同步任务
-			images.POST("/:id/retry", imageHandler.RetrySync)
-
-			// POST /api/v1/images/:id/check - 检查单个镜像是否存在
-			// 检查指定镜像在目标仓库中是否存在
-			images.POST("/:id/check", imageHandler.CheckImageExists)
-
-			// POST /api/v1/images/batch-check - 批量检查镜像存在性
-			// 批量检查多个镜像在目标仓库中的存在状态
-			images.POST("/batch-check", imageHandler.BatchCheckImages)
-		}
-
-		// ====================================================================
-		// GitHub Actions集成API
-		// ====================================================================
-		github := api.Group("/github")
-		{
-			// GET /api/v1/github/runs - 获取工作流运行列表
-			// 查询GitHub Actions工作流运行历史，支持分页查询
-			github.GET("/runs", func(c *gin.Context) {
-				page := 1
-				perPage := 10
-
-				// 解析分页参数
-				if p := c.Query("page"); p != "" {
-					if parsed, err := strconv.Atoi(p); err == nil && parsed > 0 {
-						page = parsed
-					}
-				}
-
-				if pp := c.Query("per_page"); pp != "" {
-					if parsed, err := strconv.Atoi(pp); err == nil && parsed > 0 && parsed <= 100 {
-						perPage = parsed
-					}
-				}
-
-				// 从Git服务工厂获取GitHub API服务
-				githubAPIService := gitServiceFactory.GetGitHubAPIService()
-				runs, err := githubAPIService.ListWorkflowRuns(page, perPage)
-				if err != nil {
-					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-					return
-				}
-
-				c.JSON(http.StatusOK, runs)
-			})
-
-			// GET /api/v1/github/runs/:runId - 获取工作流运行详情
-			// 查询指定工作流运行的详细信息，包括日志、状态、执行时间等
-			github.GET("/runs/:runId", func(c *gin.Context) {
-				runID := c.Param("runId")
-
-				// 从Git服务工厂获取GitHub API服务
-				githubAPIService := gitServiceFactory.GetGitHubAPIService()
-				run, err := githubAPIService.GetWorkflowRunDetails(runID)
-				if err != nil {
-					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-					return
-				}
-
-				c.JSON(http.StatusOK, run)
-			})
-
-			// GET /api/v1/github/rate-limit - 获取GitHub API速率限制状态
-			// 查询当前GitHub API的调用次数限制和剩余次数
-			github.GET("/rate-limit", func(c *gin.Context) {
-				// 从Git服务工厂获取GitHub API服务
-				githubAPIService := gitServiceFactory.GetGitHubAPIService()
-				rateLimit, err := githubAPIService.CheckRateLimit()
-				if err != nil {
-					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-					return
-				}
-
-				c.JSON(http.StatusOK, rateLimit)
-			})
-		}
-
-		// ====================================================================
-		// 系统配置相关API
-		// ====================================================================
-		config := api.Group("/config")
-		{
-			// 阿里云容器镜像服务配置API（已删除旧版API）
-
-			// GET /api/v1/config/status - 获取当前配置状态和环境变量信息
-			// 用于调试和验证配置是否正确加载（不包含敏感信息）
-			config.GET("/status", configHandler.GetConfigStatus)
-
-			// GET /api/v1/config/git-repository - 获取Git仓库配置
-			// 返回当前选择的Git仓库类型（gitee或github）
-			config.GET("/git-repository", configHandler.GetGitRepositoryConfig)
-
-			// PUT /api/v1/config/git-repository - 更新Git仓库配置
-			// 更新Git仓库类型选择（gitee或github）
-			config.PUT("/git-repository", configHandler.UpdateGitRepositoryConfig)
-
-			// ====================================================================
-			// 数据库配置管理API - Git配置
-			// ====================================================================
-			// GET /api/v1/config/git - 获取Git配置
-			config.GET("/git", configHandler.GetGitConfig)
-
-			// PUT /api/v1/config/git/gitee - 更新Gitee配置
-			config.PUT("/git/gitee", configHandler.UpdateGiteeConfig)
-
-			// PUT /api/v1/config/git/github - 更新GitHub配置
-			config.PUT("/git/github", configHandler.UpdateGitHubConfig)
-
-			// POST /api/v1/config/git/test - 测试Git连接
-			config.POST("/git/test", configHandler.TestGitConnection)
-
-			// ====================================================================
-			// Git优化配置API
-			// ====================================================================
-			// GET /api/v1/config/git-optimization - 获取Git优化配置
-			config.GET("/git-optimization", configHandler.GetGitOptimizationConfig)
-
-			// PUT /api/v1/config/git-optimization - 更新Git优化配置
-			config.PUT("/git-optimization", configHandler.UpdateGitOptimizationConfig)
-
-			// GET /api/v1/config/git-performance - 获取Git性能指标
-			config.GET("/git-performance", configHandler.GetGitPerformanceMetrics)
-
-			// GET /api/v1/config/git-network-test - 测试Git网络质量
-			config.GET("/git-network-test", configHandler.TestGitNetworkQuality)
-
-			// POST /api/v1/config/git-test-operations - 测试Git代码拉取和提交操作
-			config.POST("/git-test-operations", configHandler.TestGitOperations)
-
-			// ====================================================================
-			// 数据库配置管理API - 阿里云配置
-			// ====================================================================
-			// GET /api/v1/config/aliyun-db - 获取阿里云配置（数据库版本）
-			config.GET("/aliyun-db", configHandler.GetAliyunConfig)
-
-			// PUT /api/v1/config/aliyun-db - 更新阿里云配置（数据库版本）
-			config.PUT("/aliyun-db", configHandler.UpdateAliyunConfig)
-
-			// POST /api/v1/config/aliyun/test - 测试阿里云镜像仓库连接
-			config.POST("/aliyun/test", configHandler.TestAliyunConnection)
-
-			// ====================================================================
-			// 通用配置管理API
-			// ====================================================================
-			// GET /api/v1/config/all - 获取所有配置
-			config.GET("/all", configHandler.GetAllConfigs)
-
-			// GET /api/v1/config/debug/:key - 调试配置获取
-			config.GET("/debug/:key", configHandler.DebugGetConfig)
-		}
-
-		// ====================================================================
-		// 系统健康检查API
-		// ====================================================================
-		// GET /api/v1/health - 系统健康检查接口
-		// 用于负载均衡器、监控系统等检查服务状态
+		// 公开接口（无需认证）
 		api.GET("/health", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{
-				"status":    "ok",              // 服务状态
-				"timestamp": time.Now().Unix(), // 当前时间戳
-				"version":   "1.0.0",           // 应用版本号
+				"status":    "ok",
+				"timestamp": time.Now().Unix(),
+				"version":   "1.0.0",
 			})
 		})
 
-		// ====================================================================
-		// Swagger API文档
-		// ====================================================================
-		// GET /api/v1/docs - Swagger API文档界面
-		// 提供交互式的API文档，支持在线测试
 		api.Static("/docs", "./docs")
-
-		// GET /api/v1/docs.html - 直接访问Swagger UI
 		api.StaticFile("/docs.html", "./docs/swagger-ui.html")
-
-		// GET /api/v1/swagger.json - 获取Swagger JSON配置
 		api.StaticFile("/swagger.json", "./docs/swagger.json")
+
+		// 认证接口（公开）
+		auth := api.Group("/auth")
+		{
+			auth.POST("/login", authHandler.Login)
+		}
+
+		// 需要登录的认证接口
+		authProtected := api.Group("/auth")
+		authProtected.Use(middleware.AuthRequired(authService))
+		{
+			authProtected.GET("/me", authHandler.GetCurrentUser)
+			authProtected.PUT("/password", authHandler.ChangePassword)
+			authProtected.POST("/logout", authHandler.Logout)
+		}
+
+		// 管理员接口
+		authAdmin := api.Group("/auth")
+		authAdmin.Use(middleware.AuthRequired(authService), middleware.AdminRequired())
+		{
+			authAdmin.GET("/login-logs", authHandler.GetLoginLogs)
+			authAdmin.GET("/users", authHandler.ListUsers)
+			authAdmin.POST("/users", authHandler.CreateUser)
+			authAdmin.PUT("/users/:id/status", authHandler.UpdateUserStatus)
+			authAdmin.DELETE("/users/:id", authHandler.DeleteUser)
+			authAdmin.PUT("/users/:id/password", authHandler.ResetUserPassword)
+		}
+
+		// 以下所有业务接口需要登录
+		protected := api.Group("")
+		protected.Use(middleware.AuthRequired(authService))
+		{
+			syncGroup := protected.Group("/sync")
+			{
+				syncGroup.POST("/submit", middleware.SyncRateLimit(), syncHandler.SubmitSync)
+				syncGroup.POST("/batch", middleware.SyncRateLimit(), syncHandler.SubmitBatchSync)
+				syncGroup.POST("/batch/mock", middleware.SyncRateLimit(), syncHandler.SubmitMockBatchSync)
+				syncGroup.GET("/status/:taskId", syncHandler.GetSyncStatus)
+				syncGroup.GET("/batch/status/:taskId", syncHandler.GetBatchSyncStatus)
+				syncGroup.GET("/history", syncHandler.GetSyncHistory)
+			}
+
+			images := protected.Group("/images")
+			{
+				images.GET("/list", imageHandler.GetImages)
+				images.GET("/stats", imageHandler.GetImageStats)
+				images.POST("/batch-check", imageHandler.BatchCheckImages)
+				images.GET("/:id", imageHandler.GetImage)
+				images.DELETE("/:id", imageHandler.DeleteImage)
+				images.POST("/:id/retry", imageHandler.RetrySync)
+				images.POST("/:id/check", imageHandler.CheckImageExists)
+			}
+
+			github := protected.Group("/github")
+			{
+				github.GET("/runs", func(c *gin.Context) {
+					page := 1
+					perPage := 10
+					if p := c.Query("page"); p != "" {
+						if parsed, err := strconv.Atoi(p); err == nil && parsed > 0 {
+							page = parsed
+						}
+					}
+					if pp := c.Query("per_page"); pp != "" {
+						if parsed, err := strconv.Atoi(pp); err == nil && parsed > 0 && parsed <= 100 {
+							perPage = parsed
+						}
+					}
+					githubAPIService := gitServiceFactory.GetGitHubAPIService()
+					runs, err := githubAPIService.ListWorkflowRuns(page, perPage)
+					if err != nil {
+						c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+						return
+					}
+					c.JSON(http.StatusOK, runs)
+				})
+
+				github.GET("/runs/:runId", func(c *gin.Context) {
+					runID := c.Param("runId")
+					githubAPIService := gitServiceFactory.GetGitHubAPIService()
+					run, err := githubAPIService.GetWorkflowRunDetails(runID)
+					if err != nil {
+						c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+						return
+					}
+					c.JSON(http.StatusOK, run)
+				})
+
+				github.GET("/rate-limit", func(c *gin.Context) {
+					githubAPIService := gitServiceFactory.GetGitHubAPIService()
+					rateLimit, err := githubAPIService.CheckRateLimit()
+					if err != nil {
+						c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+						return
+					}
+					c.JSON(http.StatusOK, rateLimit)
+				})
+			}
+
+			configGroup := protected.Group("/config")
+			{
+				configGroup.GET("/status", configHandler.GetConfigStatus)
+				configGroup.GET("/git-repository", configHandler.GetGitRepositoryConfig)
+				configGroup.PUT("/git-repository", configHandler.UpdateGitRepositoryConfig)
+				configGroup.GET("/git", configHandler.GetGitConfig)
+				configGroup.PUT("/git/gitee", configHandler.UpdateGiteeConfig)
+				configGroup.PUT("/git/github", configHandler.UpdateGitHubConfig)
+				configGroup.POST("/git/test", configHandler.TestGitConnection)
+				configGroup.GET("/git-optimization", configHandler.GetGitOptimizationConfig)
+				configGroup.PUT("/git-optimization", configHandler.UpdateGitOptimizationConfig)
+				configGroup.GET("/git-performance", configHandler.GetGitPerformanceMetrics)
+				configGroup.GET("/git-network-test", configHandler.TestGitNetworkQuality)
+				configGroup.POST("/git-test-operations", configHandler.TestGitOperations)
+				configGroup.GET("/aliyun-db", configHandler.GetAliyunConfig)
+				configGroup.PUT("/aliyun-db", configHandler.UpdateAliyunConfig)
+				configGroup.POST("/aliyun/test", configHandler.TestAliyunConnection)
+				configGroup.GET("/all", configHandler.GetAllConfigs)
+				configGroup.GET("/debug/:key", configHandler.DebugGetConfig)
+			}
+		}
 	}
 
 	// ========================================================================

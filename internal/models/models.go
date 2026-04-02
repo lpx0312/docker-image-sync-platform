@@ -176,25 +176,56 @@ type SystemConfig struct {
 	DeletedAt    gorm.DeletedAt `json:"-" gorm:"index"`                                           // 软删除时间，建立索引以提高软删除查询性能
 }
 
+// User 用户数据模型
+type User struct {
+	ID           uint           `json:"id" gorm:"primaryKey"`
+	Username     string         `json:"username" gorm:"type:varchar(50);uniqueIndex;not null"`
+	PasswordHash string         `json:"-" gorm:"type:varchar(255);not null"`
+	Email        string         `json:"email" gorm:"type:varchar(100)"`
+	Role         string         `json:"role" gorm:"type:varchar(20);default:'user'"`
+	Status       string         `json:"status" gorm:"type:varchar(20);default:'active'"`
+	LastLoginAt  *time.Time     `json:"last_login_at"`
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
+	DeletedAt    gorm.DeletedAt `json:"-" gorm:"index"`
+}
+
+// LoginLog 登录日志数据模型
+type LoginLog struct {
+	ID        uint      `json:"id" gorm:"primaryKey"`
+	UserID    uint      `json:"user_id" gorm:"index;not null"`
+	Username  string    `json:"username" gorm:"type:varchar(50);not null"`
+	IP        string    `json:"ip" gorm:"type:varchar(45)"`
+	UserAgent string    `json:"user_agent" gorm:"type:varchar(500)"`
+	Status    string    `json:"status" gorm:"type:varchar(20);not null"`
+	Message   string    `json:"message" gorm:"type:varchar(255)"`
+	CreatedAt time.Time `json:"created_at" gorm:"index"`
+}
+
 // TableName 设置数据库表名
-//
-// 这些方法实现了GORM的Tabler接口，用于自定义数据库表名。
-// 通过显式指定表名，确保数据库表名的一致性和可预测性。
+func (ImageSyncRecord) TableName() string { return "image_sync_records" }
+func (SyncTask) TableName() string        { return "sync_tasks" }
+func (SystemConfig) TableName() string    { return "system_configs" }
+func (User) TableName() string            { return "users" }
+func (LoginLog) TableName() string        { return "login_logs" }
 
-// TableName 返回ImageSyncRecord对应的数据库表名
-func (ImageSyncRecord) TableName() string {
-	return "image_sync_records"
-}
+// 用户角色常量
+const (
+	RoleAdmin = "admin"
+	RoleUser  = "user"
+)
 
-// TableName 返回SyncTask对应的数据库表名
-func (SyncTask) TableName() string {
-	return "sync_tasks"
-}
+// 用户状态常量
+const (
+	UserStatusActive   = "active"
+	UserStatusDisabled = "disabled"
+)
 
-// TableName 返回SystemConfig对应的数据库表名
-func (SystemConfig) TableName() string {
-	return "system_configs"
-}
+// 登录状态常量
+const (
+	LoginStatusSuccess = "success"
+	LoginStatusFailed  = "failed"
+)
 
 // 同步状态常量定义
 //

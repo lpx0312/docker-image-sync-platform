@@ -42,6 +42,7 @@ import (
 	"docker-image-sync-platform/internal/config"
 	"docker-image-sync-platform/internal/models"
 
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -143,9 +144,11 @@ func AutoMigrate() error {
 	// 使用GORM的AutoMigrate功能自动创建或更新表结构
 	// 这会根据模型定义创建表、字段、索引等
 	err := DB.AutoMigrate(
-		&models.ImageSyncRecord{}, // 镜像同步记录表：存储每个镜像的同步状态和结果
-		&models.SyncTask{},        // 同步任务表：存储批量同步任务的信息
-		&models.SystemConfig{},    // 系统配置表：存储应用运行时的配置参数
+		&models.ImageSyncRecord{},
+		&models.SyncTask{},
+		&models.SystemConfig{},
+		&models.User{},
+		&models.LoginLog{},
 	)
 
 	if err != nil {
@@ -154,15 +157,52 @@ func AutoMigrate() error {
 
 	log.Println("数据库表迁移完成")
 
-	// ====================================================================
-	// 第二步：初始化系统默认配置
-	// ====================================================================
-	// 在表结构创建完成后，插入系统运行所需的默认配置
-	// 这些配置包括阿里云设置、同步参数等
 	if err := initDefaultConfigs(); err != nil {
 		return fmt.Errorf("初始化默认配置失败: %w", err)
 	}
 
+	if err := initDefaultAdmin(); err != nil {
+		return fmt.Errorf("初始化默认管理员失败: %w", err)
+	}
+
+	return nil
+}
+
+// initDefaultAdmin 初始化默认管理员账号
+func initDefaultAdmin() error {
+	var count int64
+	DB.Model(&models.User{}).Count(&count)
+	if count > 0 {
+		return nil
+	}
+
+	username := config.AppConfig.Auth.DefaultAdminUsername
+	password := config.AppConfig.Auth.DefaultAdminPassword
+	if username == "" {
+		username = "admin"
+	}
+	if password == "" {
+		password = "admin123"
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("加密默认管理员密码失败: %w", err)
+	}
+
+	admin := models.User{
+		Username:     username,
+		PasswordHash: string(hash),
+		Email:        "admin@example.com",
+		Role:         models.RoleAdmin,
+		Status:       models.UserStatusActive,
+	}
+
+	if err := DB.Create(&admin).Error; err != nil {
+		return fmt.Errorf("创建默认管理员失败: %w", err)
+	}
+
+	log.Printf("默认管理员账号已创建: %s (请及时修改默认密码)", username)
 	return nil
 }
 

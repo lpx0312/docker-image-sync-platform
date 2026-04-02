@@ -399,17 +399,17 @@ Token 存储策略：
 
 | 阶段 | 状态 | 备注 |
 |------|------|------|
-| 1. 数据模型 | ⬜ 待开始 | |
-| 2. 配置项 | ⬜ 待开始 | |
-| 3. JWT 服务 | ⬜ 待开始 | |
-| 4. 用户服务 | ⬜ 待开始 | |
-| 5. 认证中间件 | ⬜ 待开始 | |
-| 6. 认证 Handler | ⬜ 待开始 | |
-| 7. 路由改造 | ⬜ 待开始 | |
-| 8. 前端 API 层 | ⬜ 待开始 | |
-| 9. Auth Store | ⬜ 待开始 | |
-| 10. 登录页面 | ⬜ 待开始 | |
-| 11. 路由守卫 | ⬜ 待开始 | |
-| 12. 全局布局改造 | ⬜ 待开始 | |
-| 13. 用户管理页 | ⬜ 待开始 | |
-| 14. 修改密码对话框 | ⬜ 待开始 | |
+| 1. 数据模型 | ✅ 已完成 | User + LoginLog 模型已添加 |
+| 2. 配置项 | ✅ 已完成 | AuthConfig + config.yaml 已更新 |
+| 3. JWT 服务 | ✅ 已完成 | internal/services/auth.go |
+| 4. 用户服务 | ✅ 已完成 | internal/services/user.go |
+| 5. 认证中间件 | ✅ 已完成 | internal/middleware/auth.go |
+| 6. 认证 Handler | ✅ 已完成 | internal/handlers/auth.go |
+| 7. 路由改造 | ✅ 已完成 | main.go 已重组，同时修复 /stats 路由顺序 |
+| 8. 前端 API 层 | ✅ 已完成 | authAPI + Token 拦截器 |
+| 9. Auth Store | ✅ 已完成 | stores/auth.js |
+| 10. 登录页面 | ✅ 已完成 | LoginView.vue（渐变背景 + 居中卡片） |
+| 11. 路由守卫 | ✅ 已完成 | beforeEach 全局守卫 + 管理员路由 |
+| 12. 全局布局改造 | ✅ 已完成 | App.vue 用户菜单 + 超时检测 |
+| 13. 用户管理页 | ✅ 已完成 | UserManageView.vue + 登录日志 |
+| 14. 修改密码对话框 | ✅ 已完成 | ChangePasswordDialog.vue |

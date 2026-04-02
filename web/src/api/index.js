@@ -36,16 +36,12 @@ const api = axios.create({
   }
 })
 
-/**
- * 请求拦截器
- * 
- * 功能：
- * - 在请求发送前进行统一处理
- * - 可以添加认证token、请求日志等
- * - 当前为透传模式，保持请求原样
- */
 api.interceptors.request.use(
   (config) => {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token')
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
     return config
   },
   (error) => {
@@ -53,20 +49,22 @@ api.interceptors.request.use(
   }
 )
 
-/**
- * 响应拦截器
- * 
- * 功能：
- * - 统一处理响应数据格式
- * - 自动提取响应体中的data字段
- * - 统一错误处理和用户提示
- * - 使用Element Plus的消息组件显示错误
- */
 api.interceptors.response.use(
   (response) => {
     return response.data
   },
   (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      sessionStorage.removeItem('token')
+      sessionStorage.removeItem('user')
+      const currentPath = window.location.pathname
+      if (currentPath !== '/login') {
+        window.location.href = '/login?redirect=' + encodeURIComponent(currentPath)
+      }
+      return Promise.reject(error)
+    }
     const message = error.response?.data?.error || error.message || '请求失败'
     ElMessage.error(message)
     return Promise.reject(error)
@@ -450,6 +448,22 @@ export const systemAPI = {
    * @returns {Promise} 返回配置状态信息
    */
   getConfigStatus: () => api.get('/config/status')
+}
+
+/**
+ * 认证相关API接口
+ */
+export const authAPI = {
+  login: (data) => api.post('/auth/login', data),
+  getCurrentUser: () => api.get('/auth/me'),
+  changePassword: (data) => api.put('/auth/password', data),
+  logout: () => api.post('/auth/logout'),
+  getLoginLogs: (params) => api.get('/auth/login-logs', { params }),
+  listUsers: (params) => api.get('/auth/users', { params }),
+  createUser: (data) => api.post('/auth/users', data),
+  updateUserStatus: (id, data) => api.put(`/auth/users/${id}/status`, data),
+  deleteUser: (id) => api.delete(`/auth/users/${id}`),
+  resetUserPassword: (id, data) => api.put(`/auth/users/${id}/password`, data),
 }
 
 export default api
