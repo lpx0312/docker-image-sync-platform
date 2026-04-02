@@ -29,6 +29,7 @@
 docker-image-sync-platform/
 ├── main.go                    # 应用入口
 ├── config.yaml               # 配置文件
+├── Makefile                  # 构建与开发命令
 ├── internal/                 # 后端内部包
 │   ├── config/              # 配置管理
 │   ├── database/            # 数据库连接与迁移
@@ -37,6 +38,10 @@ docker-image-sync-platform/
 │   ├── models/              # 数据模型
 │   ├── services/            # 业务逻辑
 │   └── logger/              # 日志工具
+├── docs/                     # API 文档
+│   ├── swagger.json         # OpenAPI 2.0 规范文件
+│   ├── swagger-ui.html      # Swagger UI 界面
+│   └── SWAGGER使用说明.md    # 文档使用指南
 ├── web/                     # 前端 Vue 应用
 │   ├── src/
 │   │   ├── api/            # API 封装
@@ -46,8 +51,10 @@ docker-image-sync-platform/
 │   │   └── views/          # 页面
 │   └── package.json
 ├── deploy/                  # Docker 部署相关
+│   ├── docker-signal/      # 前后端分离部署
+│   └── docker-all/         # 前后端一体部署
 ├── scripts/                 # 脚本
-└── Makefile                # 构建与开发命令
+└── logs/                    # 应用日志（运行时生成）
 ```
 
 ## 核心服务
@@ -81,31 +88,55 @@ docker-image-sync-platform/
 
 ### 基础路径：`/api/v1`
 
-### 同步
+### Swagger API 文档
+- **Swagger UI**：`http://localhost:8080/api/v1/docs.html`
+- **OpenAPI JSON**：`http://localhost:8080/api/v1/swagger.json`
+- **静态资源目录**：`http://localhost:8080/api/v1/docs/`
+- **使用说明**：`docs/SWAGGER使用说明.md`
+
+### 同步 (Sync)
 - `POST /sync/submit` — 提交单镜像同步
 - `POST /sync/batch` — 批量同步
-- `GET /sync/status/:taskId` — 查询任务状态
+- `POST /sync/batch/mock` — 模拟批量同步（测试用）
+- `GET /sync/status/:taskId` — 查询单个任务状态
+- `GET /sync/batch/status/:taskId` — 查询批量任务状态
 - `GET /sync/history` — 同步历史
 
-### 镜像管理
-- `GET /images/list` — 分页列表
+### 镜像管理 (Images)
+- `GET /images/list` — 分页列表（支持搜索、状态与架构筛选）
+- `GET /images/stats` — 各状态数量统计
 - `GET /images/:id` — 详情
-- `DELETE /images/:id` — 删除记录
+- `DELETE /images/:id` — 删除记录（软删除）
 - `POST /images/:id/retry` — 失败重试
+- `POST /images/:id/check` — 检查单个镜像是否存在于 ACR
+- `POST /images/batch-check` — 批量检查镜像是否存在于 ACR
 
-### 配置
+### 配置 (Config)
+- `GET /config/status` — 配置状态（不含敏感信息）
 - `GET /config/all` — 全部配置
-- `GET /config/git` — Git 相关配置
+- `GET /config/debug/:key` — 调试：获取指定配置项
+- `GET /config/git-repository` — 获取当前 Git 仓库类型
+- `PUT /config/git-repository` — 切换 Git 仓库类型（gitee/github）
+- `GET /config/git` — Git 详细配置
 - `PUT /config/git/gitee` — 更新 Gitee
 - `PUT /config/git/github` — 更新 GitHub
 - `POST /config/git/test` — 测试 Git 连接
-- `POST /config/git-test-operations` — 测试 GitHub 拉取与提交
+- `POST /config/git-test-operations` — 测试 GitHub 拉取与提交（三步完整测试）
+- `GET /config/git-optimization` — 获取 Git 优化配置
+- `PUT /config/git-optimization` — 更新 Git 优化配置
+- `GET /config/git-performance` — Git 性能指标
+- `GET /config/git-network-test` — Git 网络质量测试
+- `GET /config/aliyun-db` — 获取阿里云 ACR 配置
 - `PUT /config/aliyun-db` — 更新阿里云 ACR 配置
+- `POST /config/aliyun/test` — 测试阿里云 ACR 连接
 
 ### GitHub
 - `GET /github/runs` — 工作流运行列表
 - `GET /github/runs/:runId` — 运行详情
 - `GET /github/rate-limit` — API 速率限制
+
+### 健康检查
+- `GET /health` — 系统健康检查
 
 ## 配置
 
@@ -113,10 +144,12 @@ docker-image-sync-platform/
 主要段落：
 - `server`：HTTP 服务
 - `database`：MySQL
-- `git`：Gitee/GitHub 仓库
+- `git`：Gitee/GitHub 仓库及优化参数（操作模式、稀疏检出、缓存等）
 - `aliyun`：阿里云镜像仓库
 - `log`：日志
-- `sync`：同步任务（超时、并发等）
+- `sync`：同步任务（超时、并发、重试等）
+- `github_actions`：工作流文件名和状态检查间隔
+- `security`：限流与 CORS
 
 ### 安全说明
 - 敏感信息（密码、Token）在库中加密存储
@@ -132,7 +165,7 @@ docker-image-sync-platform/
 - `system_configs`：加密配置
 
 ### 关键字段
-- 同步状态（pending、running、success、failed）
+- 同步状态（pending、running、success、failed、retrying、skipped）
 - 与 GitHub Actions 的关联
 - 多架构（amd64、arm64）
 - 重试与优先级
@@ -212,19 +245,38 @@ docker-image-sync-platform/
 4. 在弹窗中查看各步结果
 5. 全部通过后再用于实际同步
 
-### 价值
-- 校验凭据与权限
-- 在正式同步前发现网络与认证问题
-- 观察 Git 操作耗时
-- 提高对集成的信心
-
 ## 本地开发测试方法
 
 ### 开发环境
-- **操作系统**：Linux（常见发行版如 Ubuntu、Debian、Fedora 等均可）
-- **Shell**：bash（本仓库脚本与文档均以 bash 为准）
+- **操作系统**：Ubuntu 24.04 LTS（x86_64）— 内核 6.17
+- **Shell**：bash
+- **Go**：1.26.1 linux/amd64（通过 snap 安装）
+- **Node.js**：v24.14.1
+- **npm**：11.11.0
+- **Docker**：29.3.1（需 `sudo` 执行或将当前用户加入 docker 组）
+- **Docker Compose**：v5.1.1
+- **MySQL**：通过 Docker 容器运行（`docker-sync-mysql-dev`），映射端口 3306
 
 ### 服务启动
+
+#### 准备 MySQL（如本机未安装 MySQL）
+```bash
+# 使用 Docker 启动 MySQL 8.0（首次需拉取镜像）
+sudo docker run -d \
+  --name docker-sync-mysql-dev \
+  -p 3306:3306 \
+  -e MYSQL_ROOT_PASSWORD=Ab123456 \
+  -e MYSQL_DATABASE=docker_sync \
+  mysql:8.0 --default-authentication-plugin=mysql_native_password
+
+# 确认端口已监听
+ss -ltnp | grep ':3306'
+```
+
+#### 后端（固定端口 8080）
+```bash
+go run main.go
+```
 
 #### 前端（固定端口 3000）
 ```bash
@@ -233,45 +285,60 @@ npm install   # 首次需安装依赖
 npm run dev
 ```
 
-#### 后端（固定端口 8080）
-```bash
-go run main.go
-```
+### 访问地址
+- **前端**：http://localhost:3000
+- **后端 API**：http://localhost:8080/api/v1
+- **Swagger UI**：http://localhost:8080/api/v1/docs.html
+- **Swagger JSON**：http://localhost:8080/api/v1/swagger.json
+- **健康检查**：http://localhost:8080/api/v1/health
 
 ### 开发注意
 
 #### 日志
 - **后端日志**：`logs/app.log`
-- **查看**：开发时可持续 tail 该文件排查问题
+- **查看**：`tail -f logs/app.log`
 
 #### 重启前后端前释放端口
 - **前端**：占用 **3000** 时，先结束占用进程再启动 `npm run dev`
 - **后端**：占用 **8080** 时，先结束占用进程再启动 `go run main.go`
 
-在 **bash** 下可用（需已安装 `lsof`，多数桌面/服务器 Linux 自带或可 `sudo apt install lsof`）：
-
 ```bash
-# 查看占用某端口的进程（将 3000 或 8080 换成实际端口）
-lsof -iTCP:3000 -sTCP:LISTEN
-# 或
+# 查看占用某端口的进程
 ss -tlnp | grep ':3000'
+# 或使用 lsof（需安装：sudo apt install lsof）
+lsof -iTCP:3000 -sTCP:LISTEN
 
-# 按 PID 结束进程（将 <PID> 换成上一步看到的 PID）
+# 按 PID 结束进程
 kill <PID>
 # 仍不退出时可强制：
 kill -9 <PID>
-```
 
-一行结束监听某端口的进程（谨慎使用）：
-
-```bash
+# 一行结束监听某端口的进程（谨慎使用）
 kill $(lsof -t -i:3000)   # 前端
 kill $(lsof -t -i:8080)   # 后端
 ```
 
+#### MySQL 管理（Docker 方式）
+```bash
+# 查看容器状态
+sudo docker ps --filter name=mysql
+
+# 查看 MySQL 日志
+sudo docker logs docker-sync-mysql-dev --tail 50
+
+# 进入 MySQL 命令行
+sudo docker exec -it docker-sync-mysql-dev mysql -uroot -pAb123456
+
+# 停止 / 启动 / 重启
+sudo docker stop docker-sync-mysql-dev
+sudo docker start docker-sync-mysql-dev
+sudo docker restart docker-sync-mysql-dev
+```
+
 #### 代码变更与重启
-- 修改前端或后端代码后，一般需**重启对应服务**（按团队习惯也可同时重启两端）
-- 以实际热更新能力为准；无热更新时改代码后应重启
+- 修改前端或后端代码后，需**重启对应服务**
+- 前端 Vite 有热更新能力，大多数修改无需手动重启
+- 后端 Go 无热更新，修改代码后必须重新 `go run main.go`
 
 ### 自动化测试
 
@@ -295,9 +362,9 @@ kill $(lsof -t -i:8080)   # 后端
 
 ### 开发工作流建议
 
-1. **环境**：端口空闲，启动前后端
+1. **环境**：确认 MySQL 容器运行中、端口空闲，启动前后端
 2. **开发**：按需求改前端或后端
-3. **重启**：无热更新时重启对应服务
+3. **重启**：后端改代码后重启 `go run main.go`；前端 Vite 通常自动热更新
 4. **验证**：必要时用 Chrome DevTools MCP 等工具自测
 5. **确认**：功能与日志无异常
 
@@ -319,11 +386,12 @@ kill $(lsof -t -i:8080)   # 后端
 ## 故障排查
 
 ### 常见问题
-1. **数据库**：MySQL 是否运行、账号密码与 `config.yaml` 是否一致
+1. **数据库**：MySQL 容器是否运行（`sudo docker ps`）、账号密码与 `config.yaml` 是否一致
 2. **Git**：仓库地址、Token、分支与权限
 3. **同步失败**：GitHub Actions 运行状态与日志
-4. **前端构建**：Node 依赖是否安装完整
-5. **端口冲突**：用 `lsof`、`ss` 等查看并结束占用进程
+4. **前端构建**：Node 依赖是否安装完整（`cd web && npm install`）
+5. **端口冲突**：用 `ss -tlnp` 查看并结束占用进程
+6. **Docker 权限**：命令需加 `sudo`，或将用户加入 docker 组（`sudo usermod -aG docker $USER`）
 
 ### 健康检查与日志
 - 健康检查接口：`/api/v1/health`
