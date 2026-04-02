@@ -27,10 +27,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"docker-image-sync-platform/internal/logger"
+	"docker-image-sync-platform/internal/utils"
 
 	"github.com/go-resty/resty/v2"
 	"go.uber.org/zap"
@@ -599,54 +599,5 @@ func (s *GitHubService) CheckRateLimit() (map[string]interface{}, error) {
 //   - 支持用户输入的多种URL格式
 //   - 配置验证和标准化
 func parseGitHubRepo(repoURL string) (owner, repo string) {
-	// ====================================================================
-	// 输入验证
-	// ====================================================================
-
-	// 支持多种格式的URL
-	// https://github.com/owner/repo
-	// https://github.com/owner/repo.git
-	// git@github.com:owner/repo.git
-
-	if repoURL == "" {
-		return "", ""
-	}
-
-	// ====================================================================
-	// URL标准化处理
-	// ====================================================================
-
-	// 移除协议部分（http://、https://）
-	if idx := strings.Index(repoURL, "://"); idx != -1 {
-		repoURL = repoURL[idx+3:]
-	}
-
-	// 移除git@前缀并处理SSH格式
-	if strings.HasPrefix(repoURL, "git@") {
-		repoURL = repoURL[4:]
-		// 替换SSH格式中的冒号为斜杠
-		repoURL = strings.Replace(repoURL, ":", "/", 1)
-	}
-
-	// 移除github.com/前缀
-	if strings.HasPrefix(repoURL, "github.com/") {
-		repoURL = repoURL[11:]
-	}
-
-	// 移除.git后缀
-	if strings.HasSuffix(repoURL, ".git") {
-		repoURL = repoURL[:len(repoURL)-4]
-	}
-
-	// ====================================================================
-	// 路径分割和提取
-	// ====================================================================
-
-	// 分割owner和repo
-	parts := strings.Split(repoURL, "/")
-	if len(parts) >= 2 {
-		return parts[0], parts[1]
-	}
-
-	return "", ""
+	return utils.ParseGitHubRepoURLSimple(repoURL)
 }

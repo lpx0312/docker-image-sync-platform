@@ -364,7 +364,9 @@ import {
   Search
 } from '@element-plus/icons-vue'
 import { useImageStore } from '@/stores/image'
-import dayjs from 'dayjs'
+import { copyToClipboard } from '@/utils/clipboard'
+import { formatTime } from '@/utils/format'
+import { getSyncStatusType, getSyncStatusText } from '@/utils/status'
 
 const imageStore = useImageStore()
 
@@ -602,46 +604,6 @@ const batchCheckImages = async () => {
   }
 }
 
-// 复制到剪贴板（带降级处理，兼容 HTTP 内网环境）
-const copyToClipboard = async (text) => {
-  // 优先使用 Clipboard API
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    try {
-      await navigator.clipboard.writeText(text)
-      ElMessage.success('已复制到剪贴板')
-      return
-    } catch (error) {
-      console.warn('navigator.clipboard 调用失败，尝试降级复制方案:', error)
-    }
-  }
-
-  // 降级方案：使用隐藏的 textarea + document.execCommand('copy')
-  try {
-    const textarea = document.createElement('textarea')
-    textarea.value = text
-    textarea.style.position = 'fixed'
-    textarea.style.top = '-9999px'
-    textarea.style.left = '-9999px'
-    textarea.setAttribute('readonly', 'readonly')
-    document.body.appendChild(textarea)
-
-    textarea.select()
-    textarea.setSelectionRange(0, textarea.value.length)
-
-    const successful = document.execCommand('copy')
-    document.body.removeChild(textarea)
-
-    if (successful) {
-      ElMessage.success('已复制到剪贴板')
-    } else {
-      ElMessage.error('复制失败')
-    }
-  } catch (error) {
-    console.error('降级复制方案失败:', error)
-    ElMessage.error('复制失败')
-  }
-}
-
 // 打开GitHub Actions
 const openGitHubRun = (url) => {
   window.open(url, '_blank')
@@ -652,43 +614,19 @@ const getRowIndex = (index) => {
   return (currentPage.value - 1) * pageSize.value + index + 1
 }
 
-// 工具函数
-const getStatusType = (status) => {
-  const statusMap = {
-    pending: 'info',
-    syncing: 'warning',   // 对应后端的 syncing
-    success: 'success',   // 对应后端的 success
-    failed: 'danger'
-  }
-  return statusMap[status] || 'info'
-}
-
-const getStatusText = (status) => {
-  const statusMap = {
-    pending: '等待中',
-    syncing: '同步中',   // 对应后端的 syncing
-    success: '成功',     // 对应后端的 success
-    failed: '失败'
-  }
-  return statusMap[status] || '未知'
-}
-
+// 获取目标镜像地址
 const getTargetImage = (row) => {
   // 如果 acr_image 有值，直接返回
   if (row.acr_image) {
     return row.acr_image
   }
-  
+
   // 否则生成默认的 ACR 地址，使用动态配置
   if (row.original_image && row.tag) {
     return `${aliyunConfig.value.registry}/${aliyunConfig.value.namespace}/${row.original_image}:${row.tag}`
   }
-  
-  return ''
-}
 
-const formatTime = (time) => {
-  return dayjs(time).format('YYYY-MM-DD HH:mm:ss')
+  return ''
 }
 
 // 监听分页变化

@@ -405,7 +405,9 @@ import { useSyncStore } from '@/stores/sync'
 import { useImageStore } from '@/stores/image'
 import SingleSyncForm from '@/components/SingleSyncForm.vue'
 import BatchSyncForm from '@/components/BatchSyncForm.vue'
-import dayjs from 'dayjs'
+import { copyToClipboard } from '@/utils/clipboard'
+import { formatTime } from '@/utils/format'
+import { getSyncStatusType, getSyncStatusText } from '@/utils/status'
 
 // 路由
 const router = useRouter()
@@ -461,74 +463,6 @@ const handleBatchSyncSuccess = async (task) => {
 
 
 
-
-// 工具函数
-const getStatusType = (status) => {
-  const statusMap = {
-    pending: 'info',
-    running: 'warning',   // 对应后端的 running
-    completed: 'success', // 对应后端的 completed
-    failed: 'danger'
-  }
-  return statusMap[status] || 'info'
-}
-
-const getStatusText = (status) => {
-  const statusMap = {
-    pending: '等待中',
-    running: '同步中',   // 对应后端的 running
-    completed: '成功',   // 对应后端的 completed
-    failed: '失败'
-  }
-  return statusMap[status] || '未知'
-}
-
-
-
-const formatTime = (time) => {
-  return dayjs(time).format('YYYY-MM-DD HH:mm:ss')
-}
-
-// 复制到剪贴板（带降级处理，兼容 HTTP 内网环境）
-const copyToClipboard = async (text) => {
-  // 优先使用 Clipboard API（仅在安全上下文或浏览器允许时可用）
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    try {
-      await navigator.clipboard.writeText(text)
-      ElMessage.success('已复制到剪贴板')
-      return
-    } catch (error) {
-      // 如果 Clipboard API 调用失败，则继续尝试降级方案
-      console.warn('navigator.clipboard 调用失败，尝试降级复制方案:', error)
-    }
-  }
-
-  // 降级方案：使用隐藏的 textarea + document.execCommand('copy')
-  try {
-    const textarea = document.createElement('textarea')
-    textarea.value = text
-    textarea.style.position = 'fixed'
-    textarea.style.top = '-9999px'
-    textarea.style.left = '-9999px'
-    textarea.setAttribute('readonly', 'readonly')
-    document.body.appendChild(textarea)
-
-    textarea.select()
-    textarea.setSelectionRange(0, textarea.value.length)
-
-    const successful = document.execCommand('copy')
-    document.body.removeChild(textarea)
-
-    if (successful) {
-      ElMessage.success('已复制到剪贴板')
-    } else {
-      ElMessage.error('复制失败')
-    }
-  } catch (error) {
-    console.error('降级复制方案失败:', error)
-    ElMessage.error('复制失败')
-  }
-}
 
 // 查看同步详情
 const viewSyncDetails = (row) => {

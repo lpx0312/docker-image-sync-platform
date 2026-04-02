@@ -287,6 +287,8 @@ import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { githubAPI } from '@/api'
+import { formatTime, formatDuration } from '@/utils/format'
+import { getGitHubStatusType, getGitHubStatusText, getGitHubConclusionType, getGitHubConclusionText } from '@/utils/status'
 import dayjs from 'dayjs'
 import duration from 'dayjs/plugin/duration'
 
@@ -398,56 +400,20 @@ const openGitHubRun = (url) => {
   window.open(url, '_blank')
 }
 
-// 工具函数
-const getStatusType = (status) => {
-  const statusMap = {
-    queued: 'info',
-    in_progress: 'warning',
-    completed: 'success'
-  }
-  return statusMap[status] || 'info'
-}
-
-const getStatusText = (status) => {
-  const statusMap = {
-    queued: '排队中',
-    in_progress: '进行中',
-    completed: '已完成'
-  }
-  return statusMap[status] || status
-}
-
-const getConclusionType = (conclusion) => {
-  const conclusionMap = {
-    success: 'success',
-    failure: 'danger',
-    cancelled: 'warning',
-    skipped: 'info'
-  }
-  return conclusionMap[conclusion] || 'info'
-}
-
-const getConclusionText = (conclusion) => {
-  const conclusionMap = {
-    success: '成功',
-    failure: '失败',
-    cancelled: '取消',
-    skipped: '跳过'
-  }
-  return conclusionMap[conclusion] || conclusion
-}
-
-const formatTime = (time) => {
-  return dayjs(time).format('YYYY-MM-DD HH:mm:ss')
-}
+// 使用共享工具函数
+const getStatusType = getGitHubStatusType
+const getStatusText = getGitHubStatusText
+const getConclusionType = getGitHubConclusionType
+const getConclusionText = getGitHubConclusionText
+// formatTime 使用导入的 formatTime 函数
 
 const getDuration = (run) => {
   if (!run.created_at || !run.updated_at) return '-'
-  
+
   const start = dayjs(run.created_at)
   const end = dayjs(run.updated_at)
   const diff = end.diff(start)
-  
+
   if (diff < 60000) { // 小于1分钟
     return `${Math.floor(diff / 1000)}秒`
   } else if (diff < 3600000) { // 小于1小时

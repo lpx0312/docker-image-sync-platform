@@ -26,12 +26,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"time"
 
 	"docker-image-sync-platform/internal/database"
 	"docker-image-sync-platform/internal/logger"
 	"docker-image-sync-platform/internal/models"
+	"docker-image-sync-platform/internal/utils"
 
 	"go.uber.org/zap"
 )
@@ -484,17 +484,8 @@ func NewGitAPIService() *GitAPIService {
 
 // ParseGitHubRepoURL 解析GitHub仓库URL提取用户名
 func (s *GitAPIService) ParseGitHubRepoURL(repoURL string) (string, error) {
-	// 移除.git后缀和协议前缀
-	repoURL = strings.TrimSuffix(repoURL, ".git")
-	repoURL = strings.Replace(repoURL, "https://github.com/", "", 1)
-	repoURL = strings.Replace(repoURL, "http://github.com/", "", 1)
-
-	parts := strings.Split(repoURL, "/")
-	if len(parts) != 2 {
-		return "", fmt.Errorf("无效的GitHub仓库URL: %s", repoURL)
-	}
-
-	return parts[0], nil
+	owner, _, err := utils.ParseGitHubRepoURL(repoURL)
+	return owner, err
 }
 
 // TestGitHubConnection 测试GitHub连接（仅验证凭据，不操作仓库）
@@ -1095,24 +1086,10 @@ func getGiteeConfig(encryptionService *EncryptionService) (*GiteeConfig, error) 
 	return &config, nil
 }
 
-// parseGitHubRepoURL 解析GitHub仓库URL
 // ParseGitHubRepoURL 解析GitHub仓库URL
+// 使用共享工具函数进行解析
 func ParseGitHubRepoURL(repoURL string) (string, string, error) {
-	// 支持格式：https://github.com/owner/repo.git
-	if !strings.Contains(repoURL, "github.com") {
-		return "", "", fmt.Errorf("无效的GitHub仓库URL: %s", repoURL)
-	}
-
-	// 移除.git后缀和协议前缀
-	repoURL = strings.TrimSuffix(repoURL, ".git")
-	repoURL = strings.Replace(repoURL, "https://github.com/", "", 1)
-
-	parts := strings.Split(repoURL, "/")
-	if len(parts) != 2 {
-		return "", "", fmt.Errorf("无法解析GitHub仓库URL: %s", repoURL)
-	}
-
-	return parts[0], parts[1], nil
+	return utils.ParseGitHubRepoURL(repoURL)
 }
 
 // parseGitHubRepoURL 内部使用的版本，保持向后兼容
@@ -1121,22 +1098,9 @@ func parseGitHubRepoURL(repoURL string) (string, string, error) {
 }
 
 // parseGiteeRepoURL 解析Gitee仓库URL
+// 使用共享工具函数进行解析
 func parseGiteeRepoURL(repoURL string) (string, string, error) {
-	// 支持格式：https://gitee.com/owner/repo.git
-	if !strings.Contains(repoURL, "gitee.com") {
-		return "", "", fmt.Errorf("无效的Gitee仓库URL: %s", repoURL)
-	}
-
-	// 移除.git后缀和协议前缀
-	repoURL = strings.TrimSuffix(repoURL, ".git")
-	repoURL = strings.Replace(repoURL, "https://gitee.com/", "", 1)
-
-	parts := strings.Split(repoURL, "/")
-	if len(parts) != 2 {
-		return "", "", fmt.Errorf("无法解析Gitee仓库URL: %s", repoURL)
-	}
-
-	return parts[0], parts[1], nil
+	return utils.ParseGiteeRepoURL(repoURL)
 }
 
 // getConfigValue 从数据库获取配置值

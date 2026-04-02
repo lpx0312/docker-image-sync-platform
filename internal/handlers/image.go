@@ -24,20 +24,17 @@
 package handlers
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"docker-image-sync-platform/internal/database"
 	"docker-image-sync-platform/internal/logger"
 	"docker-image-sync-platform/internal/models"
+	"docker-image-sync-platform/internal/utils"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"go.uber.org/zap"
 )
 
@@ -384,7 +381,7 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 
 			if images[i].ACRImage == "" {
 				// 情况1：ACR地址为空，需要重新生成完整的ACR地址
-				images[i].ACRImage = h.generateACRImageWithArchitecture(images[i].OriginalImage, images[i].Tag, images[i].Architecture)
+				images[i].ACRImage = utils.GenerateACRImageWithArchitecture(images[i].OriginalImage, images[i].Tag, images[i].Architecture)
 			} else if !strings.Contains(images[i].ACRImage, ":") {
 				// 情况2：ACR地址存在但缺少标签，需要补充标签
 				tag := images[i].Tag
@@ -465,7 +462,7 @@ func (h *ImageHandler) GetImage(c *gin.Context) {
 	if image.SyncStatus == models.SyncStatusSuccess {
 		if image.ACRImage == "" {
 			// 情况1：ACR地址为空，重新生成完整的ACR地址
-			image.ACRImage = h.generateACRImageWithArchitecture(image.OriginalImage, image.Tag, image.Architecture)
+			image.ACRImage = utils.GenerateACRImageWithArchitecture(image.OriginalImage, image.Tag, image.Architecture)
 		} else if !strings.Contains(image.ACRImage, ":") {
 			// 情况2：ACR地址存在但缺少标签，补充标签
 			tag := image.Tag
@@ -697,97 +694,6 @@ func (h *ImageHandler) RetrySync(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "镜像已重置为待同步状态"})
 }
 
-// generateACRImage 生成阿里云ACR镜像地址
-// 这是一个简化版本的ACR地址生成器，不包含架构信息
-// 参数:
-//   - originalImage: 原始镜像名称
-//   - tag: 镜像标签
-//
-// 返回值:
-//   - string: 生成的ACR镜像完整地址
-func (h *ImageHandler) generateACRImage(originalImage, tag string) string {
-	return h.generateACRImageWithArchitecture(originalImage, tag, "")
-}
-
-// generateACRImageWithArchitecture 生成带架构信息的阿里云ACR镜像地址
-// 这是核心的ACR地址生成器，支持多架构镜像的标签生成
-// 参数:
-//   - originalImage: 原始镜像名称（如 nginx、library/nginx）
-//   - tag: 镜像标签（如 latest、1.20）
-//   - architecture: 目标架构（如 amd64、arm64、linux/arm64）
-//
-// 返回值:
-//   - string: 生成的ACR镜像完整地址，格式为 registry/namespace/image:tag[-arch-suffix]
-//
-// 地址生成规则:
-//   - 默认架构(amd64)不添加后缀
-//   - 其他架构添加 -linux-架构名 后缀
-//   - 支持简化架构名(arm64)和完整平台名(linux/arm64)
-func (h *ImageHandler) generateACRImageWithArchitecture(originalImage, tag, architecture string) string {
-	// 配置获取：从数据库获取阿里云注册表配置
-	var registryConfig models.SystemConfig
-	database.DB.Where("config_key = ?", "aliyun_registry").First(&registryConfig)
-
-	registry := registryConfig.ConfigValue
-	if registry == "" {
-		registry = "registry.cn-hangzhou.aliyuncs.com" // 默认杭州区域
-	}
-
-	// 命名空间配置：从数据库获取阿里云命名空间配置
-	var namespaceConfig models.SystemConfig
-	database.DB.Where("config_key = ?", "aliyun_namespace").First(&namespaceConfig)
-
-	namespace := namespaceConfig.ConfigValue
-	if namespace == "" {
-		namespace = "lpx03" // 使用与GitHub Action一致的命名空间
-	}
-
-	// 镜像名称解析：提取镜像的基础名称
-	// 处理带命名空间的镜像名（如 library/nginx -> nginx）
-	imageName := originalImage
-	if strings.Contains(imageName, "/") {
-		parts := strings.Split(imageName, "/")
-		imageName = parts[len(parts)-1] // 取最后一部分作为镜像名
-	}
-
-	// 架构后缀生成：为非默认架构生成标签后缀
-	// AMD64架构不添加后缀，其他架构添加 -linux-架构名 格式的后缀
-	architectureSuffix := ""
-	if architecture != "" && architecture != "amd64" {
-		// 架构名称标准化：将简化的架构名转换为完整的平台字符串
-		var platform string
-		switch architecture {
-		case "arm64":
-			platform = "linux/arm64"
-		case "arm":
-			platform = "linux/arm"
-		case "386":
-			platform = "linux/386"
-		default:
-			// 如果已经是完整格式（如linux/arm64），直接使用
-			if strings.Contains(architecture, "/") {
-				platform = architecture
-			} else {
-				platform = "linux/" + architecture
-			}
-		}
-		// 后缀格式转换：将 linux/arm64 转换为 -linux-arm64
-		architectureSuffix = "-" + strings.ReplaceAll(platform, "/", "-")
-	}
-
-	// 标签处理：确保标签不为空
-	finalTag := tag
-	if finalTag == "" {
-		finalTag = "latest"
-	}
-
-	// 最终标签构建：tag + architectureSuffix
-	finalTagWithArch := finalTag + architectureSuffix
-
-	// ACR地址构建：按照阿里云ACR的地址格式组装完整地址
-	return fmt.Sprintf("%s/%s/%s:%s", registry, namespace, imageName, finalTagWithArch)
-}
-
 // CheckImageExists 检测镜像是否存在
 // HTTP方法: GET
 // 路径: /api/images/:id/exists
@@ -820,10 +726,10 @@ func (h *ImageHandler) CheckImageExists(c *gin.Context) {
 	}
 
 	// 生成目标镜像地址
-	targetImage := h.generateACRImageWithArchitecture(image.OriginalImage, image.Tag, image.Architecture)
+	targetImage := utils.GenerateACRImageWithArchitecture(image.OriginalImage, image.Tag, image.Architecture)
 
 	// 检测镜像是否存在
-	exists, err := h.checkImageExistsInRegistry(targetImage)
+	exists, err := utils.CheckImageExistsInRegistryWithErr(targetImage)
 	if err != nil {
 		logger.Logger.Error("检测镜像存在性失败",
 			zap.Error(err),
@@ -964,10 +870,10 @@ func (h *ImageHandler) BatchCheckImages(c *gin.Context) {
 
 	for _, image := range images {
 		// 生成目标ACR镜像地址
-		targetImage := h.generateACRImageWithArchitecture(image.OriginalImage, image.Tag, image.Architecture)
+		targetImage := utils.GenerateACRImageWithArchitecture(image.OriginalImage, image.Tag, image.Architecture)
 
 		// 检测镜像在注册表中的存在性
-		exists, err := h.checkImageExistsInRegistry(targetImage)
+		exists, err := utils.CheckImageExistsInRegistryWithErr(targetImage)
 		if err != nil {
 			// 检测过程中发生错误的处理
 			logger.Logger.Error("检测镜像存在性失败",
@@ -1051,45 +957,4 @@ func (h *ImageHandler) BatchCheckImages(c *gin.Context) {
 		"results":       results,                                                         // 详细结果
 		"message":       fmt.Sprintf("检测完成：%d个镜像存在，%d个镜像不存在", successCount, failedCount), // 结果摘要
 	})
-}
-
-// checkImageExistsInRegistry 检测镜像在注册表中是否存在
-// 这是一个内部辅助方法，用于实际执行镜像存在性检测
-// 参数:
-//   - imageRef: 完整的镜像引用地址（如 registry.cn-hangzhou.aliyuncs.com/namespace/image:tag）
-//
-// 返回值:
-//   - bool: 镜像是否存在
-//   - error: 检测过程中的错误（如果有）
-//
-// 检测机制:
-//   - 使用容器注册表API的HEAD请求检测镜像manifest
-//   - 支持30秒超时控制
-//   - 区分404错误（镜像不存在）和其他错误（网络/权限问题）
-func (h *ImageHandler) checkImageExistsInRegistry(imageRef string) (bool, error) {
-	// 镜像引用解析：将字符串解析为标准的镜像引用对象
-	ref, err := name.ParseReference(imageRef)
-	if err != nil {
-		return false, fmt.Errorf("解析镜像引用失败: %v", err)
-	}
-
-	// 超时控制：创建带30秒超时的上下文，防止长时间阻塞
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	// 镜像存在性检测：使用HEAD请求获取镜像manifest
-	// HEAD请求比GET请求更轻量，只返回头部信息而不下载内容
-	_, err = remote.Head(ref, remote.WithContext(ctx))
-	if err != nil {
-		// 错误分类处理
-		if strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "not found") {
-			// 404错误表示镜像不存在，这是正常情况
-			return false, nil
-		}
-		// 其他错误（网络问题、权限问题等）返回错误信息
-		return false, fmt.Errorf("检测镜像存在性失败: %v", err)
-	}
-
-	// 检测成功，镜像存在
-	return true, nil
 }

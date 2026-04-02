@@ -37,6 +37,7 @@ import (
 	"docker-image-sync-platform/internal/database"
 	"docker-image-sync-platform/internal/logger"
 	"docker-image-sync-platform/internal/models"
+	"docker-image-sync-platform/internal/utils"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -182,41 +183,14 @@ func (s *GitService) getCurrentGitConfig() (repoURL, username, token, email, rep
 }
 
 // getConfigValue 从数据库获取配置值
-//
-// 功能说明:
-//   - 从system_configs表中查询指定的配置项
-//   - 如果配置项被加密，自动解密后返回
-//   - 提供统一的配置获取接口
-//
-// 参数:
-//   - configKey: 配置项的键名
-//
-// 返回值:
-//   - string: 配置项的值（已解密）
-//   - error: 查询或解密过程中的错误
+// 使用共享工具函数获取配置
 func (s *GitService) getConfigValue(configKey string) (string, error) {
-	var systemConfig models.SystemConfig
-	err := database.DB.Where("config_key = ?", configKey).First(&systemConfig).Error
-	if err != nil {
-		return "", fmt.Errorf("配置项 %s 不存在: %w", configKey, err)
+	// 创建解密函数
+	var decryptFunc utils.DecryptFunc
+	if s.encryptionService != nil {
+		decryptFunc = s.encryptionService.Decrypt
 	}
-
-	// 如果配置值被加密，需要解密
-	if systemConfig.IsEncrypted {
-		if s.encryptionService == nil {
-			return "", fmt.Errorf("配置项 %s 已加密但加密服务未初始化", configKey)
-		}
-
-		decryptedValue, err := s.encryptionService.Decrypt(systemConfig.ConfigValue)
-		if err != nil {
-			return "", fmt.Errorf("解密配置项 %s 失败: %w", configKey, err)
-		}
-
-		logger.Logger.Debug("成功解密配置项", zap.String("config_key", configKey))
-		return decryptedValue, nil
-	}
-
-	return systemConfig.ConfigValue, nil
+	return utils.GetConfigValueWithDecrypt(configKey, decryptFunc)
 }
 
 // InitRepository 初始化Git仓库

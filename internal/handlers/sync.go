@@ -29,12 +29,11 @@ import (
 	"docker-image-sync-platform/internal/logger"   // 日志记录
 	"docker-image-sync-platform/internal/models"   // 数据模型
 	"docker-image-sync-platform/internal/services" // 业务服务
+	"docker-image-sync-platform/internal/utils"    // 共享工具函数
 
-	"github.com/gin-gonic/gin"                             // Web框架
-	"github.com/google/go-containerregistry/pkg/name"      // 容器镜像名称解析
-	"github.com/google/go-containerregistry/pkg/v1/remote" // 远程镜像操作
-	"github.com/google/uuid"                               // UUID生成
-	"go.uber.org/zap"                                      // 结构化日志
+	"github.com/gin-gonic/gin"       // Web框架
+	"github.com/google/uuid"         // UUID生成
+	"go.uber.org/zap"                // 结构化日志
 )
 
 // SyncHandler 镜像同步处理器
@@ -1151,10 +1150,10 @@ func (h *SyncHandler) handleSyncSuccess(taskID string) {
 	// 逐个验证每个镜像是否成功同步到ACR
 	for _, record := range records {
 		// 生成目标ACR镜像地址（包含架构信息）
-		acrImage := h.generateACRImageWithArchitecture(record.OriginalImage, record.Tag, record.Architecture)
+		acrImage := utils.GenerateACRImageWithArchitecture(record.OriginalImage, record.Tag, record.Architecture)
 
 		// 检查镜像是否真正存在于ACR中
-		exists := h.checkImageExistsInRegistry(acrImage)
+		exists := utils.CheckImageExistsInRegistry(acrImage)
 
 		// 计算同步耗时
 		completedTime := time.Now()
@@ -1340,10 +1339,10 @@ func (h *SyncHandler) handlePartialSyncFailure(taskID, workflowErrorMessage stri
 	// 逐个验证每个镜像是否成功同步到ACR
 	for _, record := range records {
 		// 生成目标ACR镜像地址（包含架构信息）
-		acrImage := h.generateACRImageWithArchitecture(record.OriginalImage, record.Tag, record.Architecture)
+		acrImage := utils.GenerateACRImageWithArchitecture(record.OriginalImage, record.Tag, record.Architecture)
 
 		// 检查镜像是否真正存在于ACR中
-		exists := h.checkImageExistsInRegistry(acrImage)
+		exists := utils.CheckImageExistsInRegistry(acrImage)
 
 		// 计算同步耗时
 		var duration int64
@@ -1441,74 +1440,6 @@ func (h *SyncHandler) handlePartialSyncFailure(taskID, workflowErrorMessage stri
 		zap.Int("total_count", len(records)))
 }
 
-// generateACRImage 生成阿里云ACR镜像地址
-func (h *SyncHandler) generateACRImage(originalImage, tag string) string {
-	return h.generateACRImageWithArchitecture(originalImage, tag, "")
-}
-
-// generateACRImageWithArchitecture 生成带架构信息的阿里云ACR镜像地址
-func (h *SyncHandler) generateACRImageWithArchitecture(originalImage, tag, architecture string) string {
-	// 从配置中获取阿里云信息
-	var registryConfig models.SystemConfig
-	database.DB.Where("config_key = ?", "aliyun_registry").First(&registryConfig)
-
-	registry := registryConfig.ConfigValue
-	if registry == "" {
-		registry = "registry.cn-hangzhou.aliyuncs.com"
-	}
-
-	// 从配置中获取阿里云命名空间
-	var namespaceConfig models.SystemConfig
-	database.DB.Where("config_key = ?", "aliyun_namespace").First(&namespaceConfig)
-
-	namespace := namespaceConfig.ConfigValue
-	if namespace == "" {
-		namespace = "lpx03" // 使用与GitHub Action一致的命名空间
-	}
-
-	// 解析镜像名称
-	imageName := originalImage
-	if strings.Contains(imageName, "/") {
-		parts := strings.Split(imageName, "/")
-		imageName = parts[len(parts)-1]
-	}
-
-	// 生成架构后缀，将架构信息添加到tag后面
-	architectureSuffix := ""
-	if architecture != "" && architecture != "amd64" {
-		// 将简化的架构名转换为完整的平台字符串
-		var platform string
-		switch architecture {
-		case "arm64":
-			platform = "linux/arm64"
-		case "arm":
-			platform = "linux/arm"
-		case "386":
-			platform = "linux/386"
-		default:
-			// 如果已经是完整格式（如linux/arm64），直接使用
-			if strings.Contains(architecture, "/") {
-				platform = architecture
-			} else {
-				platform = "linux/" + architecture
-			}
-		}
-		// 将 linux/arm64 转换为 -linux-arm64
-		architectureSuffix = "-" + strings.ReplaceAll(platform, "/", "-")
-	}
-
-	// 构建最终的镜像名称和标签
-	finalTag := tag
-	if finalTag == "" {
-		finalTag = "latest"
-	}
-
-	// 构建标签：tag + architectureSuffix
-	finalTagWithArch := finalTag + architectureSuffix
-
-	return fmt.Sprintf("%s/%s/%s:%s", registry, namespace, imageName, finalTagWithArch)
-}
-
 // parseImageInfo 解析镜像信息
 func parseImageInfo(imageStr string) (image, tag, architecture string) {
 	// 处理架构信息
@@ -1546,67 +1477,6 @@ func (h *SyncHandler) parseImageNameAndTag(imageStr string) (string, string) {
 		return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
 	}
 	return strings.TrimSpace(imageStr), "latest"
-}
-
-// checkImageExistsInRegistry 检测镜像是否存在于注册表中
-func (h *SyncHandler) checkImageExistsInRegistry(imageRef string) bool {
-	// ====================================================================
-	// 解析镜像引用
-	// ====================================================================
-
-	// 使用go-containerregistry库解析镜像引用
-	ref, err := name.ParseReference(imageRef)
-	if err != nil {
-		// 记录解析失败的错误日志
-		logger.Logger.Error("解析镜像引用失败",
-			zap.Error(err),
-			zap.String("image_ref", imageRef))
-		return false
-	}
-
-	// ====================================================================
-	// 创建超时上下文
-	// ====================================================================
-
-	// 创建30秒超时的上下文，避免长时间等待
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	// ====================================================================
-	// 检查镜像存在性
-	// ====================================================================
-
-	// 尝试获取镜像的manifest头信息
-	// 使用HEAD请求，不下载实际内容，提高效率
-	_, err = remote.Head(ref, remote.WithContext(ctx))
-	if err != nil {
-		// ================================================================
-		// 处理各种错误情况
-		// ================================================================
-
-		// 检查是否为404错误（镜像不存在）
-		if strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "not found") {
-			logger.Logger.Debug("镜像不存在",
-				zap.String("image_ref", imageRef))
-			return false
-		}
-
-		// 其他错误也认为镜像不存在
-		// 包括网络错误、超时错误、认证错误等
-		logger.Logger.Warn("检测镜像存在性失败",
-			zap.Error(err),
-			zap.String("image_ref", imageRef))
-		return false
-	}
-
-	// ====================================================================
-	// 镜像存在确认
-	// ====================================================================
-
-	// 记录镜像存在的调试日志
-	logger.Logger.Debug("镜像存在",
-		zap.String("image_ref", imageRef))
-	return true
 }
 
 // SubmitMockBatchSync 提交模拟批量同步任务
@@ -1809,10 +1679,10 @@ func (h *SyncHandler) processSingleMockImage(taskID string, record models.ImageS
 	time.Sleep(mockDuration)
 
 	// 生成ACR镜像地址
-	acrImage := h.generateACRImageWithArchitecture(record.OriginalImage, record.Tag, record.Architecture)
+	acrImage := utils.GenerateACRImageWithArchitecture(record.OriginalImage, record.Tag, record.Architecture)
 
 	// 检测目标镜像是否存在
-	exists := h.checkImageExistsInRegistry(acrImage)
+	exists := utils.CheckImageExistsInRegistry(acrImage)
 
 	completedTime := time.Now()
 	duration := int64(completedTime.Sub(startTime).Seconds())
