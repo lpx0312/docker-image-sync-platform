@@ -67,8 +67,8 @@
 ### 📖 用户文档
 - **[快速开始](#-快速开始)** - 快速部署和使用指南
 - **[使用指南](#-使用指南)** - 详细的功能使用说明
-- **[配置文档](docs/configuration.md)** - 完整的配置参数说明
-- **[API文档](docs/api.md)** - RESTful API接口文档
+- **[Swagger API文档](http://localhost:8080/api/v1/docs.html)** - 交互式在线接口文档
+- **[Swagger使用说明](docs/SWAGGER使用说明.md)** - Swagger文档使用指南
 
 ### 🛠️ 运维文档
 - **[部署指南](docs/deployment.md)** - 生产环境部署最佳实践
@@ -175,6 +175,7 @@ docker-compose logs -f
 - 🌐 **Web界面**: http://localhost
 - 🔌 **API接口**: http://localhost:8080/api/v1
 - 📊 **健康检查**: http://localhost:8080/api/v1/health
+- 📖 **API文档**: http://localhost:8080/api/v1/docs.html
 
 ### 💻 方式二：本地开发环境
 
@@ -420,27 +421,32 @@ nohup ./scripts/monitor.sh > monitor.log 2>&1 &
 ```
 docker-image-sync-platform/
 ├── main.go                 # 主程序入口
-├── config.yaml            # 配置文件
-├── docker-compose.yml     # Docker编排文件
-├── Dockerfile             # Docker镜像构建文件
-├── Makefile              # 构建脚本
-├── deploy.sh             # 部署脚本
-├── internal/             # 内部包
-│   ├── config/          # 配置管理
-│   ├── database/        # 数据库操作
-│   ├── handlers/        # HTTP处理器
-│   ├── logger/          # 日志管理
-│   ├── middleware/      # 中间件
-│   ├── models/          # 数据模型
-│   └── services/        # 业务服务
-├── scripts/             # 运维脚本
-├── sql/                 # SQL脚本
-└── web/                 # 前端项目
+├── config.yaml             # 配置文件
+├── Makefile                # 构建脚本
+├── internal/               # 内部包
+│   ├── config/             # 配置管理
+│   ├── database/           # 数据库操作
+│   ├── handlers/           # HTTP处理器
+│   ├── logger/             # 日志管理
+│   ├── middleware/         # 中间件
+│   ├── models/             # 数据模型
+│   └── services/           # 业务服务
+├── docs/                   # 文档目录
+│   ├── swagger.json        # OpenAPI 2.0 规范文件
+│   ├── swagger-ui.html     # Swagger UI 界面
+│   └── SWAGGER使用说明.md   # API文档使用指南
+├── deploy/                 # Docker部署配置
+│   ├── docker-signal/      # 前后端分离部署
+│   └── docker-all/         # 前后端一体部署
+├── scripts/                # 运维脚本
+├── logs/                   # 应用日志（运行时生成）
+└── web/                    # 前端项目
     ├── src/
-    │   ├── api/        # API接口
-    │   ├── router/     # 路由
-    │   ├── stores/     # 状态管理
-    │   └── views/      # 页面
+    │   ├── api/            # API接口层
+    │   ├── components/     # 公共组件
+    │   ├── router/         # 路由
+    │   ├── stores/         # 状态管理（Pinia）
+    │   └── views/          # 页面视图
     └── package.json
 ```
 
