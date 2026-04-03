@@ -19,25 +19,25 @@ const routes = [
     path: '/sync',
     name: 'Sync',
     component: SyncView,
-    meta: { title: '镜像同步' }
+    meta: { title: '镜像同步', requiredPermission: 'sync' }
   },
   {
     path: '/github',
     name: 'GitHub',
     component: GitHubView,
-    meta: { title: 'GitHub Actions' }
+    meta: { title: 'GitHub Actions', requiredPermission: 'github' }
   },
   {
     path: '/config',
     name: 'Config',
     component: ConfigView,
-    meta: { title: '系统配置' }
+    meta: { title: '系统配置', requiredPermission: 'config' }
   },
   {
     path: '/users',
     name: 'UserManage',
     component: () => import('@/views/UserManageView.vue'),
-    meta: { title: '用户管理', requiresAdmin: true }
+    meta: { title: '用户管理', requiredPermission: 'users' }
   }
 ]
 
@@ -45,6 +45,12 @@ const router = createRouter({
   history: createWebHistory(),
   routes
 })
+
+function getUserPermissions() {
+  const userStr = localStorage.getItem('user') || sessionStorage.getItem('user')
+  const user = userStr ? JSON.parse(userStr) : null
+  return user?.permissions || []
+}
 
 router.beforeEach((to, from, next) => {
   if (to.meta.title) {
@@ -67,10 +73,9 @@ router.beforeEach((to, from, next) => {
     return
   }
 
-  if (to.meta.requiresAdmin) {
-    const userStr = localStorage.getItem('user') || sessionStorage.getItem('user')
-    const user = userStr ? JSON.parse(userStr) : null
-    if (user?.role !== 'admin') {
+  if (to.meta.requiredPermission) {
+    const permissions = getUserPermissions()
+    if (!permissions.includes(to.meta.requiredPermission)) {
       next('/sync')
       return
     }

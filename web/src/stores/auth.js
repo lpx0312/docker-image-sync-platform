@@ -11,6 +11,11 @@ export const useAuthStore = defineStore('auth', () => {
   const isLoggedIn = computed(() => !!token.value)
   const isAdmin = computed(() => user.value?.role === 'admin')
   const username = computed(() => user.value?.username || '')
+  const permissions = computed(() => user.value?.permissions || [])
+
+  function hasPermission(perm) {
+    return permissions.value.includes(perm)
+  }
 
   async function login(username, password, rememberMe = false) {
     const res = await authAPI.login({ username, password, remember_me: rememberMe })
@@ -100,6 +105,8 @@ export const useAuthStore = defineStore('auth', () => {
     isLoggedIn,
     isAdmin,
     username,
+    permissions,
+    hasPermission,
     login,
     logout,
     clearAuth,

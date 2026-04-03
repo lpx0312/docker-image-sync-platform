@@ -211,9 +211,65 @@ func (LoginLog) TableName() string        { return "login_logs" }
 
 // 用户角色常量
 const (
-	RoleAdmin = "admin"
-	RoleUser  = "user"
+	RoleAdmin    = "admin"
+	RoleOperator = "operator"
+	RoleUser     = "user"
 )
+
+// 权限标识常量
+const (
+	PermSync   = "sync"
+	PermGitHub = "github"
+	PermConfig = "config"
+	PermUsers  = "users"
+)
+
+// RoleInfo 角色信息（用于 API 返回）
+type RoleInfo struct {
+	Role        string   `json:"role"`
+	Label       string   `json:"label"`
+	Permissions []string `json:"permissions"`
+}
+
+// rolePermissions 角色→权限映射（包内私有，通过函数暴露）
+var rolePermissions = map[string][]string{
+	RoleAdmin:    {PermSync, PermGitHub, PermConfig, PermUsers},
+	RoleOperator: {PermSync, PermGitHub, PermConfig},
+	RoleUser:     {PermSync},
+}
+
+// GetRolePermissions 返回指定角色拥有的权限列表
+func GetRolePermissions(role string) []string {
+	if perms, ok := rolePermissions[role]; ok {
+		return perms
+	}
+	return []string{PermSync}
+}
+
+// HasPermission 判断指定角色是否拥有某项权限
+func HasPermission(role, permission string) bool {
+	for _, p := range GetRolePermissions(role) {
+		if p == permission {
+			return true
+		}
+	}
+	return false
+}
+
+// IsValidRole 检查角色标识是否合法
+func IsValidRole(role string) bool {
+	_, ok := rolePermissions[role]
+	return ok
+}
+
+// GetAllRoles 返回所有角色的信息列表
+func GetAllRoles() []RoleInfo {
+	return []RoleInfo{
+		{Role: RoleAdmin, Label: "管理员", Permissions: rolePermissions[RoleAdmin]},
+		{Role: RoleOperator, Label: "运维员", Permissions: rolePermissions[RoleOperator]},
+		{Role: RoleUser, Label: "普通用户", Permissions: rolePermissions[RoleUser]},
+	}
+}
 
 // 用户状态常量
 const (

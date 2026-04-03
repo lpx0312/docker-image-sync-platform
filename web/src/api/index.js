@@ -465,8 +465,10 @@ export const authAPI = {
   listUsers: (params) => api.get('/auth/users', { params }),
   createUser: (data) => api.post('/auth/users', data),
   updateUserStatus: (id, data) => api.put(`/auth/users/${id}/status`, data),
+  updateUserRole: (id, data) => api.put(`/auth/users/${id}/role`, data),
   deleteUser: (id) => api.delete(`/auth/users/${id}`),
   resetUserPassword: (id, data) => api.put(`/auth/users/${id}/password`, data),
+  getRoles: () => api.get('/auth/roles'),
 }
 
 export default api

@@ -141,6 +141,18 @@ func (s *UserService) DeleteUser(id uint) error {
 	return nil
 }
 
+// UpdateUserRole 修改用户角色
+func (s *UserService) UpdateUserRole(id uint, role string) error {
+	result := s.db.Model(&models.User{}).Where("id = ?", id).Update("role", role)
+	if result.Error != nil {
+		return fmt.Errorf("更新用户角色失败: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("用户不存在")
+	}
+	return nil
+}
+
 // UpdateLastLogin 更新最后登录时间
 func (s *UserService) UpdateLastLogin(userID uint) {
 	now := time.Now()

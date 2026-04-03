@@ -16,10 +16,10 @@
           <el-table-column prop="id" label="ID" width="70" />
           <el-table-column prop="username" label="用户名" width="150" />
           <el-table-column prop="email" label="邮箱" min-width="180" />
-          <el-table-column prop="role" label="角色" width="100">
+          <el-table-column prop="role" label="角色" width="120">
             <template #default="{ row }">
-              <el-tag :type="row.role === 'admin' ? 'danger' : 'info'" size="small">
-                {{ row.role === 'admin' ? '管理员' : '普通用户' }}
+              <el-tag :type="roleTagType(row.role)" size="small">
+                {{ roleLabel(row.role) }}
               </el-tag>
             </template>
           </el-table-column>
@@ -35,8 +35,9 @@
               {{ row.last_login_at ? formatTime(row.last_login_at) : '从未登录' }}
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="260" fixed="right">
+          <el-table-column label="操作" width="320" fixed="right">
             <template #default="{ row }">
+              <el-button size="small" @click="openChangeRole(row)">角色</el-button>
               <el-button
                 size="small"
                 :type="row.status === 'active' ? 'warning' : 'success'"
@@ -128,8 +129,20 @@
         <el-form-item label="角色" prop="role">
           <el-select v-model="createForm.role" style="width: 100%">
             <el-option label="普通用户" value="user" />
+            <el-option label="运维员" value="operator" />
             <el-option label="管理员" value="admin" />
           </el-select>
+        </el-form-item>
+        <el-form-item label="权限预览">
+          <div class="permission-preview">
+            <el-tag
+              v-for="perm in getPermissionLabels(createForm.role)"
+              :key="perm"
+              size="small"
+              type="success"
+              style="margin-right: 6px; margin-bottom: 4px;"
+            >{{ perm }}</el-tag>
+          </div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -151,6 +164,42 @@
       <template #footer>
         <el-button @click="showResetDialog = false">取消</el-button>
         <el-button type="primary" :loading="resetLoading" @click="handleResetPassword">确认重置</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 修改角色对话框 -->
+    <el-dialog title="修改角色" v-model="showRoleDialog" width="450px" :close-on-click-modal="false">
+      <p style="margin-bottom: 16px; color: #606266;">
+        修改用户 <strong>{{ roleTarget?.username }}</strong> 的角色：
+      </p>
+      <el-form label-width="80px">
+        <el-form-item label="当前角色">
+          <el-tag :type="roleTagType(roleTarget?.role)" size="small">
+            {{ roleLabel(roleTarget?.role) }}
+          </el-tag>
+        </el-form-item>
+        <el-form-item label="新角色">
+          <el-select v-model="newRole" style="width: 100%">
+            <el-option label="普通用户" value="user" />
+            <el-option label="运维员" value="operator" />
+            <el-option label="管理员" value="admin" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="权限预览">
+          <div class="permission-preview">
+            <el-tag
+              v-for="perm in getPermissionLabels(newRole)"
+              :key="perm"
+              size="small"
+              type="success"
+              style="margin-right: 6px; margin-bottom: 4px;"
+            >{{ perm }}</el-tag>
+          </div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showRoleDialog = false">取消</el-button>
+        <el-button type="primary" :loading="roleLoading" @click="handleUpdateRole">确认修改</el-button>
       </template>
     </el-dialog>
   </div>
@@ -200,6 +249,63 @@ const resetRules = {
     { required: true, message: '请输入新密码', trigger: 'blur' },
     { min: 6, message: '密码至少6位', trigger: 'blur' },
   ],
+}
+
+const showRoleDialog = ref(false)
+const roleLoading = ref(false)
+const roleTarget = ref(null)
+const newRole = ref('user')
+
+const permissionMap = {
+  sync: '镜像同步',
+  github: 'GitHub Actions',
+  config: '系统配置',
+  users: '用户管理',
+}
+
+const rolePermissions = {
+  admin: ['sync', 'github', 'config', 'users'],
+  operator: ['sync', 'github', 'config'],
+  user: ['sync'],
+}
+
+function roleLabel(role) {
+  const map = { admin: '管理员', operator: '运维员', user: '普通用户' }
+  return map[role] || role
+}
+
+function roleTagType(role) {
+  const map = { admin: 'danger', operator: 'warning', user: 'info' }
+  return map[role] || 'info'
+}
+
+function getPermissionLabels(role) {
+  const perms = rolePermissions[role] || ['sync']
+  return perms.map(p => permissionMap[p] || p)
+}
+
+function openChangeRole(user) {
+  roleTarget.value = user
+  newRole.value = user.role
+  showRoleDialog.value = true
+}
+
+async function handleUpdateRole() {
+  if (!roleTarget.value || newRole.value === roleTarget.value.role) {
+    showRoleDialog.value = false
+    return
+  }
+  roleLoading.value = true
+  try {
+    await authAPI.updateUserRole(roleTarget.value.id, { role: newRole.value })
+    ElMessage.success('角色已更新')
+    showRoleDialog.value = false
+    loadUsers()
+  } catch {
+    //
+  } finally {
+    roleLoading.value = false
+  }
 }
 
 function formatTime(t) {
@@ -334,5 +440,11 @@ watch(activeTab, (tab) => {
   border-top: 1px solid var(--color-border-light);
   display: flex;
   justify-content: flex-end;
+}
+
+.permission-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 </style>

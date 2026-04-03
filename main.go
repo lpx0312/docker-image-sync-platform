@@ -49,6 +49,7 @@ import (
 	"docker-image-sync-platform/internal/handlers"
 	"docker-image-sync-platform/internal/logger"
 	"docker-image-sync-platform/internal/middleware"
+	"docker-image-sync-platform/internal/models"
 	"docker-image-sync-platform/internal/services"
 
 	"github.com/gin-gonic/gin"
@@ -221,10 +222,12 @@ func main() {
 		authAdmin := api.Group("/auth")
 		authAdmin.Use(middleware.AuthRequired(authService), middleware.AdminRequired())
 		{
+			authAdmin.GET("/roles", authHandler.GetRoles)
 			authAdmin.GET("/login-logs", authHandler.GetLoginLogs)
 			authAdmin.GET("/users", authHandler.ListUsers)
 			authAdmin.POST("/users", authHandler.CreateUser)
 			authAdmin.PUT("/users/:id/status", authHandler.UpdateUserStatus)
+			authAdmin.PUT("/users/:id/role", authHandler.UpdateUserRole)
 			authAdmin.DELETE("/users/:id", authHandler.DeleteUser)
 			authAdmin.PUT("/users/:id/password", authHandler.ResetUserPassword)
 		}
@@ -255,6 +258,7 @@ func main() {
 			}
 
 			github := protected.Group("/github")
+			github.Use(middleware.PermissionRequired(models.PermGitHub))
 			{
 				github.GET("/runs", func(c *gin.Context) {
 					page := 1
@@ -301,6 +305,7 @@ func main() {
 			}
 
 			configGroup := protected.Group("/config")
+			configGroup.Use(middleware.PermissionRequired(models.PermConfig))
 			{
 				configGroup.GET("/status", configHandler.GetConfigStatus)
 				configGroup.GET("/git-repository", configHandler.GetGitRepositoryConfig)

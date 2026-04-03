@@ -83,16 +83,15 @@ const authStore = useAuthStore()
 const showChangePassword = ref(false)
 const showLayout = computed(() => route.name !== 'Login' && authStore.isLoggedIn)
 
+const allNavItems = [
+  { path: '/sync', label: '镜像同步', icon: Box, permission: 'sync' },
+  { path: '/github', label: 'GitHub Actions', icon: Connection, permission: 'github' },
+  { path: '/config', label: '系统配置', icon: Setting, permission: 'config' },
+  { path: '/users', label: '用户管理', icon: User, permission: 'users' },
+]
+
 const navItems = computed(() => {
-  const items = [
-    { path: '/sync', label: '镜像同步', icon: Box },
-    { path: '/github', label: 'GitHub Actions', icon: Connection },
-    { path: '/config', label: '系统配置', icon: Setting },
-  ]
-  if (authStore.isAdmin) {
-    items.push({ path: '/users', label: '用户管理', icon: User })
-  }
-  return items
+  return allNavItems.filter(item => authStore.hasPermission(item.permission))
 })
 
 const isActiveRoute = (path) => {

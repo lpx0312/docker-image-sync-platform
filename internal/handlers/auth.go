@@ -69,10 +69,11 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"token": token,
 		"user": gin.H{
-			"id":       user.ID,
-			"username": user.Username,
-			"role":     user.Role,
-			"email":    user.Email,
+			"id":          user.ID,
+			"username":    user.Username,
+			"role":        user.Role,
+			"email":       user.Email,
+			"permissions": models.GetRolePermissions(user.Role),
 		},
 		"expires_at": expiresAt,
 	})
@@ -93,6 +94,7 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 		"role":          user.Role,
 		"email":         user.Email,
 		"status":        user.Status,
+		"permissions":   models.GetRolePermissions(user.Role),
 		"last_login_at": user.LastLoginAt,
 		"created_at":    user.CreatedAt,
 	})
@@ -178,7 +180,7 @@ type createUserRequest struct {
 	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required,min=6"`
 	Email    string `json:"email"`
-	Role     string `json:"role" binding:"required,oneof=admin user"`
+	Role     string `json:"role" binding:"required,oneof=admin operator user"`
 }
 
 // CreateUser 创建用户
@@ -270,4 +272,46 @@ func (h *AuthHandler) ResetUserPassword(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "密码已重置"})
+}
+
+// GetRoles 获取所有可用角色及其权限
+func (h *AuthHandler) GetRoles(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"roles": models.GetAllRoles()})
+}
+
+type updateRoleRequest struct {
+	Role string `json:"role" binding:"required"`
+}
+
+// UpdateUserRole 修改用户角色
+func (h *AuthHandler) UpdateUserRole(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的用户ID"})
+		return
+	}
+
+	var req updateRoleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "角色值无效"})
+		return
+	}
+
+	if !models.IsValidRole(req.Role) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的角色类型"})
+		return
+	}
+
+	currentUserID, _ := c.Get("userID")
+	if currentUserID.(uint) == uint(id) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不能修改自己的角色"})
+		return
+	}
+
+	if err := h.userService.UpdateUserRole(uint(id), req.Role); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "用户角色已更新"})
 }
