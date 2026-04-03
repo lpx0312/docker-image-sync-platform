@@ -38,9 +38,13 @@ export const useAuthStore = defineStore('auth', () => {
     return res
   }
 
-  function logout() {
+  async function logout() {
     if (token.value) {
-      authAPI.logout().catch(() => {})
+      try {
+        await authAPI.logout()
+      } catch {
+        // ignore logout API errors
+      }
     }
     clearAuth()
   }

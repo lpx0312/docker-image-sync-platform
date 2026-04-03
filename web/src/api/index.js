@@ -49,6 +49,8 @@ api.interceptors.request.use(
   }
 )
 
+let isRedirectingToLogin = false
+
 api.interceptors.response.use(
   (response) => {
     return response.data
@@ -61,10 +63,17 @@ api.interceptors.response.use(
       sessionStorage.removeItem('user')
       const currentPath = window.location.pathname
       if (currentPath !== '/login') {
-        window.location.href = '/login?redirect=' + encodeURIComponent(currentPath)
+        if (!isRedirectingToLogin) {
+          isRedirectingToLogin = true
+          window.location.href = '/login?redirect=' + encodeURIComponent(currentPath)
+        }
       } else {
-        const message = error.response?.data?.error || '用户名或密码错误'
-        ElMessage.error(message)
+        isRedirectingToLogin = false
+        const isLoginRequest = error.config?.url?.endsWith('/auth/login')
+        if (isLoginRequest) {
+          const message = error.response?.data?.error || '用户名或密码错误'
+          ElMessage.error(message)
+        }
       }
       return Promise.reject(error)
     }
