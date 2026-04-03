@@ -117,9 +117,9 @@ type SyncTask struct {
 	TaskID          string     `json:"task_id" gorm:"type:varchar(100);uniqueIndex;not null"`                                              // 任务唯一标识符，建立唯一索引
 	ImagesJSON      string     `json:"images_json" gorm:"type:text"`                                                                       // 镜像列表的JSON存储，支持复杂数据结构
 	Status          string     `json:"status" gorm:"type:enum('pending','running','completed','failed','paused','partial_success');default:'pending';index"` // 任务状态，建立索引以提高状态查询性能
-	GitHubActionURL string     `json:"github_action_url" gorm:"type:varchar(500)"`                                                         // GitHub Actions工作流页面链接
-	GitHubRunID     string     `json:"github_run_id" gorm:"type:varchar(100)"`                                                             // GitHub Actions运行ID
-	CommitSHA       string     `json:"commit_sha" gorm:"type:varchar(100)"`                                                                // 关联的Git提交SHA
+	GitHubActionURL string     `json:"github_action_url" gorm:"column:github_action_url;type:varchar(500)"`                                  // GitHub Actions工作流页面链接
+	GitHubRunID     string     `json:"github_run_id" gorm:"column:github_run_id;type:varchar(100)"`                                        // GitHub Actions运行ID
+	CommitSHA       string     `json:"commit_sha" gorm:"column:commit_sha;type:varchar(100)"`                                              // 关联的Git提交SHA
 	StartedAt       *time.Time `json:"started_at"`                                                                                         // 任务开始时间
 	CompletedAt     *time.Time `json:"completed_at"`                                                                                       // 任务完成时间
 	ErrorMessage    string     `json:"error_message" gorm:"type:text"`                                                                     // 任务级别的错误信息
