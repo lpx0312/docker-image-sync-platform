@@ -116,7 +116,7 @@ type SyncTask struct {
 	ID              uint       `json:"id" gorm:"primaryKey"`                                                                               // 主键ID
 	TaskID          string     `json:"task_id" gorm:"type:varchar(100);uniqueIndex;not null"`                                              // 任务唯一标识符，建立唯一索引
 	ImagesJSON      string     `json:"images_json" gorm:"type:text"`                                                                       // 镜像列表的JSON存储，支持复杂数据结构
-	Status          string     `json:"status" gorm:"type:enum('pending','running','completed','failed','paused');default:'pending';index"` // 任务状态，建立索引以提高状态查询性能
+	Status          string     `json:"status" gorm:"type:enum('pending','running','completed','failed','paused','partial_success');default:'pending';index"` // 任务状态，建立索引以提高状态查询性能
 	GitHubActionURL string     `json:"github_action_url" gorm:"type:varchar(500)"`                                                         // GitHub Actions工作流页面链接
 	GitHubRunID     string     `json:"github_run_id" gorm:"type:varchar(100)"`                                                             // GitHub Actions运行ID
 	CommitSHA       string     `json:"commit_sha" gorm:"type:varchar(100)"`                                                                // 关联的Git提交SHA

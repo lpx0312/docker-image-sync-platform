@@ -48,22 +48,23 @@ func CORS() gin.HandlerFunc {
 		method := c.Request.Method
 		origin := c.Request.Header.Get("Origin")
 
-		// 设置CORS头
-		c.Header("Access-Control-Allow-Origin", "*")
+		// 当存在 Origin 时，回显实际 origin 并启用 credentials；
+		// 否则使用 * 但不设置 credentials，避免规范冲突。
+		if origin != "" {
+			c.Header("Access-Control-Allow-Origin", origin)
+			c.Header("Access-Control-Allow-Credentials", "true")
+			c.Set("origin", origin)
+		} else {
+			c.Header("Access-Control-Allow-Origin", "*")
+		}
+
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization, Cache-Control, X-File-Name")
 		c.Header("Access-Control-Expose-Headers", "Content-Length, Access-Control-Allow-Origin, Access-Control-Allow-Headers, Content-Type")
-		c.Header("Access-Control-Allow-Credentials", "true")
 
-		// 处理预检请求
 		if method == "OPTIONS" {
 			c.AbortWithStatus(http.StatusNoContent)
 			return
-		}
-
-		// 记录跨域请求
-		if origin != "" {
-			c.Set("origin", origin)
 		}
 
 		c.Next()
@@ -147,12 +148,13 @@ func CORSWithConfig(allowOrigins []string, allowMethods []string, allowHeaders [
 			}
 		}
 
-		// 设置CORS头
 		c.Header("Access-Control-Allow-Origin", allowOrigin)
 		c.Header("Access-Control-Allow-Methods", allowMethodsStr)
 		c.Header("Access-Control-Allow-Headers", allowHeadersStr)
 		c.Header("Access-Control-Expose-Headers", "Content-Length, Access-Control-Allow-Origin, Access-Control-Allow-Headers, Content-Type")
-		c.Header("Access-Control-Allow-Credentials", "true")
+		if allowOrigin != "*" {
+			c.Header("Access-Control-Allow-Credentials", "true")
+		}
 
 		// 处理预检请求
 		if method == "OPTIONS" {

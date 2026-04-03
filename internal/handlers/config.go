@@ -743,22 +743,62 @@ func (h *ConfigHandler) testGitConnectionAPI(gitType, repoURL, username, token, 
 	return nil
 }
 
-// testGiteeConnection 测试Gitee连接（占位函数，暂时保持原有逻辑）
-//
-// 参数：
-//   - repoURL: 仓库URL
-//   - username: 用户名
-//   - password: 密码
-//
-// 返回：
-//   - error: 连接错误，nil表示连接成功
+// testGiteeConnection 测试 Gitee 连接
+// 使用 Gitee API v5 验证仓库可达性和凭据有效性
 func (h *ConfigHandler) testGiteeConnection(repoURL, username, password string) error {
-	// 暂时返回成功，后续可以实现Gitee的API测试
-	// 目前用户主要使用GitHub，Gitee使用较少
-	logger.Logger.Info("Gitee连接测试暂时跳过",
-		zap.String("username", username),
-		zap.String("repo_url", repoURL))
-	return nil
+	owner, repo, err := parseGiteeRepoURL(repoURL)
+	if err != nil {
+		return fmt.Errorf("无效的Gitee仓库URL: %w", err)
+	}
+
+	apiURL := fmt.Sprintf("https://gitee.com/api/v5/repos/%s/%s", owner, repo)
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	req, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		return fmt.Errorf("创建请求失败: %w", err)
+	}
+
+	// Gitee 使用密码作为 private token 或通过 query 参数传递
+	req.Header.Set("Content-Type", "application/json")
+	q := req.URL.Query()
+	q.Set("access_token", password)
+	req.URL.RawQuery = q.Encode()
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("连接Gitee API失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		logger.Logger.Info("Gitee API连接测试成功",
+			zap.String("username", username),
+			zap.String("repo_url", repoURL))
+		return nil
+	case http.StatusUnauthorized:
+		return fmt.Errorf("认证失败：密码/Token无效")
+	case http.StatusNotFound:
+		return fmt.Errorf("仓库不存在或无权访问: %s/%s", owner, repo)
+	default:
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("Gitee API返回异常状态码 %d: %s", resp.StatusCode, string(body))
+	}
+}
+
+// parseGiteeRepoURL 从 Gitee 仓库 URL 中提取 owner 和 repo
+func parseGiteeRepoURL(repoURL string) (owner, repo string, err error) {
+	repoURL = strings.TrimSuffix(strings.TrimSpace(repoURL), ".git")
+	u, err := url.Parse(repoURL)
+	if err != nil {
+		return "", "", err
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) < 2 {
+		return "", "", fmt.Errorf("URL路径格式错误，需要 /owner/repo 格式")
+	}
+	return parts[0], parts[1], nil
 }
 
 // ====================================================================

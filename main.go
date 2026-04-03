@@ -383,5 +383,9 @@ func main() {
 		logger.Logger.Fatal("服务器强制关闭", zap.Error(err))
 	}
 
+	// 等待后台同步协程完成
+	logger.Logger.Info("等待后台同步协程完成...")
+	syncHandler.Shutdown()
+
 	logger.Logger.Info("服务器已安全关闭")
 }
