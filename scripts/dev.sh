@@ -312,7 +312,7 @@ npm install --registry=https://registry.npmmirror.com/
 
 # 在后台启动前端开发服务器
 # Vite开发服务器支持热重载和快速构建
-npm run dev &
+npm run dev -- --host 0.0.0.0 --port 3000 &
 
 FRONTEND_PID=$!
 

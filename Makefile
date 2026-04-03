@@ -149,7 +149,7 @@ dev:
 	@echo "启动后端开发服务器..."; 
 	@go run main.go &
 	@echo "启动前端开发服务器..."; 
-	@cd $(WEB_DIR) && npm run dev; 
+	@cd $(WEB_DIR) && npm run dev -- --host 0.0.0.0 --port 3000; 
 
 # 仅启动前端开发服务器
 # 默认运行在 http://localhost:3000
