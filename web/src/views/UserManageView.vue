@@ -313,18 +313,25 @@ watch(activeTab, (tab) => {
 
 <style scoped>
 .user-manage-container {
-  max-width: 1400px;
+  max-width: var(--max-width);
   margin: 0 auto;
+  background: var(--color-bg-card);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border-light);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-lg);
 }
 
 .tab-toolbar {
   display: flex;
-  gap: 12px;
-  margin-bottom: 16px;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
 }
 
 .pagination {
-  margin-top: 16px;
+  margin-top: var(--space-md);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--color-border-light);
   display: flex;
   justify-content: flex-end;
 }

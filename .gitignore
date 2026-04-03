@@ -12,6 +12,8 @@
 /bin/
 /build/
 
+__pycache__
+
 # Go workspace file
 go.work
 

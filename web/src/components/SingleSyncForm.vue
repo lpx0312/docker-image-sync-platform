@@ -165,22 +165,15 @@ const syncRules = {
  */
 const submitSync = async () => {
   try {
-    console.log('Submitting sync form...')
-    // 表单验证
     await syncFormRef.value.validate()
     
-    // 构造同步数据
     const syncData = {
       images: [syncForm.sourceImage],
       architecture: syncForm.architecture,
       description: syncForm.description
     }
     
-    console.log('Sync data:', syncData)
-    // 提交同步任务
     const result = await syncStore.submitSync(syncData)
-    console.log('Sync submitted, result:', result)
-    console.log('Current task after submit:', syncStore.currentTask)
     
     // 成功提示
     ElMessage.success('同步任务已提交')

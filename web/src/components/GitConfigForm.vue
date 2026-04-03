@@ -544,31 +544,18 @@ const testGitOperations = async (type) => {
       branch: config.branch
     }
 
-    // 调用后端API进行测试
-    console.log('开始调用Git测试API, 测试数据:', testData)
     const response = await systemAPI.testGitOperations(testData)
-    console.log('Git测试API响应:', response)
 
     if (response.success) {
-      console.log('API调用成功，设置测试结果数据:', response.data)
       testResultData.value = response.data
       testResultVisible.value = true
 
-      console.log('检查各个步骤的成功状态:')
-      console.log('- pull_success:', response.data.pull_success)
-      console.log('- commit_success:', response.data.commit_success)
-      console.log('- test_images_txt:', response.data.test_images_txt)
-      console.log('- push_success:', response.data.push_success)
-
       if (response.data.pull_success && response.data.commit_success && response.data.test_images_txt) {
-        console.log('所有步骤都成功，显示成功消息')
         ElMessage.success('GitHub代码操作测试全部成功！')
       } else {
-        console.log('部分步骤失败，显示警告消息')
         ElMessage.warning('GitHub代码操作测试部分完成，请查看详细结果')
       }
     } else {
-      console.log('API调用失败:', response.message)
       ElMessage.error('测试失败：' + (response.message || '未知错误'))
     }
   } catch (error) {

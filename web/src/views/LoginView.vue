@@ -1,12 +1,22 @@
 <template>
-  <div class="login-wrapper">
+  <div class="login-page">
+    <div class="login-bg">
+      <div class="bg-shape bg-shape-1"></div>
+      <div class="bg-shape bg-shape-2"></div>
+      <div class="bg-shape bg-shape-3"></div>
+    </div>
+
     <div class="login-card">
       <div class="login-header">
         <div class="login-logo">
-          <el-icon :size="36"><Box /></el-icon>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="28" height="28">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+            <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+            <line x1="12" y1="22.08" x2="12" y2="12"/>
+          </svg>
         </div>
-        <h2 class="login-title">Docker镜像同步平台</h2>
-        <p class="login-subtitle">登录以继续</p>
+        <h2 class="login-title">Docker 镜像同步平台</h2>
+        <p class="login-subtitle">登录以继续使用</p>
       </div>
 
       <el-form
@@ -61,7 +71,7 @@
     </div>
 
     <div class="login-footer">
-      © 2024 Docker镜像同步平台
+      &copy; {{ new Date().getFullYear() }} Docker 镜像同步平台
     </div>
   </div>
 </template>
@@ -70,7 +80,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { Box, User, Lock, Warning } from '@element-plus/icons-vue'
+import { User, Lock, Warning } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
 const router = useRouter()
@@ -116,7 +126,7 @@ async function handleLogin() {
     const redirect = route.query.redirect || '/sync'
     router.replace(redirect)
   } catch {
-    // 错误由 API 拦截器统一处理并展示
+    // handled by API interceptor
   } finally {
     loading.value = false
   }
@@ -124,61 +134,115 @@ async function handleLogin() {
 </script>
 
 <style scoped>
-.login-wrapper {
+.login-page {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  padding: 20px;
+  background: var(--color-bg-page);
+  position: relative;
+  overflow: hidden;
+  padding: var(--space-lg);
+}
+
+.login-bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.bg-shape {
+  position: absolute;
+  border-radius: 50%;
+  opacity: 0.5;
+  filter: blur(80px);
+}
+
+.bg-shape-1 {
+  width: 500px;
+  height: 500px;
+  background: var(--color-primary-lighter);
+  top: -150px;
+  right: -100px;
+  opacity: 0.25;
+}
+
+.bg-shape-2 {
+  width: 400px;
+  height: 400px;
+  background: var(--color-primary-bg);
+  bottom: -100px;
+  left: -80px;
+  opacity: 0.4;
+}
+
+.bg-shape-3 {
+  width: 250px;
+  height: 250px;
+  background: var(--color-success-light);
+  top: 40%;
+  left: 60%;
+  opacity: 0.12;
 }
 
 .login-card {
+  position: relative;
   width: 100%;
   max-width: 400px;
-  background: #fff;
-  border-radius: 12px;
+  background: var(--color-bg-card);
+  border-radius: var(--radius-xl);
   padding: 40px 36px 32px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-xl);
+  border: 1px solid var(--color-border-light);
 }
 
 .login-header {
   text-align: center;
-  margin-bottom: 32px;
+  margin-bottom: var(--space-xl);
 }
 
 .login-logo {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 64px;
-  height: 64px;
-  border-radius: 16px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: #fff;
-  margin-bottom: 16px;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light));
+  color: var(--color-text-inverse);
+  margin-bottom: var(--space-md);
 }
 
 .login-title {
-  margin: 0 0 4px;
+  margin: 0 0 6px;
   font-size: 22px;
-  font-weight: 600;
-  color: #303133;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  letter-spacing: -0.01em;
 }
 
 .login-subtitle {
   margin: 0;
   font-size: 14px;
-  color: #909399;
+  color: var(--color-text-muted);
 }
 
 .login-form {
-  margin-top: 8px;
+  margin-top: var(--space-sm);
 }
 
 .login-form :deep(.el-input__wrapper) {
-  border-radius: 8px;
+  border-radius: var(--radius-md);
+  box-shadow: 0 0 0 1px var(--color-border) inset;
+}
+
+.login-form :deep(.el-input__wrapper:hover) {
+  box-shadow: 0 0 0 1px var(--color-primary-lighter) inset;
+}
+
+.login-form :deep(.el-input__wrapper.is-focus) {
+  box-shadow: 0 0 0 1px var(--color-primary) inset, 0 0 0 3px rgba(30, 64, 175, 0.1);
 }
 
 .login-options {
@@ -190,15 +254,11 @@ async function handleLogin() {
 
 .login-btn {
   width: 100%;
-  border-radius: 8px;
-  font-size: 16px;
+  border-radius: var(--radius-md) !important;
+  font-size: 15px;
   height: 44px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border: none;
-}
-
-.login-btn:hover {
-  opacity: 0.9;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 .expired-tip {
@@ -206,17 +266,18 @@ async function handleLogin() {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  margin-top: 16px;
-  padding: 10px;
-  border-radius: 8px;
-  background: #fef0f0;
-  color: #f56c6c;
+  margin-top: var(--space-md);
+  padding: 10px var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
   font-size: 13px;
 }
 
 .login-footer {
-  margin-top: 32px;
+  position: relative;
+  margin-top: var(--space-xl);
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--color-text-muted);
 }
 </style>

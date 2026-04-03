@@ -1,34 +1,43 @@
 <template>
   <div id="app">
-    <!-- 登录页不显示布局 -->
     <router-view v-if="!showLayout" />
 
-    <!-- 主布局 -->
     <el-container v-else class="layout-container">
-      <el-header class="header">
-        <div class="header-content">
-          <div class="logo">
-            <el-icon><Box /></el-icon>
-            <span>Docker镜像同步平台</span>
+      <header class="app-header">
+        <div class="header-inner">
+          <div class="logo" @click="router.push('/sync')">
+            <div class="logo-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="22" height="22">
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                <line x1="12" y1="22.08" x2="12" y2="12"/>
+              </svg>
+            </div>
+            <span class="logo-text">Docker 镜像同步</span>
           </div>
-          <div class="header-right">
-            <el-menu
-              :default-active="activeIndex"
-              class="header-menu"
-              mode="horizontal"
-              @select="handleSelect"
+
+          <nav class="nav-links">
+            <router-link
+              v-for="item in navItems"
+              :key="item.path"
+              :to="item.path"
+              class="nav-item"
+              :class="{ active: isActiveRoute(item.path) }"
             >
-              <el-menu-item index="/sync">镜像同步</el-menu-item>
-              <el-menu-item index="/github">GitHub Actions</el-menu-item>
-              <el-menu-item index="/config">系统配置</el-menu-item>
-              <el-menu-item v-if="authStore.isAdmin" index="/users">用户管理</el-menu-item>
-            </el-menu>
-            <el-dropdown class="user-dropdown" @command="handleUserCommand">
-              <span class="user-info">
-                <el-icon><UserFilled /></el-icon>
+              <component :is="item.icon" class="nav-icon" />
+              <span>{{ item.label }}</span>
+            </router-link>
+          </nav>
+
+          <div class="header-actions">
+            <el-dropdown trigger="click" @command="handleUserCommand">
+              <button class="user-btn">
+                <div class="user-avatar">
+                  {{ (authStore.username || 'U').charAt(0).toUpperCase() }}
+                </div>
                 <span class="user-name">{{ authStore.username }}</span>
-                <el-icon class="el-icon--right"><ArrowDown /></el-icon>
-              </span>
+                <el-icon class="dropdown-arrow"><ArrowDown /></el-icon>
+              </button>
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item command="password">
@@ -42,23 +51,20 @@
             </el-dropdown>
           </div>
         </div>
-      </el-header>
+      </header>
 
       <el-main class="main-content">
-        <router-view />
+        <transition name="page" mode="out-in">
+          <router-view />
+        </transition>
       </el-main>
 
-      <el-footer class="footer">
-        <div class="footer-content">
-          <span>© 2024 Docker镜像同步平台 - 基于Vue 3 + Go开发</span>
-        </div>
-      </el-footer>
+      <footer class="app-footer">
+        <span>&copy; {{ new Date().getFullYear() }} Docker 镜像同步平台</span>
+      </footer>
     </el-container>
 
-    <!-- 修改密码对话框 -->
-    <ChangePasswordDialog
-      v-model:visible="showChangePassword"
-    />
+    <ChangePasswordDialog v-model:visible="showChangePassword" />
   </div>
 </template>
 
@@ -66,7 +72,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { Box, UserFilled, ArrowDown, Key, SwitchButton } from '@element-plus/icons-vue'
+import { ArrowDown, Key, SwitchButton, Box, Connection, Setting, User } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import ChangePasswordDialog from '@/components/ChangePasswordDialog.vue'
 
@@ -75,11 +81,22 @@ const route = useRoute()
 const authStore = useAuthStore()
 
 const showChangePassword = ref(false)
-const activeIndex = computed(() => route.path)
 const showLayout = computed(() => route.name !== 'Login' && authStore.isLoggedIn)
 
-const handleSelect = (key) => {
-  router.push(key)
+const navItems = computed(() => {
+  const items = [
+    { path: '/sync', label: '镜像同步', icon: Box },
+    { path: '/github', label: 'GitHub Actions', icon: Connection },
+    { path: '/config', label: '系统配置', icon: Setting },
+  ]
+  if (authStore.isAdmin) {
+    items.push({ path: '/users', label: '用户管理', icon: User })
+  }
+  return items
+})
+
+const isActiveRoute = (path) => {
+  return route.path === path || route.path.startsWith(path + '/')
 }
 
 const handleUserCommand = (command) => {
@@ -117,103 +134,165 @@ onUnmounted(() => {
 <style scoped>
 .layout-container {
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
-.header {
-  background-color: #fff;
-  border-bottom: 1px solid #e4e7ed;
-  padding: 0;
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: var(--color-bg-header);
+  border-bottom: 1px solid var(--color-border);
+  backdrop-filter: blur(12px);
 }
 
-.header-content {
+.header-inner {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  height: 100%;
-  max-width: 1400px;
+  height: 56px;
+  max-width: var(--max-width);
   margin: 0 auto;
-  padding: 0 20px;
+  padding: 0 var(--space-lg);
+  gap: var(--space-xl);
 }
 
 .logo {
   display: flex;
   align-items: center;
-  font-size: 20px;
-  font-weight: bold;
-  color: #409eff;
-  white-space: nowrap;
+  gap: var(--space-sm);
+  cursor: pointer;
+  flex-shrink: 0;
+  text-decoration: none;
+  transition: opacity var(--transition-fast);
 }
 
-.logo .el-icon {
-  margin-right: 8px;
-  font-size: 24px;
+.logo:hover {
+  opacity: 0.85;
 }
 
-.header-right {
+.logo-icon {
   display: flex;
   align-items: center;
-  gap: 16px;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light));
+  color: var(--color-text-inverse);
 }
 
-.header-menu {
-  border-bottom: none;
+.logo-text {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  letter-spacing: -0.01em;
 }
 
-.user-dropdown {
-  cursor: pointer;
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex: 1;
 }
 
-.user-info {
+.nav-item {
   display: flex;
   align-items: center;
   gap: 6px;
+  padding: 6px 14px;
+  border-radius: var(--radius-md);
   font-size: 14px;
-  color: #606266;
-  padding: 4px 8px;
-  border-radius: 6px;
-  transition: background-color 0.2s;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  transition: all var(--transition-fast);
+  cursor: pointer;
+  white-space: nowrap;
 }
 
-.user-info:hover {
-  background-color: #f5f7fa;
+.nav-item:hover {
+  color: var(--color-primary);
+  background: var(--color-primary-bg);
+}
+
+.nav-item.active {
+  color: var(--color-primary);
+  background: var(--color-primary-bg);
+  font-weight: 600;
+}
+
+.nav-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.user-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 4px 10px 4px 4px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: var(--color-bg-card);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  outline: none;
+}
+
+.user-btn:hover {
+  border-color: var(--color-primary-lighter);
+  background: var(--color-primary-bg);
+}
+
+.user-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light));
+  color: var(--color-text-inverse);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .user-name {
-  max-width: 100px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  max-width: 80px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.dropdown-arrow {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
 .main-content {
-  background-color: #f5f7fa;
-  min-height: calc(100vh - 120px);
-  padding: 20px;
+  flex: 1;
+  background: var(--color-bg-page);
+  padding: var(--space-lg);
+  min-height: 0;
 }
 
-.footer {
-  background-color: #fff;
-  border-top: 1px solid #e4e7ed;
-  height: 60px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.footer-content {
-  color: #909399;
-  font-size: 14px;
-}
-</style>
-
-<style>
-body {
-  margin: 0;
-  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', '微软雅黑', Arial, sans-serif;
-}
-
-#app {
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+.app-footer {
+  padding: var(--space-md) var(--space-lg);
+  text-align: center;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  border-top: 1px solid var(--color-border-light);
+  background: var(--color-bg-card);
 }
 </style>
