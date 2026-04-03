@@ -1,14 +1,48 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
+	"unicode"
 
 	"docker-image-sync-platform/internal/models"
 	"docker-image-sync-platform/internal/services"
 
 	"github.com/gin-gonic/gin"
 )
+
+func validateStrongPassword(password string) error {
+	if len(password) < 8 {
+		return fmt.Errorf("密码长度至少8位")
+	}
+	var hasUpper, hasLower, hasDigit, hasSpecial bool
+	for _, ch := range password {
+		switch {
+		case unicode.IsUpper(ch):
+			hasUpper = true
+		case unicode.IsLower(ch):
+			hasLower = true
+		case unicode.IsDigit(ch):
+			hasDigit = true
+		case unicode.IsPunct(ch) || unicode.IsSymbol(ch):
+			hasSpecial = true
+		}
+	}
+	if !hasUpper {
+		return fmt.Errorf("密码必须包含至少一个大写字母")
+	}
+	if !hasLower {
+		return fmt.Errorf("密码必须包含至少一个小写字母")
+	}
+	if !hasDigit {
+		return fmt.Errorf("密码必须包含至少一个数字")
+	}
+	if !hasSpecial {
+		return fmt.Errorf("密码必须包含至少一个特殊字符")
+	}
+	return nil
+}
 
 // AuthHandler 认证相关 Handler
 type AuthHandler struct {
@@ -102,14 +136,19 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 
 type changePasswordRequest struct {
 	OldPassword string `json:"old_password" binding:"required"`
-	NewPassword string `json:"new_password" binding:"required,min=6"`
+	NewPassword string `json:"new_password" binding:"required"`
 }
 
 // ChangePassword 修改密码
 func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	var req changePasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入原密码和新密码（至少6位）"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入原密码和新密码"})
+		return
+	}
+
+	if err := validateStrongPassword(req.NewPassword); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -178,7 +217,7 @@ func (h *AuthHandler) ListUsers(c *gin.Context) {
 
 type createUserRequest struct {
 	Username string `json:"username" binding:"required"`
-	Password string `json:"password" binding:"required,min=6"`
+	Password string `json:"password" binding:"required"`
 	Email    string `json:"email"`
 	Role     string `json:"role" binding:"required,oneof=admin operator user"`
 }
@@ -187,7 +226,12 @@ type createUserRequest struct {
 func (h *AuthHandler) CreateUser(c *gin.Context) {
 	var req createUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请填写完整的用户信息（用户名、密码至少6位、角色）"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请填写完整的用户信息（用户名、密码、角色）"})
+		return
+	}
+
+	if err := validateStrongPassword(req.Password); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -249,7 +293,7 @@ func (h *AuthHandler) DeleteUser(c *gin.Context) {
 }
 
 type resetPasswordRequest struct {
-	NewPassword string `json:"new_password" binding:"required,min=6"`
+	NewPassword string `json:"new_password" binding:"required"`
 }
 
 // ResetUserPassword 管理员重置用户密码
@@ -262,7 +306,12 @@ func (h *AuthHandler) ResetUserPassword(c *gin.Context) {
 
 	var req resetPasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "新密码至少6位"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入新密码"})
+		return
+	}
+
+	if err := validateStrongPassword(req.NewPassword); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 

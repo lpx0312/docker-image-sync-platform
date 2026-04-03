@@ -121,7 +121,16 @@
           <el-input v-model="createForm.username" placeholder="请输入用户名" />
         </el-form-item>
         <el-form-item label="密码" prop="password">
-          <el-input v-model="createForm.password" type="password" show-password placeholder="至少6位" />
+          <el-input v-model="createForm.password" type="password" show-password placeholder="大小写字母+数字+特殊字符，至少8位" />
+          <div v-if="createForm.password" class="password-strength">
+            <div class="strength-bar">
+              <div
+                class="strength-fill"
+                :style="{ width: createPasswordStrength.percent + '%', background: createPasswordStrength.color }"
+              />
+            </div>
+            <span :style="{ color: createPasswordStrength.color, fontSize: '12px' }">{{ createPasswordStrength.label }}</span>
+          </div>
         </el-form-item>
         <el-form-item label="邮箱" prop="email">
           <el-input v-model="createForm.email" placeholder="可选" />
@@ -158,7 +167,16 @@
       </p>
       <el-form ref="resetFormRef" :model="resetForm" :rules="resetRules">
         <el-form-item prop="newPassword">
-          <el-input v-model="resetForm.newPassword" type="password" show-password placeholder="新密码（至少6位）" />
+          <el-input v-model="resetForm.newPassword" type="password" show-password placeholder="大小写字母+数字+特殊字符，至少8位" />
+          <div v-if="resetForm.newPassword" class="password-strength">
+            <div class="strength-bar">
+              <div
+                class="strength-fill"
+                :style="{ width: resetPasswordStrength.percent + '%', background: resetPasswordStrength.color }"
+              />
+            </div>
+            <span :style="{ color: resetPasswordStrength.color, fontSize: '12px' }">{{ resetPasswordStrength.label }}</span>
+          </div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -206,7 +224,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { authAPI } from '@/api'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -226,15 +244,49 @@ const logsPageSize = ref(20)
 const logsTotal = ref(0)
 const logSearch = ref('')
 
+function validateStrongPassword(password) {
+  if (password.length < 8) return '密码长度至少8位'
+  if (!/[A-Z]/.test(password)) return '密码必须包含至少一个大写字母'
+  if (!/[a-z]/.test(password)) return '密码必须包含至少一个小写字母'
+  if (!/[0-9]/.test(password)) return '密码必须包含至少一个数字'
+  if (!/[^A-Za-z0-9]/.test(password)) return '密码必须包含至少一个特殊字符'
+  return null
+}
+
+function getPasswordStrength(password) {
+  if (!password) return { percent: 0, color: '#dcdfe6', label: '' }
+  let score = 0
+  if (password.length >= 8) score++
+  if (password.length >= 12) score++
+  if (/[A-Z]/.test(password)) score++
+  if (/[a-z]/.test(password)) score++
+  if (/[0-9]/.test(password)) score++
+  if (/[^A-Za-z0-9]/.test(password)) score++
+  if (score <= 2) return { percent: 25, color: '#f56c6c', label: '弱' }
+  if (score <= 4) return { percent: 55, color: '#e6a23c', label: '中' }
+  if (score <= 5) return { percent: 80, color: '#409eff', label: '强' }
+  return { percent: 100, color: '#67c23a', label: '非常强' }
+}
+
+const strongPasswordValidator = (rule, value, callback) => {
+  const err = validateStrongPassword(value)
+  if (err) {
+    callback(new Error(err))
+  } else {
+    callback()
+  }
+}
+
 const showCreateDialog = ref(false)
 const createLoading = ref(false)
 const createFormRef = ref()
 const createForm = ref({ username: '', password: '', email: '', role: 'user' })
+const createPasswordStrength = computed(() => getPasswordStrength(createForm.value.password))
 const createRules = {
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
   password: [
     { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 6, message: '密码至少6位', trigger: 'blur' },
+    { validator: strongPasswordValidator, trigger: 'blur' },
   ],
   role: [{ required: true, message: '请选择角色', trigger: 'change' }],
 }
@@ -244,10 +296,11 @@ const resetLoading = ref(false)
 const resetFormRef = ref()
 const resetTarget = ref(null)
 const resetForm = ref({ newPassword: '' })
+const resetPasswordStrength = computed(() => getPasswordStrength(resetForm.value.newPassword))
 const resetRules = {
   newPassword: [
     { required: true, message: '请输入新密码', trigger: 'blur' },
-    { min: 6, message: '密码至少6位', trigger: 'blur' },
+    { validator: strongPasswordValidator, trigger: 'blur' },
   ],
 }
 
@@ -367,7 +420,10 @@ async function handleDeleteUser(id) {
 async function handleCreateUser() {
   if (!createFormRef.value) return
   const valid = await createFormRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!valid) {
+    ElMessage.warning('密码不符合强密码要求，请检查后重试')
+    return
+  }
 
   createLoading.value = true
   try {
@@ -392,7 +448,10 @@ function openResetPassword(user) {
 async function handleResetPassword() {
   if (!resetFormRef.value) return
   const valid = await resetFormRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!valid) {
+    ElMessage.warning('密码不符合强密码要求，请检查后重试')
+    return
+  }
 
   resetLoading.value = true
   try {
@@ -446,5 +505,26 @@ watch(activeTab, (tab) => {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+}
+
+.password-strength {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.strength-bar {
+  flex: 1;
+  height: 4px;
+  background: #e4e7ed;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.strength-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s, background 0.3s;
 }
 </style>
