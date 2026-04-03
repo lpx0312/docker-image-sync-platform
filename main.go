@@ -93,6 +93,11 @@ func main() {
 		logger.Logger.Fatal("数据库表迁移失败", zap.Error(err))
 	}
 
+	// 检查并迁移加密密钥（从旧默认密钥迁移到新的 ENCRYPTION_KEY）
+	if err := database.MigrateEncryptionKeys(); err != nil {
+		logger.Logger.Fatal("加密密钥迁移失败", zap.Error(err))
+	}
+
 	// ========================================================================
 	// 第二阶段：业务服务初始化
 	// ========================================================================

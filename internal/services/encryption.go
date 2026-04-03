@@ -332,3 +332,5 @@ func (es *EncryptionService) EncryptIfNeeded(data string, shouldEncrypt bool) (s
 func (es *EncryptionService) DecryptIfNeeded(data string) (string, error) {
 	return es.Decrypt(data)
 }
+
+

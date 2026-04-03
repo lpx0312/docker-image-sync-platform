@@ -32,6 +32,7 @@ services:
       - DB_CHARSET=${DB_CHARSET:-utf8mb4}
       - DB_PARSE_TIME=${DB_PARSE_TIME:-true}
       - DB_LOC=${DB_LOC:-Local}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-Lipanxiang@1102}
       
       # Git仓库配置
       - GIT_REPOSITORY_TYPE=${GIT_REPOSITORY_TYPE:-github}

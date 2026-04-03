@@ -37,6 +37,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"docker-image-sync-platform/internal/config"
@@ -511,6 +512,144 @@ func initDefaultConfigs() error {
 	}
 
 	return nil
+}
+
+// MigrateEncryptionKeys 启动时检查并迁移加密密钥
+//
+// 当用户首次设置 ENCRYPTION_KEY 环境变量时，数据库中可能存在用旧默认密钥加密的数据。
+// 此函数用旧密钥解密后，再用新密钥重新加密，确保平滑过渡。
+func MigrateEncryptionKeys() error {
+	envKey := os.Getenv("ENCRYPTION_KEY")
+	if envKey == "" {
+		return nil
+	}
+
+	newKeyHash := sha256.Sum256([]byte(envKey))
+	newKey := newKeyHash[:]
+
+	oldDefaultKey := "docker-sync-platform-default-key-2024"
+	oldKeyHash := sha256.Sum256([]byte(oldDefaultKey))
+	oldKey := oldKeyHash[:]
+
+	type configRow struct {
+		ID          uint
+		ConfigKey   string
+		ConfigValue string
+		IsEncrypted bool
+	}
+
+	var records []configRow
+	if err := DB.Raw("SELECT id, config_key, config_value, is_encrypted FROM system_configs WHERE config_value LIKE 'ENC:%' AND deleted_at IS NULL").Scan(&records).Error; err != nil {
+		return fmt.Errorf("查询加密配置失败: %w", err)
+	}
+
+	if len(records) == 0 {
+		log.Println("加密密钥迁移：无加密记录，跳过")
+		return nil
+	}
+
+	log.Printf("加密密钥迁移：发现 %d 条加密记录，开始检查...", len(records))
+
+	migratedCount := 0
+	for _, record := range records {
+		// 先尝试用新密钥解密 — 成功说明已是新密钥加密的
+		if tryDecryptAESGCM(record.ConfigValue, newKey) {
+			continue
+		}
+
+		// 用旧密钥解密
+		plaintext, err := decryptAESGCM(record.ConfigValue, oldKey)
+		if err != nil {
+			log.Printf("加密密钥迁移：配置 %s 无法用旧密钥解密（%v），跳过", record.ConfigKey, err)
+			continue
+		}
+
+		// 用新密钥重新加密
+		newCiphertext, err := encryptAESGCM(plaintext, newKey)
+		if err != nil {
+			return fmt.Errorf("加密密钥迁移：重新加密配置 %s 失败: %w", record.ConfigKey, err)
+		}
+
+		// 更新数据库
+		if err := DB.Exec("UPDATE system_configs SET config_value = ? WHERE id = ?", newCiphertext, record.ID).Error; err != nil {
+			return fmt.Errorf("加密密钥迁移：更新配置 %s 失败: %w", record.ConfigKey, err)
+		}
+
+		migratedCount++
+		log.Printf("加密密钥迁移：成功迁移配置 %s", record.ConfigKey)
+	}
+
+	if migratedCount > 0 {
+		log.Printf("加密密钥迁移完成：共迁移 %d 条记录", migratedCount)
+	} else {
+		log.Println("加密密钥迁移：所有记录已使用当前密钥，无需迁移")
+	}
+
+	return nil
+}
+
+// tryDecryptAESGCM 尝试用指定密钥解密，成功返回 true
+func tryDecryptAESGCM(ciphertext string, key []byte) bool {
+	_, err := decryptAESGCM(ciphertext, key)
+	return err == nil
+}
+
+// decryptAESGCM 用指定密钥解密 AES-GCM 数据
+func decryptAESGCM(ciphertext string, key []byte) (string, error) {
+	if !strings.HasPrefix(ciphertext, "ENC:") {
+		return ciphertext, nil
+	}
+
+	encoded := strings.TrimPrefix(ciphertext, "ENC:")
+	data, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return "", err
+	}
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+
+	nonceSize := gcm.NonceSize()
+	if len(data) < nonceSize {
+		return "", fmt.Errorf("ciphertext too short")
+	}
+
+	nonce, cipherData := data[:nonceSize], data[nonceSize:]
+	plaintext, err := gcm.Open(nil, nonce, cipherData, nil)
+	if err != nil {
+		return "", err
+	}
+
+	return string(plaintext), nil
+}
+
+// encryptAESGCM 用指定密钥加密数据
+func encryptAESGCM(plaintext string, key []byte) (string, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", err
+	}
+
+	sealed := gcm.Seal(nonce, nonce, []byte(plaintext), nil)
+	encoded := base64.StdEncoding.EncodeToString(sealed)
+	return "ENC:" + encoded, nil
 }
 
 // GetDB 获取数据库连接
