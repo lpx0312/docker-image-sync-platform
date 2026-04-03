@@ -115,8 +115,8 @@ async function handleLogin() {
     ElMessage.success('登录成功')
     const redirect = route.query.redirect || '/sync'
     router.replace(redirect)
-  } catch (err) {
-    // 错误已在 API 拦截器中处理
+  } catch {
+    // 错误由 API 拦截器统一处理并展示
   } finally {
     loading.value = false
   }

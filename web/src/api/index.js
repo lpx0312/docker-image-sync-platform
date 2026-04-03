@@ -62,6 +62,9 @@ api.interceptors.response.use(
       const currentPath = window.location.pathname
       if (currentPath !== '/login') {
         window.location.href = '/login?redirect=' + encodeURIComponent(currentPath)
+      } else {
+        const message = error.response?.data?.error || '用户名或密码错误'
+        ElMessage.error(message)
       }
       return Promise.reject(error)
     }
