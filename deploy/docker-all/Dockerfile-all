@@ -30,7 +30,7 @@ RUN npm run build
 # ================================
 # 阶段2: 后端构建
 # ================================
-FROM registry.cn-hangzhou.aliyuncs.com/lpx03/golang:1.21-alpine AS backend-builder
+FROM registry.cn-hangzhou.aliyuncs.com/lpx03/golang:1.26.1-alpine3.23 AS backend-builder
 
 # 设置工作目录
 WORKDIR /app
