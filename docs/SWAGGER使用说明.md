@@ -27,6 +27,26 @@
 
 ## 支持的 API 接口
 
+### 认证 (Auth)
+| 方法 | 路径 | 认证 | 说明 |
+|------|------|------|------|
+| POST | `/api/v1/auth/login` | 公开 | 用户登录（返回 JWT Token） |
+| GET  | `/api/v1/auth/me` | 需登录 | 获取当前用户信息 |
+| PUT  | `/api/v1/auth/password` | 需登录 | 修改密码 |
+| POST | `/api/v1/auth/logout` | 需登录 | 登出 |
+
+### 用户管理 (Auth - Admin)
+| 方法 | 路径 | 认证 | 说明 |
+|------|------|------|------|
+| GET    | `/api/v1/auth/roles` | 管理员 | 获取角色列表 |
+| GET    | `/api/v1/auth/login-logs` | 管理员 | 获取登录日志 |
+| GET    | `/api/v1/auth/users` | 管理员 | 获取用户列表 |
+| POST   | `/api/v1/auth/users` | 管理员 | 创建用户 |
+| PUT    | `/api/v1/auth/users/{id}/status` | 管理员 | 更新用户状态（启用/禁用） |
+| PUT    | `/api/v1/auth/users/{id}/role` | 管理员 | 更新用户角色 |
+| DELETE | `/api/v1/auth/users/{id}` | 管理员 | 删除用户 |
+| PUT    | `/api/v1/auth/users/{id}/password` | 管理员 | 重置用户密码 |
+
 ### 镜像同步 (Sync)
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -105,7 +125,9 @@
 docs/
 ├── swagger.json          # OpenAPI 2.0 规范文件（API定义）
 ├── swagger-ui.html       # Swagger UI 界面入口
-└── SWAGGER使用说明.md     # 本文档
+├── SWAGGER使用说明.md     # 本文档
+├── e2e-test-guide.md     # 端到端测试指南
+└── README.md             # 文档中心索引
 ```
 
 ### 路由配置（main.go）
@@ -124,8 +146,9 @@ api.StaticFile("/swagger.json", "./docs/swagger.json")
 
 1. **服务启动**: 确保后端服务已在 8080 端口正常启动
 2. **跨域访问**: Swagger UI 已配置支持跨域请求，可从任意域名访问
-3. **请求认证**: 当前版本无鉴权机制，所有接口可直接测试
-4. **数据安全**: 测试时请勿在生产环境使用真实的敏感凭据（token、密码等）
+3. **请求认证**: 系统已实现 JWT Token 认证。除 `/auth/login` 和 `/health` 外，其他接口均需在请求头中携带 `Authorization: Bearer <token>`。在 Swagger UI 测试时，需先调用登录接口获取 Token，再手动添加到请求头
+4. **权限控制**: 不同角色（admin/operator/user）对接口的访问权限不同，详见 CLAUDE.md 中的 API 结构说明
+5. **数据安全**: 测试时请勿在生产环境使用真实的敏感凭据（token、密码等）
 
 ## 更新维护
 

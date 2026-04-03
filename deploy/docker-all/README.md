@@ -92,6 +92,14 @@ docker run -d \
 - `ALIYUN_USERNAME`: 阿里云用户名
 - `ALIYUN_PASSWORD`: 阿里云密码
 
+### 认证配置
+- `JWT_SECRET`: JWT 签名密钥（生产环境务必修改为高强度随机字符串）
+- `TOKEN_EXPIRY`: Token 有效期（默认 `24h`）
+- `REMEMBER_ME_EXPIRY`: Remember Me Token 有效期（默认 `168h`，即 7 天）
+- `AUTO_LOGOUT_MINUTES`: 自动登出超时（默认 `30` 分钟）
+- `DEFAULT_ADMIN_USERNAME`: 默认管理员用户名（默认 `admin`）
+- `DEFAULT_ADMIN_PASSWORD`: 默认管理员密码（首次启动时自动创建）
+
 ## 🔧 更新说明
 
 ### v2.0.0 更新内容
@@ -118,9 +126,10 @@ docker run -d \
 ## 🌐 访问地址
 
 - **前端界面**: http://localhost
-- **后端API**: http://localhost:8080/api
-- **健康检查**: http://localhost/health
-- **API文档**: http://localhost:8080/api/v1/config/all
+- **后端API**: http://localhost:8080/api/v1
+- **健康检查**: http://localhost:8080/api/v1/health
+- **API文档**: http://localhost:8080/api/v1/docs.html
+- **登录**: 使用默认管理员账号登录（见认证配置）
 
 ## 📁 文件说明
 

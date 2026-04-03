@@ -26,11 +26,17 @@
 - **批量操作**: 支持批量删除、重试等操作
 - **数据导出**: 支持同步记录导出功能
 
+### 🔐 认证与权限
+- **用户认证**: JWT Token 认证，支持 Remember Me
+- **角色控制**: 管理员 / 运维员 / 普通用户三级角色
+- **权限管理**: 基于角色的访问控制（RBAC），细粒度权限分配
+- **用户管理**: 管理员可创建用户、分配角色、重置密码
+- **审计日志**: 完整的登录日志记录
+
 ### 🎯 用户体验
 - **现代化界面**: 基于Vue 3 + Element Plus的响应式设计
 - **操作简便**: 直观的用户界面，零学习成本
 - **移动适配**: 完美支持移动端访问
-- **多语言**: 支持中英文界面切换
 
 ## 🛠️ 技术架构
 
@@ -50,10 +56,11 @@
 |------|------|------|
 | **Vue 3** | 3.3+ | 现代化前端框架，组合式API |
 | **Element Plus** | 2.3+ | 企业级UI组件库 |
-| **TypeScript** | 5.0+ | 类型安全的JavaScript |
+| **JavaScript** | ES2020+ | 前端开发语言 |
 | **Vite** | 4.4+ | 快速构建工具 |
 | **Pinia** | 2.1+ | 状态管理，替代Vuex |
 | **Vue Router** | 4.2+ | 单页面应用路由 |
+| **Axios** | 1.6+ | HTTP 客户端 |
 
 ### 部署技术栈
 | 技术 | 版本 | 用途 |
@@ -69,10 +76,11 @@
 - **[使用指南](#-使用指南)** - 详细的功能使用说明
 - **[Swagger API文档](http://localhost:8080/api/v1/docs.html)** - 交互式在线接口文档
 - **[Swagger使用说明](docs/SWAGGER使用说明.md)** - Swagger文档使用指南
+- **[端到端测试指南](docs/e2e-test-guide.md)** - E2E 测试操作手册
 
 ### 🛠️ 运维文档
-- **[部署指南](docs/deployment.md)** - 生产环境部署最佳实践
-- **[故障排除](docs/troubleshooting.md)** - 常见问题诊断和解决方案
+- **[All-in-One 部署](deploy/docker-all/README.md)** - 一体化 Docker 部署指南
+- **[脚本工具集](scripts/README.md)** - 开发运维脚本说明
 - **[监控告警](#监控和告警)** - 系统监控和告警配置
 
 ### 🔧 开发文档
@@ -257,6 +265,15 @@ log:
   max_size: 100
   max_backups: 3
   max_age: 28
+
+# 认证配置
+auth:
+  jwt_secret: "your-jwt-secret-key"
+  token_expiry: "24h"
+  remember_me_expiry: "168h"
+  auto_logout_minutes: 30
+  default_admin_username: "admin"
+  default_admin_password: "your-admin-password"
 ```
 
 4. **启动开发环境**
@@ -281,9 +298,10 @@ cd web && npm run dev
 ```
 
 5. **访问开发环境**
-- 🌐 **前端开发服务器**: http://localhost:5173
+- 🌐 **前端开发服务器**: http://localhost:3000
 - 🔌 **后端API服务器**: http://localhost:8080
 - 📊 **API文档**: http://localhost:8080/api/v1/docs.html
+- 🔑 **默认管理员**: admin / 密码见 `config.yaml` 中 `auth.default_admin_password`
 
 ## 📖 使用指南
 
@@ -426,15 +444,17 @@ docker-image-sync-platform/
 ├── internal/               # 内部包
 │   ├── config/             # 配置管理
 │   ├── database/           # 数据库操作
-│   ├── handlers/           # HTTP处理器
+│   ├── handlers/           # HTTP处理器（sync、image、config、auth）
 │   ├── logger/             # 日志管理
-│   ├── middleware/         # 中间件
-│   ├── models/             # 数据模型
-│   └── services/           # 业务服务
+│   ├── middleware/         # 中间件（CORS、日志、限流、认证、权限）
+│   ├── models/             # 数据模型（含用户、角色、权限）
+│   ├── services/           # 业务服务（含认证、用户管理）
+│   └── utils/              # 工具函数（ACR、Git URL解析等）
 ├── docs/                   # 文档目录
 │   ├── swagger.json        # OpenAPI 2.0 规范文件
 │   ├── swagger-ui.html     # Swagger UI 界面
-│   └── SWAGGER使用说明.md   # API文档使用指南
+│   ├── SWAGGER使用说明.md   # API文档使用指南
+│   └── e2e-test-guide.md   # 端到端测试指南
 ├── deploy/                 # Docker部署配置
 │   ├── docker-signal/      # 前后端分离部署
 │   └── docker-all/         # 前后端一体部署
@@ -444,9 +464,11 @@ docker-image-sync-platform/
     ├── src/
     │   ├── api/            # API接口层
     │   ├── components/     # 公共组件
-    │   ├── router/         # 路由
-    │   ├── stores/         # 状态管理（Pinia）
-    │   └── views/          # 页面视图
+    │   ├── router/         # 路由（含登录守卫与权限控制）
+    │   ├── stores/         # 状态管理（Pinia，含认证状态）
+    │   ├── styles/         # 设计令牌
+    │   ├── utils/          # 工具函数
+    │   └── views/          # 页面视图（含登录、用户管理）
     └── package.json
 ```
 
@@ -492,14 +514,15 @@ A: 支持所有公开的Docker镜像仓库，包括：
 - 其他符合OCI标准的镜像仓库
 
 ### Q: 同步失败怎么办？
-A: 请参考 [故障排除指南](docs/troubleshooting.md)，常见原因包括：
+A: 常见原因包括：
 - 网络连接问题
-- 认证配置错误
+- 认证配置错误（Git Token、阿里云 ACR 凭据）
 - 镜像不存在或无权限访问
 - GitHub Actions配额限制
+请查看 `logs/app.log` 获取详细错误信息。
 
 ### Q: 如何配置自定义域名？
-A: 请参考 [部署指南](docs/deployment.md) 中的Nginx配置部分。
+A: 修改 `deploy/docker-signal/nginx.conf` 或 `deploy/docker-all/nginx-all.conf` 中的 Nginx 配置。
 
 ### Q: 支持私有镜像仓库吗？
 A: 目前主要支持公开镜像仓库，私有仓库支持正在开发中。

@@ -6,29 +6,47 @@
 
 ### 🚀 快速入门
 - **[项目主页](../README.md)** - 项目概述、特性介绍和快速开始
-- **[配置指南](configuration.md)** - 详细的配置参数说明和最佳实践
+- **[快速开始](../README.md#-快速开始)** - 部署和使用指南
 
-### 📖 用户指南
-- **[API文档](api.md)** - 完整的RESTful API接口文档
-- **[使用教程](../README.md#-使用指南)** - 详细的功能使用说明
+### 📖 API 文档
+- **[Swagger UI](http://localhost:8080/api/v1/docs.html)** - 交互式在线 API 文档
+- **[Swagger 使用说明](SWAGGER使用说明.md)** - Swagger 文档使用指南
+- **[OpenAPI JSON](http://localhost:8080/api/v1/swagger.json)** - OpenAPI 2.0 规范文件
+
+### 🧪 测试文档
+- **[端到端测试指南](e2e-test-guide.md)** - E2E 测试操作手册与测试场景
 
 ### 🛠️ 运维指南
-- **[部署指南](deployment.md)** - 生产环境部署最佳实践
-- **[故障排除](troubleshooting.md)** - 常见问题诊断和解决方案
+- **[All-in-One 部署](../deploy/docker-all/README.md)** - 一体化 Docker 部署指南
+- **[脚本工具集](../scripts/README.md)** - 开发运维脚本使用说明
 
 ### 🔧 开发指南
 - **[项目结构](../README.md#项目结构)** - 代码组织和架构说明
 - **[技术架构](../README.md#-技术架构)** - 技术选型和架构设计
+- **[本地开发环境](../README.md#-方式二本地开发环境)** - 本地开发环境搭建
+- **[CLAUDE.md](../CLAUDE.md)** - AI 辅助开发指引（含完整 API 路由与服务说明）
 
 ## 📋 文档概览
 
 | 文档 | 描述 | 适用人群 |
 |------|------|----------|
 | [README.md](../README.md) | 项目主文档，包含概述、快速开始、使用指南 | 所有用户 |
-| [configuration.md](configuration.md) | 配置参数详细说明，环境变量和YAML配置 | 运维人员、开发者 |
-| [api.md](api.md) | RESTful API接口文档，包含请求响应示例 | 开发者、集成商 |
-| [deployment.md](deployment.md) | 部署指南，包含Docker、K8s、手动部署 | 运维人员、系统管理员 |
-| [troubleshooting.md](troubleshooting.md) | 故障排除指南，常见问题和解决方案 | 运维人员、技术支持 |
+| [SWAGGER使用说明.md](SWAGGER使用说明.md) | Swagger API 文档使用方法 | 开发者 |
+| [e2e-test-guide.md](e2e-test-guide.md) | 端到端测试指南，包含测试场景和操作步骤 | 测试人员、开发者 |
+| [deploy/docker-all/README.md](../deploy/docker-all/README.md) | All-in-One 部署指南 | 运维人员 |
+| [scripts/README.md](../scripts/README.md) | 脚本工具集说明 | 运维人员、开发者 |
+| [CLAUDE.md](../CLAUDE.md) | AI 辅助开发完整指引 | 开发者 |
+
+## 📁 本目录文件
+
+```
+docs/
+├── README.md              # 本文档 — 文档中心索引
+├── swagger.json           # OpenAPI 2.0 规范文件（API 定义）
+├── swagger-ui.html        # Swagger UI 界面入口
+├── SWAGGER使用说明.md      # Swagger 文档使用指南
+└── e2e-test-guide.md      # 端到端测试指南
+```
 
 ## 🎯 按角色查看文档
 
@@ -40,63 +58,42 @@
 ### 👨‍💻 开发者
 - [快速开始](../README.md#-快速开始)
 - [本地开发环境](../README.md#-方式二本地开发环境)
-- [API文档](api.md)
+- [Swagger API 文档](SWAGGER使用说明.md)
 - [项目结构](../README.md#项目结构)
+- [CLAUDE.md 开发指引](../CLAUDE.md)
 
 ### 🔧 运维工程师
-- [部署指南](deployment.md)
-- [配置文档](configuration.md)
-- [故障排除](troubleshooting.md)
+- [All-in-One 部署](../deploy/docker-all/README.md)
+- [脚本工具集](../scripts/README.md)
 - [监控告警](../README.md#监控和告警)
+
+### 🧪 测试人员
+- [端到端测试指南](e2e-test-guide.md)
+- [Swagger 在线测试](SWAGGER使用说明.md#2-在线测试-api-接口)
 
 ### 👥 最终用户
 - [使用指南](../README.md#-使用指南)
 - [常见问题](../README.md#-常见问题-faq)
 
-## 🔄 文档更新记录
-
-### 2024-01-15
-- ✨ 新增API文档
-- ✨ 新增部署指南
-- ✨ 新增故障排除指南
-- ✨ 新增配置文档
-- 📚 完善主README文档
-
-### 2023-12-20
-- 📚 初始化文档结构
-- 📚 创建基础README文档
-
 ## 📝 文档贡献
 
 我们欢迎您为文档做出贡献！如果您发现文档中的错误或有改进建议，请：
 
-1. **报告问题**: 在 [GitHub Issues](https://github.com/lpx0312/docker_image_pusher/issues) 中创建新的Issue
-2. **提交改进**: Fork项目，修改文档后提交Pull Request
-3. **建议新内容**: 如果您认为需要添加新的文档内容，请创建Issue说明
+1. **报告问题**: 在 [GitHub Issues](https://github.com/lpx0312/docker_image_pusher/issues) 中创建新的 Issue
+2. **提交改进**: Fork 项目，修改文档后提交 Pull Request
+3. **建议新内容**: 如果您认为需要添加新的文档内容，请创建 Issue 说明
 
 ### 文档编写规范
 
-- 使用Markdown格式
+- 使用 Markdown 格式
 - 保持结构清晰，使用适当的标题层级
 - 添加代码示例和配置示例
-- 包含必要的截图和图表
 - 保持内容准确和及时更新
 
 ## 🔗 相关链接
 
 - **项目主页**: https://github.com/lpx0312/docker_image_pusher
-- **在线演示**: https://demo.docker-sync.com
 - **问题反馈**: https://github.com/lpx0312/docker_image_pusher/issues
-- **讨论区**: https://github.com/lpx0312/docker_image_pusher/discussions
-
-## 📞 获取帮助
-
-如果您在使用过程中遇到问题，可以通过以下方式获取帮助：
-
-1. **查看文档**: 首先查看相关文档，大部分问题都能在文档中找到答案
-2. **搜索Issues**: 在GitHub Issues中搜索是否有类似问题
-3. **创建Issue**: 如果没有找到解决方案，请创建新的Issue
-4. **联系维护者**: 通过邮箱或其他方式联系项目维护者
 
 ---
 

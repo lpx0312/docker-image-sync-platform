@@ -29,26 +29,32 @@
 docker-image-sync-platform/
 ├── main.go                    # 应用入口
 ├── config.yaml               # 配置文件
+├── config.yaml.example       # 配置文件模板（不含敏感信息）
 ├── Makefile                  # 构建与开发命令
 ├── internal/                 # 后端内部包
 │   ├── config/              # 配置管理
 │   ├── database/            # 数据库连接与迁移
-│   ├── handlers/            # HTTP 处理器
-│   ├── middleware/          # 中间件（CORS、日志、限流等）
-│   ├── models/              # 数据模型
-│   ├── services/            # 业务逻辑
-│   └── logger/              # 日志工具
+│   ├── handlers/            # HTTP 处理器（sync、image、config、auth）
+│   ├── middleware/          # 中间件（CORS、日志、限流、认证、权限等）
+│   ├── models/              # 数据模型（含用户、角色、权限）
+│   ├── services/            # 业务逻辑（含认证、用户管理）
+│   ├── logger/              # 日志工具
+│   └── utils/               # 工具函数（ACR、Git URL 解析、镜像仓库等）
 ├── docs/                     # API 文档
 │   ├── swagger.json         # OpenAPI 2.0 规范文件
 │   ├── swagger-ui.html      # Swagger UI 界面
-│   └── SWAGGER使用说明.md    # 文档使用指南
+│   ├── SWAGGER使用说明.md    # 文档使用指南
+│   ├── e2e-test-guide.md    # 端到端测试指南
+│   └── README.md            # 文档中心索引
 ├── web/                     # 前端 Vue 应用
 │   ├── src/
 │   │   ├── api/            # API 封装
 │   │   ├── components/     # 组件
-│   │   ├── router/         # 路由
-│   │   ├── stores/         # Pinia
-│   │   └── views/          # 页面
+│   │   ├── router/         # 路由（含登录守卫与权限控制）
+│   │   ├── stores/         # Pinia（含 auth 状态）
+│   │   ├── styles/         # 设计令牌（design tokens）
+│   │   ├── utils/          # 工具函数（剪贴板、格式化、状态映射）
+│   │   └── views/          # 页面（含登录、用户管理）
 │   └── package.json
 ├── deploy/                  # Docker 部署相关
 │   ├── docker-signal/      # 前后端分离部署
@@ -59,30 +65,46 @@ docker-image-sync-platform/
 
 ## 核心服务
 
-### 1. Git 服务工厂
+### 1. 认证与用户服务
+- `internal/services/auth.go` — JWT 认证、登录/登出、Token 管理
+- `internal/services/user.go` — 用户 CRUD、角色管理、密码重置
+- `internal/handlers/auth.go` — 认证相关 HTTP 处理器
+- `internal/middleware/auth.go` — JWT 认证中间件、角色/权限校验
+
+### 2. Git 服务工厂
 - `internal/services/git_factory.go`
 - 动态创建 Gitee/GitHub 的 Git 服务实例
 - 负责克隆仓库与解析镜像清单文件
 
-### 2. GitHub 服务
+### 3. GitHub 服务
 - `internal/services/github.go`
 - 监控 GitHub Actions 工作流
 - 查询运行状态与日志
 
-### 3. 配置服务
+### 4. 配置服务
 - `internal/services/config.go`
 - 加密存储配置
 - 对系统设置做数据库 CRUD
 
-### 4. 同步处理器
+### 5. 同步处理器
 - `internal/handlers/sync.go`
 - 处理镜像同步请求
 - 支持单条与批量同步
 
-### 5. Git 优化服务
+### 6. Git 优化服务
 - `internal/services/git_optimized.go`
 - 带缓存与稀疏检出的 Git 操作
 - 含 GitHub 代码操作测试：`PullImagesFileForTesting()`、`UpdateImagesFileForTesting()`
+
+### 7. Git API 与接口抽象
+- `internal/services/git_api.go` — 基于 HTTP API 的 Git 操作实现
+- `internal/services/git_interfaces.go` — Git 服务接口定义
+
+### 8. 工具函数
+- `internal/utils/acr.go` — ACR 镜像地址解析与构建
+- `internal/utils/git_config.go` — Git 配置辅助
+- `internal/utils/git_url.go` — Git URL 解析
+- `internal/utils/registry.go` — 镜像仓库地址处理
 
 ## API 结构
 
@@ -94,15 +116,33 @@ docker-image-sync-platform/
 - **静态资源目录**：`http://localhost:8080/api/v1/docs/`
 - **使用说明**：`docs/SWAGGER使用说明.md`
 
-### 同步 (Sync)
-- `POST /sync/submit` — 提交单镜像同步
-- `POST /sync/batch` — 批量同步
-- `POST /sync/batch/mock` — 模拟批量同步（测试用）
+### 认证 (Auth) — 公开接口
+- `POST /auth/login` — 用户登录（返回 JWT Token）
+
+### 认证 (Auth) — 需登录
+- `GET /auth/me` — 获取当前用户信息
+- `PUT /auth/password` — 修改密码
+- `POST /auth/logout` — 登出
+
+### 用户管理 (Auth) — 仅管理员
+- `GET /auth/roles` — 角色列表
+- `GET /auth/login-logs` — 登录日志
+- `GET /auth/users` — 用户列表
+- `POST /auth/users` — 创建用户
+- `PUT /auth/users/:id/status` — 更新用户状态（启用/禁用）
+- `PUT /auth/users/:id/role` — 更新用户角色
+- `DELETE /auth/users/:id` — 删除用户
+- `PUT /auth/users/:id/password` — 重置用户密码
+
+### 同步 (Sync) — 需登录
+- `POST /sync/submit` — 提交单镜像同步（同步限流）
+- `POST /sync/batch` — 批量同步（同步限流）
+- `POST /sync/batch/mock` — 模拟批量同步（测试用，同步限流）
 - `GET /sync/status/:taskId` — 查询单个任务状态
-- `GET /sync/batch/status/:taskId` — 查询批量任务状态
+- `GET /sync/batch/status/:taskId` — 查询批量任务状态（已废弃，返回 410 Gone）
 - `GET /sync/history` — 同步历史
 
-### 镜像管理 (Images)
+### 镜像管理 (Images) — 需登录
 - `GET /images/list` — 分页列表（支持搜索、状态与架构筛选）
 - `GET /images/stats` — 各状态数量统计
 - `GET /images/:id` — 详情
@@ -111,10 +151,10 @@ docker-image-sync-platform/
 - `POST /images/:id/check` — 检查单个镜像是否存在于 ACR
 - `POST /images/batch-check` — 批量检查镜像是否存在于 ACR
 
-### 配置 (Config)
+### 配置 (Config) — 需登录 + `config` 权限
 - `GET /config/status` — 配置状态（不含敏感信息）
 - `GET /config/all` — 全部配置
-- `GET /config/debug/:key` — 调试：获取指定配置项
+- `GET /config/debug/:key` — 调试：获取指定配置项（仅非 release 模式）
 - `GET /config/git-repository` — 获取当前 Git 仓库类型
 - `PUT /config/git-repository` — 切换 Git 仓库类型（gitee/github）
 - `GET /config/git` — Git 详细配置
@@ -130,12 +170,12 @@ docker-image-sync-platform/
 - `PUT /config/aliyun-db` — 更新阿里云 ACR 配置
 - `POST /config/aliyun/test` — 测试阿里云 ACR 连接
 
-### GitHub
+### GitHub — 需登录 + `github` 权限
 - `GET /github/runs` — 工作流运行列表
 - `GET /github/runs/:runId` — 运行详情
 - `GET /github/rate-limit` — API 速率限制
 
-### 健康检查
+### 健康检查 — 公开
 - `GET /health` — 系统健康检查
 
 ## 配置
@@ -148,14 +188,18 @@ docker-image-sync-platform/
 - `aliyun`：阿里云镜像仓库
 - `log`：日志
 - `sync`：同步任务（超时、并发、重试等）
+- `auth`：JWT 认证（密钥、Token 有效期、自动登出、默认管理员账号）
 - `github_actions`：工作流文件名和状态检查间隔
 - `security`：限流与 CORS
 
 ### 安全说明
+- JWT Token 认证，支持 Remember Me 长效 Token
+- 基于角色的访问控制（RBAC）：管理员 / 运维员 / 普通用户
 - 敏感信息（密码、Token）在库中加密存储
 - API 限流
 - CORS 与前端访问控制
 - 请求日志与错误处理中间件
+- 登录日志审计
 
 ## 数据库模型
 
@@ -163,20 +207,30 @@ docker-image-sync-platform/
 - `image_sync_records`：单条镜像同步记录
 - `sync_tasks`：批量任务
 - `system_configs`：加密配置
+- `users`：用户账号（用户名、密码哈希、邮箱、角色、状态）
+- `login_logs`：登录日志审计（用户、IP、User-Agent、状态）
 
 ### 关键字段
-- 同步状态（pending、running、success、failed、retrying、skipped）
+- 同步状态（pending、syncing、success、failed、retrying、skipped）
 - 与 GitHub Actions 的关联
 - 多架构（amd64、arm64）
 - 重试与优先级
 
+### 角色与权限
+- **admin**（管理员）：拥有所有权限 — sync、github、config、users
+- **operator**（运维员）：sync、github、config
+- **user**（普通用户）：sync
+- 权限标识：`PermSync`、`PermGitHub`、`PermConfig`、`PermUsers`
+
 ## 前端主要页面与组件
 
 ### 页面
+- `LoginView.vue` — 登录页面
 - `SyncView.vue` — 镜像同步
 - `ImagesView.vue` — 镜像管理与状态
 - `ConfigView.vue` — 系统配置
 - `GitHubView.vue` — 工作流监控
+- `UserManageView.vue` — 用户管理（管理员）
 
 ### 重要组件
 - `SingleSyncForm.vue` — 单镜像同步
@@ -184,6 +238,17 @@ docker-image-sync-platform/
 - `GitConfigForm.vue` — Git 配置与 GitHub 测试入口
 - `GitTestResultDialog.vue` — 测试结果展示
 - `AliyunConfigForm.vue` — ACR 配置
+- `ChangePasswordDialog.vue` — 修改密码对话框
+
+### 状态管理
+- `stores/auth.js` — 认证状态（登录、登出、Token、用户信息、权限）
+- `stores/sync.js` — 同步状态
+- `stores/image.js` — 镜像状态
+
+### 路由守卫
+- 未登录自动跳转登录页
+- 基于角色权限的路由守卫（`requiredPermission`）
+- 路由：`/login`、`/sync`、`/github`、`/config`、`/users`
 
 ## GitHub 代码操作测试功能
 
