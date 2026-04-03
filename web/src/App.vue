@@ -54,45 +54,6 @@
               <el-icon :size="22"><Menu /></el-icon>
             </button>
           </div>
-
-      <!-- 移动端抽屉导航 -->
-      <el-drawer
-        v-model="mobileMenuOpen"
-        direction="rtl"
-        size="260px"
-        :show-close="false"
-        class="mobile-drawer"
-      >
-        <template #header>
-          <div class="drawer-header">
-            <div class="user-avatar drawer-avatar">
-              {{ (authStore.username || 'U').charAt(0).toUpperCase() }}
-            </div>
-            <span class="drawer-username">{{ authStore.username }}</span>
-          </div>
-        </template>
-        <div class="drawer-nav">
-          <router-link
-            v-for="item in navItems"
-            :key="item.path"
-            :to="item.path"
-            class="drawer-nav-item"
-            :class="{ active: isActiveRoute(item.path) }"
-            @click="mobileMenuOpen = false"
-          >
-            <component :is="item.icon" class="nav-icon" />
-            <span>{{ item.label }}</span>
-          </router-link>
-        </div>
-        <div class="drawer-footer">
-          <el-button text @click="showChangePassword = true; mobileMenuOpen = false">
-            <el-icon><Key /></el-icon>修改密码
-          </el-button>
-          <el-button text type="danger" @click="handleUserCommand('logout'); mobileMenuOpen = false">
-            <el-icon><SwitchButton /></el-icon>退出登录
-          </el-button>
-        </div>
-      </el-drawer>
         </div>
       </header>
 
@@ -106,6 +67,45 @@
         <span>&copy; {{ new Date().getFullYear() }} Docker 镜像同步平台</span>
       </footer>
     </el-container>
+
+    <!-- 移动端抽屉导航 -->
+    <el-drawer
+      v-model="mobileMenuOpen"
+      direction="rtl"
+      size="260px"
+      :show-close="false"
+      class="mobile-drawer"
+    >
+      <template #header>
+        <div class="drawer-header">
+          <div class="user-avatar drawer-avatar">
+            {{ (authStore.username || 'U').charAt(0).toUpperCase() }}
+          </div>
+          <span class="drawer-username">{{ authStore.username }}</span>
+        </div>
+      </template>
+      <div class="drawer-nav">
+        <router-link
+          v-for="item in navItems"
+          :key="item.path"
+          :to="item.path"
+          class="drawer-nav-item"
+          :class="{ active: isActiveRoute(item.path) }"
+          @click="mobileMenuOpen = false"
+        >
+          <component :is="item.icon" class="nav-icon" />
+          <span>{{ item.label }}</span>
+        </router-link>
+      </div>
+      <div class="drawer-footer">
+        <el-button text @click="showChangePassword = true; mobileMenuOpen = false">
+          <el-icon><Key /></el-icon>修改密码
+        </el-button>
+        <el-button text type="danger" @click="handleUserCommand('logout'); mobileMenuOpen = false">
+          <el-icon><SwitchButton /></el-icon>退出登录
+        </el-button>
+      </div>
+    </el-drawer>
 
     <ChangePasswordDialog v-model:visible="showChangePassword" />
   </div>
@@ -343,7 +343,6 @@ onUnmounted(() => {
 .mobile-only { display: none; }
 
 .hamburger-btn {
-  display: flex;
   align-items: center;
   justify-content: center;
   width: 36px;
