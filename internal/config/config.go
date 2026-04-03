@@ -62,13 +62,15 @@ import (
 // - Log: 日志系统配置（级别、文件管理）
 // - Sync: 同步任务配置（超时、策略等）
 type Config struct {
-	Server   ServerConfig   `mapstructure:"server"`
-	Database DatabaseConfig `mapstructure:"database"`
-	Git      GitConfig      `mapstructure:"git"`
-	Aliyun   AliyunConfig   `mapstructure:"aliyun"`
-	Log      LogConfig      `mapstructure:"log"`
-	Sync     SyncConfig     `mapstructure:"sync"`
-	Auth     AuthConfig     `mapstructure:"auth"`
+	Server        ServerConfig        `mapstructure:"server"`
+	Database      DatabaseConfig      `mapstructure:"database"`
+	Git           GitConfig           `mapstructure:"git"`
+	Aliyun        AliyunConfig        `mapstructure:"aliyun"`
+	Log           LogConfig           `mapstructure:"log"`
+	Sync          SyncConfig          `mapstructure:"sync"`
+	Auth          AuthConfig          `mapstructure:"auth"`
+	GitHubActions GitHubActionsConfig `mapstructure:"github_actions"`
+	Security      SecurityConfig      `mapstructure:"security"`
 }
 
 // AuthConfig 认证配置
@@ -150,6 +152,32 @@ type SyncConfig struct {
 	MaxConcurrentJobs    int `mapstructure:"max_concurrent_jobs"`    // 最大并发同步任务数
 	MaxRetryCount        int `mapstructure:"max_retry_count"`        // 失败重试次数
 	RetryIntervalMinutes int `mapstructure:"retry_interval_minutes"` // 重试间隔时间（分钟）
+}
+
+// GitHubActionsConfig GitHub Actions 工作流配置
+type GitHubActionsConfig struct {
+	WorkflowFile               string `mapstructure:"workflow_file"`
+	APITimeoutSeconds          int    `mapstructure:"api_timeout_seconds"`
+	StatusCheckIntervalSeconds int    `mapstructure:"status_check_interval_seconds"`
+}
+
+// SecurityConfig 安全相关配置
+type SecurityConfig struct {
+	RateLimit RateLimitConfig `mapstructure:"rate_limit"`
+	CORS      CORSConfig      `mapstructure:"cors"`
+}
+
+// RateLimitConfig API 限流配置
+type RateLimitConfig struct {
+	RequestsPerMinute int `mapstructure:"requests_per_minute"`
+	Burst             int `mapstructure:"burst"`
+}
+
+// CORSConfig CORS 跨域配置
+type CORSConfig struct {
+	AllowedOrigins []string `mapstructure:"allowed_origins"`
+	AllowedMethods []string `mapstructure:"allowed_methods"`
+	AllowedHeaders []string `mapstructure:"allowed_headers"`
 }
 
 var AppConfig *Config
@@ -257,6 +285,16 @@ func setDefaults() {
 	viper.SetDefault("log.max_age", 28)
 
 	viper.SetDefault("sync.timeout_minutes", 30)
+
+	viper.SetDefault("github_actions.workflow_file", "docker.yaml")
+	viper.SetDefault("github_actions.api_timeout_seconds", 30)
+	viper.SetDefault("github_actions.status_check_interval_seconds", 60)
+
+	viper.SetDefault("security.rate_limit.requests_per_minute", 100)
+	viper.SetDefault("security.rate_limit.burst", 10)
+	viper.SetDefault("security.cors.allowed_origins", []string{"*"})
+	viper.SetDefault("security.cors.allowed_methods", []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"})
+	viper.SetDefault("security.cors.allowed_headers", []string{"*"})
 
 	viper.SetDefault("auth.jwt_secret", "docker-sync-platform-jwt-secret-change-me")
 	viper.SetDefault("auth.token_expiry", "24h")

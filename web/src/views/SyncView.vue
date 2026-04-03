@@ -601,7 +601,7 @@ onUnmounted(() => {
 }
 
 .stat-value {
-  font-size: 28px;
+  font-size: var(--stat-number-size);
   font-weight: 700;
   line-height: 1;
   color: var(--color-text-primary);
@@ -612,7 +612,7 @@ onUnmounted(() => {
 .stat-card.failed .stat-value { color: var(--color-danger); }
 
 .stat-label {
-  font-size: 13px;
+  font-size: var(--stat-label-size);
   color: var(--color-text-muted);
   font-weight: 500;
 }

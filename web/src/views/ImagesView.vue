@@ -364,6 +364,7 @@ import {
   Search
 } from '@element-plus/icons-vue'
 import { useImageStore } from '@/stores/image'
+import { configAPI } from '@/api'
 import { copyToClipboard } from '@/utils/clipboard'
 import { formatTime } from '@/utils/format'
 import { getStatusType, getStatusText } from '@/utils/status'
@@ -396,13 +397,12 @@ let searchTimer = null
 // 加载阿里云配置
 const loadAliyunConfig = async () => {
   try {
-    const response = await fetch('/api/v1/config/aliyun')
-    if (response.ok) {
-      const config = await response.json()
-      aliyunConfig.value = config
+    const response = await configAPI.getAliyunConfig()
+    if (response.data) {
+      aliyunConfig.value = response.data
     }
   } catch (error) {
-    console.error('获取阿里云配置失败:', error)
+    // 配置加载失败时使用默认值即可，不阻断页面
   }
 }
 
@@ -415,10 +415,9 @@ const loadData = async () => {
   ])
 }
 
-// 刷新数据
+// 刷新数据（静默刷新，不弹提示）
 const refreshData = async () => {
   await loadData()
-  ElMessage.success('数据已刷新')
 }
 
 // 搜索处理
@@ -434,9 +433,7 @@ const handleSearch = () => {
 
 // 状态筛选
 const handleStatusFilter = () => {
-  console.log('handleStatusFilter called, statusFilter.value:', statusFilter.value)
   imageStore.updateFilters({ status: statusFilter.value })
-  console.log('After updateFilters, imageStore.filters:', imageStore.filters)
   currentPage.value = 1
   imageStore.updatePagination(1, pageSize.value)
   imageStore.loadImages()
@@ -684,14 +681,17 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  // 清理定时器
   stopStatusPolling()
+  if (searchTimer) {
+    clearTimeout(searchTimer)
+    searchTimer = null
+  }
 })
 </script>
 
 <style scoped>
 .images-view {
-  max-width: 1400px;
+  max-width: var(--max-width);
   margin: 0 auto;
 }
 
@@ -713,10 +713,11 @@ onUnmounted(() => {
 }
 
 .stat-number {
-  font-size: 32px;
-  font-weight: bold;
-  color: #303133;
+  font-size: var(--stat-number-size);
+  font-weight: 700;
+  color: var(--color-text-primary);
   margin-bottom: 4px;
+  line-height: 1;
 }
 
 .stat-number.success {
@@ -732,8 +733,9 @@ onUnmounted(() => {
 }
 
 .stat-label {
-  font-size: 14px;
-  color: #909399;
+  font-size: var(--stat-label-size);
+  color: var(--color-text-muted);
+  font-weight: 500;
 }
 
 .stat-icon {
@@ -840,5 +842,22 @@ onUnmounted(() => {
 .no-description {
   color: #c0c4cc;
   font-style: italic;
+}
+
+@media (max-width: 768px) {
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  .filter-section .el-row {
+    flex-wrap: wrap;
+  }
+
+  .filter-section .el-col {
+    flex: 0 0 50%;
+    max-width: 50%;
+    margin-bottom: 8px;
+  }
 }
 </style>

@@ -148,17 +148,22 @@
         </el-table-column>
       </el-table>
 
-      <div class="pagination-bar">
+      <div class="pagination-bar" v-if="!conclusionFilter">
         <el-pagination
           v-model:current-page="currentPage"
           v-model:page-size="pageSize"
           :page-sizes="[10, 20, 50]"
-          :total="totalRuns"
+          :total="displayTotal"
           layout="total, sizes, prev, pager, next, jumper"
           @size-change="handleSizeChange"
           @current-change="handleCurrentChange"
           background
         />
+      </div>
+      <div v-else class="pagination-bar">
+        <span class="text-muted" style="font-size: 13px;">
+          当前页筛选结果：{{ filteredRuns.length }} 条记录
+        </span>
       </div>
     </div>
 
@@ -226,9 +231,15 @@ const selectedRun = ref(null)
 
 const filteredRuns = computed(() => {
   let runs = workflowRuns.value
-  if (statusFilter.value) runs = runs.filter(r => r.status === statusFilter.value)
   if (conclusionFilter.value) runs = runs.filter(r => r.conclusion === conclusionFilter.value)
   return runs
+})
+
+const displayTotal = computed(() => {
+  if (conclusionFilter.value) {
+    return filteredRuns.value.length
+  }
+  return totalRuns.value
 })
 
 const checkRateLimit = async () => {
@@ -247,7 +258,11 @@ const checkRateLimit = async () => {
 const loadWorkflowRuns = async () => {
   runsLoading.value = true
   try {
-    const response = await githubAPI.getWorkflowRuns({ page: currentPage.value, per_page: pageSize.value })
+    const params = { page: currentPage.value, per_page: pageSize.value }
+    if (statusFilter.value) {
+      params.status = statusFilter.value
+    }
+    const response = await githubAPI.getWorkflowRuns(params)
     workflowRuns.value = response.workflow_runs || []
     totalRuns.value = response.total_count || 0
   } catch {
@@ -259,12 +274,16 @@ const loadWorkflowRuns = async () => {
 
 const refreshRuns = async () => {
   await loadWorkflowRuns()
-  ElMessage.success('运行记录已刷新')
 }
 
-const handleStatusFilter = () => {}
+const handleStatusFilter = () => { currentPage.value = 1; loadWorkflowRuns() }
 const handleConclusionFilter = () => {}
-const clearFilters = () => { statusFilter.value = ''; conclusionFilter.value = '' }
+const clearFilters = () => {
+  statusFilter.value = ''
+  conclusionFilter.value = ''
+  currentPage.value = 1
+  loadWorkflowRuns()
+}
 
 const handleSizeChange = (size) => { pageSize.value = size; loadWorkflowRuns() }
 const handleCurrentChange = (page) => { currentPage.value = page; loadWorkflowRuns() }

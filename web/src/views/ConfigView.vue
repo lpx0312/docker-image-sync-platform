@@ -144,7 +144,7 @@ const loadGitRepositoryConfig = async () => {
   gap: var(--space-xs);
   padding: var(--space-md) var(--space-lg) 0;
   border-bottom: 1px solid var(--color-border-light);
-  background: var(--color-bg-muted);
+  background: var(--color-bg-card);
 }
 
 .tab-btn {

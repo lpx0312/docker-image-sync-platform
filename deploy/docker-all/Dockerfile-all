@@ -105,9 +105,10 @@ COPY deploy/docker-all/nginx-all.conf /etc/nginx/nginx.conf
 # 复制 supervisor 配置文件
 COPY deploy/docker-all/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
-# 设置权限
-RUN chown -R root:root /app && \
-    chmod +x /app/main
+# 设置权限：appuser 拥有应用目录，nginx 由 root 管理
+RUN chown -R appuser:appgroup /app && \
+    chmod +x /app/main && \
+    chown -R appuser:appgroup /var/log/supervisor
 
 # 暴露端口
 EXPOSE 80 8080

@@ -54,7 +54,7 @@
               type="textarea"
               :rows="8"
               :placeholder="getInputPlaceholder()"
-              @input="parseImageInput"
+              @input="debouncedParseImageInput"
             />
             <div class="input-tips">
               <el-text type="info" size="small">
@@ -237,8 +237,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ref, reactive, computed, watch, onUnmounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, RefreshLeft } from '@element-plus/icons-vue'
 import { syncAPI } from '@/api'
 
@@ -267,6 +267,7 @@ const parsedImages = ref([])
 const imageArchitectureMap = ref(new Map())
 const loading = ref(false)
 const mockLoading = ref(false)
+let parseDebounceTimer = null
 
 // 表单验证规则
 const batchRules = {
@@ -367,9 +368,18 @@ const getArchitectureModeText = () => {
   return modeMap[batchForm.architectureMode] || '未知模式'
 }
 
+// 带防抖的解析入口，避免每次按键都弹校验错误
+const debouncedParseImageInput = () => {
+  if (parseDebounceTimer) {
+    clearTimeout(parseDebounceTimer)
+  }
+  parseDebounceTimer = setTimeout(() => {
+    parseImageInput()
+  }, 500)
+}
+
 // 解析镜像输入
 const parseImageInput = () => {
-  // 首先验证输入
   const validationErrors = validateInput(imageInput.value)
   if (validationErrors.length > 0) {
     ElMessage.error({
@@ -567,13 +577,31 @@ const removeImage = (index) => {
   rebuildImageInput()
 }
 
-// 清空镜像列表
-const clearImages = () => {
+// 清空镜像列表（内部实现）
+const doClearImages = () => {
   parsedImages.value = []
   imageArchitectureMap.value = new Map()
   imageInput.value = ''
   if (uploadRef.value) {
     uploadRef.value.clearFiles()
+  }
+}
+
+// 清空镜像列表（带二次确认）
+const clearImages = async () => {
+  if (parsedImages.value.length === 0) {
+    doClearImages()
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确定要清空全部 ${parsedImages.value.length} 个镜像吗？`,
+      '确认清空',
+      { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' }
+    )
+    doClearImages()
+  } catch {
+    // 用户取消
   }
 }
 
@@ -860,15 +888,21 @@ const resetForm = () => {
     maxRetries: 2,
     description: ''
   })
-  clearImages()
+  doClearImages()
   inputMode.value = 'manual'
 }
 
 // 监听架构模式变化，重新解析镜像
 watch(() => batchForm.architectureMode, (newMode, oldMode) => {
-  // 只有在有输入内容且模式确实发生变化时才重新解析
   if (imageInput.value.trim() && newMode !== oldMode) {
     parseImageInput()
+  }
+})
+
+onUnmounted(() => {
+  if (parseDebounceTimer) {
+    clearTimeout(parseDebounceTimer)
+    parseDebounceTimer = null
   }
 })
 </script>

@@ -64,6 +64,9 @@
   --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, monospace;
 
   --max-width: 1440px;
+
+  --stat-number-size: 28px;
+  --stat-label-size: 13px;
 }
 
 *,

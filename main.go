@@ -260,27 +260,28 @@ func main() {
 			github := protected.Group("/github")
 			github.Use(middleware.PermissionRequired(models.PermGitHub))
 			{
-				github.GET("/runs", func(c *gin.Context) {
-					page := 1
-					perPage := 10
-					if p := c.Query("page"); p != "" {
-						if parsed, err := strconv.Atoi(p); err == nil && parsed > 0 {
-							page = parsed
-						}
+			github.GET("/runs", func(c *gin.Context) {
+				page := 1
+				perPage := 10
+				if p := c.Query("page"); p != "" {
+					if parsed, err := strconv.Atoi(p); err == nil && parsed > 0 {
+						page = parsed
 					}
-					if pp := c.Query("per_page"); pp != "" {
-						if parsed, err := strconv.Atoi(pp); err == nil && parsed > 0 && parsed <= 100 {
-							perPage = parsed
-						}
+				}
+				if pp := c.Query("per_page"); pp != "" {
+					if parsed, err := strconv.Atoi(pp); err == nil && parsed > 0 && parsed <= 100 {
+						perPage = parsed
 					}
-					githubAPIService := gitServiceFactory.GetGitHubAPIService()
-					runs, err := githubAPIService.ListWorkflowRuns(page, perPage)
-					if err != nil {
-						c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-						return
-					}
-					c.JSON(http.StatusOK, runs)
-				})
+				}
+				status := c.Query("status")
+				githubAPIService := gitServiceFactory.GetGitHubAPIService()
+				runs, err := githubAPIService.ListWorkflowRuns(page, perPage, status)
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+					return
+				}
+				c.JSON(http.StatusOK, runs)
+			})
 
 				github.GET("/runs/:runId", func(c *gin.Context) {
 					runID := c.Param("runId")

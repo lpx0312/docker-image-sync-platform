@@ -486,13 +486,18 @@ func (s *GitHubService) GetWorkflowRunDetails(runID string) (*WorkflowRun, error
 //   - 统计工作流执行情况
 //   - 查找特定时间段的工作流运行
 //   - 生成工作流执行报告
-func (s *GitHubService) ListWorkflowRuns(page, perPage int) (*WorkflowRunsResponse, error) {
+func (s *GitHubService) ListWorkflowRuns(page, perPage int, status string) (*WorkflowRunsResponse, error) {
 	url := fmt.Sprintf("%s/repos/%s/%s/actions/runs", s.baseURL, s.owner, s.repo)
 
-	resp, err := s.client.R().
+	req := s.client.R().
 		SetQueryParam("page", fmt.Sprintf("%d", page)).
-		SetQueryParam("per_page", fmt.Sprintf("%d", perPage)).
-		Get(url)
+		SetQueryParam("per_page", fmt.Sprintf("%d", perPage))
+
+	if status != "" {
+		req.SetQueryParam("status", status)
+	}
+
+	resp, err := req.Get(url)
 
 	if err != nil {
 		return nil, err

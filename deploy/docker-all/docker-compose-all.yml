@@ -57,9 +57,16 @@ services:
       - ALIYUN_USERNAME=${ALIYUN_USERNAME:-lipanx}
       - ALIYUN_PASSWORD=${ALIYUN_PASSWORD:-Lipanxiang1102}
     volumes:
-      # 持久化日志
       - ./temp_logs:/app/logs
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+        reservations:
+          memory: 128M
+          cpus: '0.25'
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
       interval: 30s

@@ -16,7 +16,7 @@
             <span class="logo-text">Docker 镜像同步</span>
           </div>
 
-          <nav class="nav-links">
+          <nav class="nav-links desktop-only">
             <router-link
               v-for="item in navItems"
               :key="item.path"
@@ -30,7 +30,7 @@
           </nav>
 
           <div class="header-actions">
-            <el-dropdown trigger="click" @command="handleUserCommand">
+            <el-dropdown trigger="click" @command="handleUserCommand" class="desktop-only">
               <button class="user-btn">
                 <div class="user-avatar">
                   {{ (authStore.username || 'U').charAt(0).toUpperCase() }}
@@ -49,7 +49,50 @@
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
+
+            <button class="hamburger-btn mobile-only" @click="mobileMenuOpen = true">
+              <el-icon :size="22"><Menu /></el-icon>
+            </button>
           </div>
+
+      <!-- 移动端抽屉导航 -->
+      <el-drawer
+        v-model="mobileMenuOpen"
+        direction="rtl"
+        size="260px"
+        :show-close="false"
+        class="mobile-drawer"
+      >
+        <template #header>
+          <div class="drawer-header">
+            <div class="user-avatar drawer-avatar">
+              {{ (authStore.username || 'U').charAt(0).toUpperCase() }}
+            </div>
+            <span class="drawer-username">{{ authStore.username }}</span>
+          </div>
+        </template>
+        <div class="drawer-nav">
+          <router-link
+            v-for="item in navItems"
+            :key="item.path"
+            :to="item.path"
+            class="drawer-nav-item"
+            :class="{ active: isActiveRoute(item.path) }"
+            @click="mobileMenuOpen = false"
+          >
+            <component :is="item.icon" class="nav-icon" />
+            <span>{{ item.label }}</span>
+          </router-link>
+        </div>
+        <div class="drawer-footer">
+          <el-button text @click="showChangePassword = true; mobileMenuOpen = false">
+            <el-icon><Key /></el-icon>修改密码
+          </el-button>
+          <el-button text type="danger" @click="handleUserCommand('logout'); mobileMenuOpen = false">
+            <el-icon><SwitchButton /></el-icon>退出登录
+          </el-button>
+        </div>
+      </el-drawer>
         </div>
       </header>
 
@@ -72,7 +115,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { ArrowDown, Key, SwitchButton, Box, Connection, Setting, User } from '@element-plus/icons-vue'
+import { ArrowDown, Key, SwitchButton, Box, Connection, Setting, User, Menu } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import ChangePasswordDialog from '@/components/ChangePasswordDialog.vue'
 
@@ -81,6 +124,7 @@ const route = useRoute()
 const authStore = useAuthStore()
 
 const showChangePassword = ref(false)
+const mobileMenuOpen = ref(false)
 const showLayout = computed(() => route.name !== 'Login' && authStore.isLoggedIn)
 
 const allNavItems = [
@@ -293,5 +337,96 @@ onUnmounted(() => {
   color: var(--color-text-muted);
   border-top: 1px solid var(--color-border-light);
   background: var(--color-bg-card);
+}
+
+/* Mobile navigation */
+.mobile-only { display: none; }
+
+.hamburger-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-card);
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  transition: all var(--transition-fast);
+}
+
+.hamburger-btn:hover {
+  border-color: var(--color-primary-lighter);
+  color: var(--color-primary);
+}
+
+.drawer-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.drawer-avatar {
+  width: 36px;
+  height: 36px;
+  font-size: 14px;
+}
+
+.drawer-username {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.drawer-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.drawer-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  transition: all var(--transition-fast);
+}
+
+.drawer-nav-item:hover,
+.drawer-nav-item.active {
+  color: var(--color-primary);
+  background: var(--color-primary-bg);
+}
+
+.drawer-footer {
+  margin-top: auto;
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--color-border-light);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+@media (max-width: 768px) {
+  .desktop-only { display: none !important; }
+  .mobile-only { display: flex !important; }
+
+  .header-inner {
+    padding: 0 var(--space-md);
+  }
+
+  .logo-text {
+    font-size: 14px;
+  }
+
+  .main-content {
+    padding: var(--space-md);
+  }
 }
 </style>
