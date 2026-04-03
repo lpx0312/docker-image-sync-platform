@@ -366,7 +366,7 @@ import {
 import { useImageStore } from '@/stores/image'
 import { copyToClipboard } from '@/utils/clipboard'
 import { formatTime } from '@/utils/format'
-import { getSyncStatusType, getSyncStatusText } from '@/utils/status'
+import { getStatusType, getStatusText } from '@/utils/status'
 
 const imageStore = useImageStore()
 

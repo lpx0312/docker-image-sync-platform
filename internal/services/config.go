@@ -27,6 +27,7 @@ package services
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
@@ -60,7 +61,7 @@ type ConfigService struct {
 	db         *gorm.DB           // 数据库连接
 	encryption *EncryptionService // 加密服务
 	logger     *logrus.Logger     // 日志记录器
-	cache      map[string]string  // 配置缓存
+	cache      sync.Map           // 配置缓存（并发安全）
 }
 
 // GitConfig Git仓库配置结构
@@ -138,7 +139,6 @@ func NewConfigService(db *gorm.DB, encryption *EncryptionService, logger *logrus
 		db:         db,
 		encryption: encryption,
 		logger:     logger,
-		cache:      make(map[string]string),
 	}
 }
 
@@ -226,7 +226,7 @@ func (cs *ConfigService) SetConfig(key, value, description, group string, order 
 	}
 
 	// 更新缓存
-	cs.cache[key] = value
+	cs.cache.Store(key, value)
 	
 	return nil
 }
@@ -256,8 +256,8 @@ func (cs *ConfigService) SetConfig(key, value, description, group string, order 
 //   - 定期清理过期缓存
 func (cs *ConfigService) GetConfig(key string) (string, error) {
 	// 先检查缓存
-	if value, exists := cs.cache[key]; exists {
-		return value, nil
+	if value, exists := cs.cache.Load(key); exists {
+		return value.(string), nil
 	}
 
 	// 从数据库查询
@@ -278,7 +278,7 @@ func (cs *ConfigService) GetConfig(key string) (string, error) {
 	}
 
 	// 更新缓存
-	cs.cache[key] = decryptedValue
+	cs.cache.Store(key, decryptedValue)
 	
 	return decryptedValue, nil
 }
@@ -364,7 +364,7 @@ func (cs *ConfigService) DeleteConfig(key string) error {
 	}
 
 	// 清理缓存
-	delete(cs.cache, key)
+	cs.cache.Delete(key)
 	
 	cs.logger.WithField("key", key).Info("Deleted config")
 	return nil
@@ -449,14 +449,14 @@ func (cs *ConfigService) SetGitConfig(platform string, config GitConfig) error {
 
 	// 清理相关缓存，确保下次读取时获取最新值
 	for key := range configs {
-		delete(cs.cache, key)
+		cs.cache.Delete(key)
 	}
 	// 也清理可能的认证字段缓存
 	if platform == "github" {
-		delete(cs.cache, fmt.Sprintf("%s_token", platform))
+		cs.cache.Delete(fmt.Sprintf("%s_token", platform))
 	} else {
-		delete(cs.cache, fmt.Sprintf("%s_password", platform))
-		delete(cs.cache, fmt.Sprintf("%s_token", platform))
+		cs.cache.Delete(fmt.Sprintf("%s_password", platform))
+		cs.cache.Delete(fmt.Sprintf("%s_token", platform))
 	}
 
 	cs.logger.WithField("platform", platform).Info("Successfully set git config and cleared cache")

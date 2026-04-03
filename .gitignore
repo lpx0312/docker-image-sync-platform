@@ -47,6 +47,7 @@ pids
 *.pid.lock
 
 # Config files with sensitive data
+config.yaml
 config.local.yaml
 .env
 .env.local

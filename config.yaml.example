@@ -1,0 +1,96 @@
+server:
+  port: 8080
+  mode: debug
+  host: "0.0.0.0"
+
+database:
+  host: "127.0.0.1"
+  port: 3306
+  username: "root"
+  password: "${DB_PASSWORD}"
+  database: "docker_sync"
+  charset: "utf8mb4"
+  parse_time: true
+  loc: "Local"
+  max_idle_conns: 10
+  max_open_conns: 100
+  conn_max_lifetime: 3600
+
+git:
+  repository_type: "github"
+  operation_mode: "api"
+  enable_api: true
+  enable_sparse: true
+  enable_full: true
+
+  api:
+    timeout: 30
+    retry_count: 3
+    retry_delay: 2
+
+  sparse:
+    timeout: 15
+    fallback_to_full: true
+    network_detection: true
+    enable_cache: true
+    cache_ttl: 300
+
+  full:
+    max_retries: 3
+    timeout: 300
+
+  gitee:
+    repo_url: "https://gitee.com/your-username/your-repo.git"
+    username: "${GITEE_USERNAME}"
+    password: "${GITEE_PASSWORD}"
+    token: "${GITEE_TOKEN}"
+    email: "your-email@example.com"
+    branch: "main"
+  github:
+    repo_url: "https://github.com/your-username/your-repo.git"
+    username: "${GITHUB_USERNAME}"
+    token: "${GITHUB_TOKEN}"
+    email: "your-email@example.com"
+    branch: "main"
+
+aliyun:
+  registry: "registry.cn-hangzhou.aliyuncs.com"
+  namespace: "your-namespace"
+  username: "${ALIYUN_USERNAME}"
+  password: "${ALIYUN_PASSWORD}"
+
+log:
+  level: "info"
+  file_path: "./logs/app.log"
+  max_size: 100
+  max_backups: 3
+  max_age: 28
+  compress: true
+
+sync:
+  timeout_minutes: 30
+  max_concurrent_jobs: 3
+  max_retry_count: 3
+  retry_interval_minutes: 5
+
+auth:
+  jwt_secret: "${JWT_SECRET}"
+  token_expiry: "24h"
+  remember_me_expiry: "168h"
+  auto_logout_minutes: 30
+  default_admin_username: "admin"
+  default_admin_password: "${DEFAULT_ADMIN_PASSWORD}"
+
+github_actions:
+  workflow_file: "docker.yaml"
+  api_timeout_seconds: 30
+  status_check_interval_seconds: 60
+
+security:
+  rate_limit:
+    requests_per_minute: 100
+    burst: 10
+  cors:
+    allowed_origins: ["http://localhost:3000"]
+    allowed_methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    allowed_headers: ["*"]

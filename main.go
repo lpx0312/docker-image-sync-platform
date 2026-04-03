@@ -323,7 +323,11 @@ func main() {
 				configGroup.PUT("/aliyun-db", configHandler.UpdateAliyunConfig)
 				configGroup.POST("/aliyun/test", configHandler.TestAliyunConnection)
 				configGroup.GET("/all", configHandler.GetAllConfigs)
-				configGroup.GET("/debug/:key", configHandler.DebugGetConfig)
+
+				// debug 路由仅在开发环境下注册
+				if config.AppConfig.Server.Mode != "release" {
+					configGroup.GET("/debug/:key", configHandler.DebugGetConfig)
+				}
 			}
 		}
 	}

@@ -218,6 +218,8 @@ func encryptSensitiveValue(plaintext string) (string, error) {
 	if envKey := os.Getenv("ENCRYPTION_KEY"); envKey != "" {
 		hash := sha256.Sum256([]byte(envKey))
 		key = hash[:]
+	} else if ginMode := os.Getenv("GIN_MODE"); ginMode == "release" {
+		return "", fmt.Errorf("生产环境必须设置 ENCRYPTION_KEY 环境变量")
 	} else {
 		defaultKey := "docker-sync-platform-default-key-2024"
 		hash := sha256.Sum256([]byte(defaultKey))

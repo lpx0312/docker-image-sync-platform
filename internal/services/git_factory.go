@@ -68,23 +68,7 @@ func (f *GitServiceFactory) GetGitServiceInterface() (GitServiceInterface, error
 		return nil, fmt.Errorf("获取Git仓库配置失败: %v", err)
 	}
 
-	f.mutex.RLock()
-	defer f.mutex.RUnlock()
-
-	switch repoType {
-	case "gitee":
-		if f.giteeService == nil {
-			f.giteeService = NewGitService(f.encryptionService)
-		}
-		return f.giteeService, nil
-	case "github":
-		if f.githubService == nil {
-			f.githubService = NewGitService(f.encryptionService)
-		}
-		return f.githubService, nil
-	default:
-		return nil, fmt.Errorf("不支持的Git仓库类型: %s", repoType)
-	}
+	return f.getOrCreateGitService(repoType)
 }
 
 // getOptimizedGitService 获取优化后的Git服务
@@ -95,37 +79,20 @@ func (f *GitServiceFactory) getOptimizedGitService() (*GitService, error) {
 		return nil, fmt.Errorf("获取Git仓库配置失败: %v", err)
 	}
 
-	f.mutex.RLock()
-	defer f.mutex.RUnlock()
+	f.ensureOptimizedServiceInitialized()
 
-	// 目前优化服务统一处理所有仓库类型
-	if f.optimizedService == nil {
-		f.optimizedService = NewGitOptimizedService(f.encryptionService)
-	}
-
-	// 记录使用优化服务的信息
 	logger.Logger.Info("使用Git服务工厂选择合适的实现", zap.String("repo_type", repoType))
 
-	// 根据仓库类型返回相应的Git服务实例
-	// GitService和GitOptimizedService都实现了GitServiceInterface接口
-	// 工厂模式确保了接口的兼容性和可扩展性
-
-	switch repoType {
-	case "gitee":
-		if f.giteeService == nil {
-			f.giteeService = NewGitService(f.encryptionService)
-		}
-		// 返回原有服务用于兼容，但实际优化操作将在 GitOptimizedService 中进行
-		return f.giteeService, nil
-	case "github":
-		if f.githubService == nil {
-			f.githubService = NewGitService(f.encryptionService)
-		}
-		// 返回原有服务用于兼容，但实际优化操作将在 GitOptimizedService 中进行
-		return f.githubService, nil
-	default:
-		return nil, fmt.Errorf("不支持的Git仓库类型: %s", repoType)
+	svc, err := f.getOrCreateGitService(repoType)
+	if err != nil {
+		return nil, err
 	}
+
+	gitSvc, ok := svc.(*GitService)
+	if !ok {
+		return nil, fmt.Errorf("服务类型不匹配，预期 *GitService")
+	}
+	return gitSvc, nil
 }
 
 // getOriginalGitService 获取原有的Git服务
@@ -136,8 +103,41 @@ func (f *GitServiceFactory) getOriginalGitService() (*GitService, error) {
 		return nil, fmt.Errorf("获取Git仓库配置失败: %v", err)
 	}
 
+	svc, err := f.getOrCreateGitService(repoType)
+	if err != nil {
+		return nil, err
+	}
+
+	gitSvc, ok := svc.(*GitService)
+	if !ok {
+		return nil, fmt.Errorf("服务类型不匹配，预期 *GitService")
+	}
+	return gitSvc, nil
+}
+
+// getOrCreateGitService 安全地获取或创建 Git 服务实例
+// 使用 double-check locking 避免在读锁下写共享状态
+func (f *GitServiceFactory) getOrCreateGitService(repoType string) (GitServiceInterface, error) {
 	f.mutex.RLock()
-	defer f.mutex.RUnlock()
+	switch repoType {
+	case "gitee":
+		if f.giteeService != nil {
+			defer f.mutex.RUnlock()
+			return f.giteeService, nil
+		}
+	case "github":
+		if f.githubService != nil {
+			defer f.mutex.RUnlock()
+			return f.githubService, nil
+		}
+	default:
+		f.mutex.RUnlock()
+		return nil, fmt.Errorf("不支持的Git仓库类型: %s", repoType)
+	}
+	f.mutex.RUnlock()
+
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
 
 	switch repoType {
 	case "gitee":
@@ -152,6 +152,22 @@ func (f *GitServiceFactory) getOriginalGitService() (*GitService, error) {
 		return f.githubService, nil
 	default:
 		return nil, fmt.Errorf("不支持的Git仓库类型: %s", repoType)
+	}
+}
+
+// ensureOptimizedServiceInitialized 安全地初始化优化服务
+func (f *GitServiceFactory) ensureOptimizedServiceInitialized() {
+	f.mutex.RLock()
+	if f.optimizedService != nil {
+		f.mutex.RUnlock()
+		return
+	}
+	f.mutex.RUnlock()
+
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+	if f.optimizedService == nil {
+		f.optimizedService = NewGitOptimizedService(f.encryptionService)
 	}
 }
 
@@ -231,13 +247,10 @@ func (f *GitServiceFactory) UpdateGitRepositoryConfig(repoType string) error {
 
 // GetOptimizedGitService 获取优化后的Git服务实例
 func (f *GitServiceFactory) GetOptimizedGitService() (*GitOptimizedService, error) {
+	f.ensureOptimizedServiceInitialized()
+
 	f.mutex.RLock()
 	defer f.mutex.RUnlock()
-
-	if f.optimizedService == nil {
-		f.optimizedService = NewGitOptimizedService(f.encryptionService)
-	}
-
 	return f.optimizedService, nil
 }
 

@@ -88,16 +88,16 @@ func NewEncryptionService(logger *logrus.Logger) (*EncryptionService, error) {
 	
 	// 优先从环境变量获取密钥
 	if envKey := os.Getenv("ENCRYPTION_KEY"); envKey != "" {
-		// 使用SHA256对环境变量密钥进行哈希，确保密钥长度为32字节
 		hash := sha256.Sum256([]byte(envKey))
 		key = hash[:]
 		logger.Info("Using encryption key from environment variable")
+	} else if ginMode := os.Getenv("GIN_MODE"); ginMode == "release" {
+		return nil, fmt.Errorf("生产环境必须设置 ENCRYPTION_KEY 环境变量")
 	} else {
-		// 使用默认密钥（仅用于开发环境）
 		defaultKey := "docker-sync-platform-default-key-2024"
 		hash := sha256.Sum256([]byte(defaultKey))
 		key = hash[:]
-		logger.Warn("Using default encryption key - please set ENCRYPTION_KEY environment variable for production")
+		logger.Warn("Using default encryption key - set ENCRYPTION_KEY environment variable before deploying to production")
 	}
 
 	return &EncryptionService{
