@@ -55,6 +55,13 @@
                   controls-position="right"
                 />
               </el-form-item>
+              <el-form-item>
+                <el-text type="info" size="small" class="system-hint">
+                  批量同步的并发数与失败重试次数由服务端
+                  <code>config.yaml</code> 中 <code>sync.max_concurrent_jobs</code>、
+                  <code>sync.max_retry_count</code> 等字段决定；同步页不再单独配置。
+                </el-text>
+              </el-form-item>
             </el-form>
           </div>
         </div>
@@ -128,6 +135,17 @@ const loadGitRepositoryConfig = async () => {
   margin: 0;
   font-size: 14px;
   color: var(--color-text-muted);
+}
+
+.system-hint {
+  line-height: 1.6;
+}
+
+.system-hint code {
+  font-size: 12px;
+  padding: 0 4px;
+  background: var(--color-bg-muted, #f4f4f5);
+  border-radius: 4px;
 }
 
 /* ── Tab Panel ── */

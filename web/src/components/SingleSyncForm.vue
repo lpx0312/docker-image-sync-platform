@@ -43,20 +43,6 @@
         </div>
       </el-form-item>
 
-      <el-form-item label="架构选择" prop="architecture">
-        <el-select
-          v-model="syncForm.architecture"
-          placeholder="请选择架构"
-          style="width: 100%"
-        >
-          <el-option label="amd64" value="amd64" />
-          <el-option label="arm64" value="arm64" />
-        </el-select>
-        <div class="form-tip">
-          选择镜像的目标架构，默认为amd64
-        </div>
-      </el-form-item>
-
       <el-form-item label="同步说明" prop="description">
         <el-input
           v-model="syncForm.description"
@@ -127,7 +113,6 @@ const syncFormRef = ref()
  */
 const syncForm = reactive({
   sourceImage: '',
-  architecture: 'amd64',
   description: ''
 })
 
@@ -169,7 +154,6 @@ const submitSync = async () => {
     
     const syncData = {
       images: [syncForm.sourceImage],
-      architecture: syncForm.architecture,
       description: syncForm.description
     }
     
@@ -206,7 +190,6 @@ const resetForm = () => {
   // 重置表单数据到初始状态
   Object.assign(syncForm, {
     sourceImage: '',
-    architecture: 'amd64',
     description: ''
   })
 }

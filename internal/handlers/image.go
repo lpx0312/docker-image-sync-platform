@@ -36,7 +36,20 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
+
+// applyArchitectureFilter 按「记录中的 architecture」或「ACR 实测架构 JSON」筛选。
+func applyArchitectureFilter(db *gorm.DB, architecture string) *gorm.DB {
+	if architecture == "" {
+		return db
+	}
+	like := "%\"" + architecture + "\"%"
+	if architecture == "amd64" {
+		return db.Where("(architecture = ? OR architecture IS NULL OR architecture = '') OR acr_architectures LIKE ?", architecture, like)
+	}
+	return db.Where("architecture = ? OR acr_architectures LIKE ?", architecture, like)
+}
 
 // ImageHandler 镜像处理器
 //
@@ -153,17 +166,8 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 		query = query.Where("sync_status = ?", status)
 	}
 
-	// 架构过滤
-	// 特殊处理amd64架构的兼容性问题
 	if architecture != "" {
-		if architecture == "amd64" {
-			// amd64架构兼容处理：匹配空值、NULL值和明确的amd64值
-			// 这是因为历史数据中amd64可能没有明确标记架构
-			query = query.Where("(architecture = ? OR architecture IS NULL OR architecture = '')", architecture)
-		} else {
-			// 其他架构（如arm64）需要精确匹配
-			query = query.Where("architecture = ?", architecture)
-		}
+		query = applyArchitectureFilter(query, architecture)
 	}
 
 	// 搜索关键词过滤
@@ -233,11 +237,7 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 				filteredQuery = filteredQuery.Where("sync_status = ?", status)
 			}
 			if architecture != "" {
-				if architecture == "amd64" {
-					filteredQuery = filteredQuery.Where("(architecture = ? OR architecture IS NULL OR architecture = '')", architecture)
-				} else {
-					filteredQuery = filteredQuery.Where("architecture = ?", architecture)
-				}
+				filteredQuery = applyArchitectureFilter(filteredQuery, architecture)
 			}
 			if search != "" {
 				filteredQuery = filteredQuery.Where("original_image LIKE ? OR acr_image LIKE ? OR tag LIKE ? OR description LIKE ? OR task_id LIKE ?",
@@ -309,13 +309,8 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 			filteredQuery = filteredQuery.Where("sync_status = ?", status)
 		}
 
-		// 架构过滤（与去重模式相同的逻辑）
 		if architecture != "" {
-			if architecture == "amd64" {
-				filteredQuery = filteredQuery.Where("(architecture = ? OR architecture IS NULL OR architecture = '')", architecture)
-			} else {
-				filteredQuery = filteredQuery.Where("architecture = ?", architecture)
-			}
+			filteredQuery = applyArchitectureFilter(filteredQuery, architecture)
 		}
 
 		// 搜索关键词过滤
@@ -381,7 +376,7 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 
 			if images[i].ACRImage == "" {
 				// 情况1：ACR地址为空，需要重新生成完整的ACR地址
-				images[i].ACRImage = utils.GenerateACRImageWithArchitecture(images[i].OriginalImage, images[i].Tag, images[i].Architecture)
+				images[i].ACRImage = utils.GenerateACRImage(images[i].OriginalImage, images[i].Tag)
 			} else if !strings.Contains(images[i].ACRImage, ":") {
 				// 情况2：ACR地址存在但缺少标签，需要补充标签
 				tag := images[i].Tag
@@ -462,7 +457,7 @@ func (h *ImageHandler) GetImage(c *gin.Context) {
 	if image.SyncStatus == models.SyncStatusSuccess {
 		if image.ACRImage == "" {
 			// 情况1：ACR地址为空，重新生成完整的ACR地址
-			image.ACRImage = utils.GenerateACRImageWithArchitecture(image.OriginalImage, image.Tag, image.Architecture)
+			image.ACRImage = utils.GenerateACRImage(image.OriginalImage, image.Tag)
 		} else if !strings.Contains(image.ACRImage, ":") {
 			// 情况2：ACR地址存在但缺少标签，补充标签
 			tag := image.Tag
@@ -725,8 +720,7 @@ func (h *ImageHandler) CheckImageExists(c *gin.Context) {
 		return
 	}
 
-	// 生成目标镜像地址
-	targetImage := utils.GenerateACRImageWithArchitecture(image.OriginalImage, image.Tag, image.Architecture)
+	targetImage := utils.GenerateACRImage(image.OriginalImage, image.Tag)
 
 	// 检测镜像是否存在
 	exists, err := utils.CheckImageExistsInRegistryWithErr(targetImage)
@@ -741,14 +735,23 @@ func (h *ImageHandler) CheckImageExists(c *gin.Context) {
 		return
 	}
 
+	var arches []string
+	if exists {
+		if detected, derr := utils.DetectImageArchitecturesInRegistry(targetImage); derr == nil {
+			arches = detected
+		}
+	}
+	archJSON := utils.ArchitecturesToJSON(arches)
+
 	// 根据检测结果和当前状态决定是否更新状态
 	if exists {
 		// 只有当前状态为失败时，检测成功才更新为成功
 		if image.SyncStatus == models.SyncStatusFailed {
 			if err := database.DB.Model(&image).Updates(map[string]interface{}{
-				"sync_status":   models.SyncStatusSuccess,
-				"acr_image":     targetImage,
-				"error_message": "",
+				"sync_status":         models.SyncStatusSuccess,
+				"acr_image":           targetImage,
+				"acr_architectures":   archJSON,
+				"error_message":       "",
 			}).Error; err != nil {
 				logger.Logger.Error("更新镜像状态失败", zap.Error(err))
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "更新镜像状态失败"})
@@ -759,15 +762,22 @@ func (h *ImageHandler) CheckImageExists(c *gin.Context) {
 				zap.Uint64("id", id),
 				zap.String("target_image", targetImage))
 		} else {
-			logger.Logger.Info("镜像检测成功，但状态已为成功，无需更新",
+			if err := database.DB.Model(&image).Updates(map[string]interface{}{
+				"acr_image":         targetImage,
+				"acr_architectures": archJSON,
+			}).Error; err != nil {
+				logger.Logger.Error("更新镜像架构信息失败", zap.Error(err))
+			}
+			logger.Logger.Info("镜像检测成功，已刷新ACR架构信息",
 				zap.Uint64("id", id),
 				zap.String("target_image", targetImage))
 		}
 	} else {
 		// 镜像不存在时，更新状态为失败
 		if err := database.DB.Model(&image).Updates(map[string]interface{}{
-			"sync_status":   models.SyncStatusFailed,
-			"error_message": "镜像不存在",
+			"sync_status":       models.SyncStatusFailed,
+			"error_message":     "镜像不存在",
+			"acr_architectures": archJSON,
 		}).Error; err != nil {
 			logger.Logger.Error("更新镜像状态失败", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "更新镜像状态失败"})
@@ -780,8 +790,10 @@ func (h *ImageHandler) CheckImageExists(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"exists":       exists,
-		"target_image": targetImage,
+		"exists":          exists,
+		"target_image":    targetImage,
+		"architectures":   arches,
+		"acr_architectures": archJSON,
 		"message": func() string {
 			if exists {
 				return "镜像存在，状态已更新为成功"
@@ -869,8 +881,7 @@ func (h *ImageHandler) BatchCheckImages(c *gin.Context) {
 	// ====================================================================
 
 	for _, image := range images {
-		// 生成目标ACR镜像地址
-		targetImage := utils.GenerateACRImageWithArchitecture(image.OriginalImage, image.Tag, image.Architecture)
+		targetImage := utils.GenerateACRImage(image.OriginalImage, image.Tag)
 
 		// 检测镜像在注册表中的存在性
 		exists, err := utils.CheckImageExistsInRegistryWithErr(targetImage)
@@ -905,37 +916,49 @@ func (h *ImageHandler) BatchCheckImages(c *gin.Context) {
 		// 根据检测结果更新镜像状态
 		// ================================================================
 
+		var arches []string
 		if exists {
-			// 镜像存在的处理逻辑
-			// 只有当前状态为失败时，检测成功才更新为成功
+			if detected, derr := utils.DetectImageArchitecturesInRegistry(targetImage); derr == nil {
+				arches = detected
+			}
+		}
+		archJSON := utils.ArchitecturesToJSON(arches)
+
+		if exists {
 			if image.SyncStatus == models.SyncStatusFailed {
 				if err := database.DB.Model(&image).Updates(map[string]interface{}{
-					"sync_status":   models.SyncStatusSuccess, // 更新为成功状态
-					"acr_image":     targetImage,              // 设置ACR镜像地址
-					"error_message": "",                       // 清空错误信息
+					"sync_status":         models.SyncStatusSuccess,
+					"acr_image":           targetImage,
+					"acr_architectures":   archJSON,
+					"error_message":       "",
 				}).Error; err != nil {
 					logger.Logger.Error("更新镜像状态失败", zap.Error(err), zap.Uint("id", image.ID))
 				}
+			} else {
+				_ = database.DB.Model(&image).Updates(map[string]interface{}{
+					"acr_image":         targetImage,
+					"acr_architectures": archJSON,
+				})
 			}
 			successCount++
 		} else {
-			// 镜像不存在的处理逻辑
-			// 更新状态为失败
 			if err := database.DB.Model(&image).Updates(map[string]interface{}{
-				"sync_status":   models.SyncStatusFailed, // 更新为失败状态
-				"error_message": "镜像不存在",                 // 设置错误信息
+				"sync_status":       models.SyncStatusFailed,
+				"error_message":     "镜像不存在",
+				"acr_architectures": archJSON,
 			}).Error; err != nil {
 				logger.Logger.Error("更新镜像状态失败", zap.Error(err), zap.Uint("id", image.ID))
 			}
 			failedCount++
 		}
 
-		// 记录检测结果
 		results = append(results, map[string]interface{}{
-			"id":             image.ID,
-			"original_image": image.OriginalImage,
-			"target_image":   targetImage,
-			"exists":         exists,
+			"id":                image.ID,
+			"original_image":    image.OriginalImage,
+			"target_image":      targetImage,
+			"exists":            exists,
+			"architectures":     arches,
+			"acr_architectures": archJSON,
 		})
 	}
 

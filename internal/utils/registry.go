@@ -13,6 +13,11 @@ import (
 	"go.uber.org/zap"
 )
 
+func headRegistryRef(ctx context.Context, ref name.Reference) error {
+	_, err := remote.Head(ref, remoteOptions(ctx)...)
+	return err
+}
+
 // CheckImageExistsInRegistry 检测镜像在注册表中是否存在
 //
 // 参数:
@@ -39,8 +44,8 @@ func CheckImageExistsInRegistry(imageRef string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// 使用HEAD请求获取镜像manifest
-	_, err = remote.Head(ref, remote.WithContext(ctx))
+	// 使用HEAD请求获取镜像manifest（含 ACR 凭据）
+	err = headRegistryRef(ctx, ref)
 	if err != nil {
 		// 404错误表示镜像不存在
 		if strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "not found") {
@@ -78,7 +83,7 @@ func CheckImageExistsInRegistryWithErr(imageRef string) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	_, err = remote.Head(ref, remote.WithContext(ctx))
+	err = headRegistryRef(ctx, ref)
 	if err != nil {
 		if strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "not found") {
 			return false, nil

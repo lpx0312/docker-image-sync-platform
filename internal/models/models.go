@@ -66,7 +66,8 @@ type ImageSyncRecord struct {
 	OriginalImage string         `json:"original_image" gorm:"type:varchar(500);not null;index"`                                                            // 源镜像地址，建立索引以提高查询性能
 	ACRImage      string         `json:"acr_image" gorm:"type:varchar(500)"`                                                                                // 目标ACR镜像地址
 	Tag           string         `json:"tag" gorm:"type:varchar(100)"`                                                                                      // 镜像标签
-	Architecture  string         `json:"architecture" gorm:"type:varchar(50);default:'amd64'"`                                                              // 目标架构，默认amd64
+	Architecture       string `json:"architecture" gorm:"type:varchar(50);default:''"`                     // 用户侧架构意图；空表示未指定，由 Actions/ACR 多架构决定
+	AcrArchitectures   string `json:"acr_architectures" gorm:"column:acr_architectures;type:text"`           // ACR 中实际存在的架构列表 JSON，如 ["amd64","arm64"]
 	OriginalInput string         `json:"original_input" gorm:"type:varchar(600)"`                                                                           // 保存用户原始输入格式，用于追溯
 	InputOrder    int            `json:"input_order" gorm:"default:0;index"`                                                                                // 原始输入顺序，用于批量处理时保持顺序
 	SyncStatus    string         `json:"sync_status" gorm:"type:enum('pending','syncing','success','failed','retrying','skipped');default:'pending';index"` // 同步状态，建立索引以提高状态查询性能
@@ -389,10 +390,10 @@ type SyncRequest struct {
 //   - 生产环境的批量迁移
 //   - 自动化CI/CD流水线
 type BatchSyncRequest struct {
-	Images        []ImageSyncItem `json:"images" binding:"required"`             // 镜像同步项列表，必填
-	MaxConcurrent int             `json:"max_concurrent" binding:"min=1,max=10"` // 最大并发数，范围1-10
-	AutoRetry     bool            `json:"auto_retry"`                            // 是否启用自动重试
-	RetryCount    int             `json:"retry_count" binding:"min=0,max=3"`     // 重试次数，范围0-3
+	Images        []ImageSyncItem `json:"images" binding:"required"` // 镜像同步项列表，必填
+	MaxConcurrent int             `json:"max_concurrent"`            // 最大并发数；0 或未传由服务端按配置填充
+	AutoRetry     bool            `json:"auto_retry"`                // 是否启用自动重试
+	RetryCount    int             `json:"retry_count"`               // 重试次数；0 且启用重试时由服务端按配置填充
 }
 
 // ImageSyncItem 单个镜像同步项

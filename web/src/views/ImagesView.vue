@@ -172,11 +172,26 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="architecture" label="架构" width="80" sortable="custom">
+        <el-table-column prop="architecture" label="架构" width="168" sortable="custom">
           <template #default="{ row }">
-            <el-tag :type="row.architecture === 'arm64' ? 'warning' : 'info'" size="small">
-              {{ row.architecture || 'amd64' }}
-            </el-tag>
+            <div class="arch-tags">
+              <template v-if="getAcrArchitectures(row).length">
+                <el-tag
+                  v-for="arch in getAcrArchitectures(row)"
+                  :key="arch"
+                  size="small"
+                  :type="getArchTagType(arch)"
+                  class="arch-tag"
+                >
+                  {{ arch }}
+                </el-tag>
+              </template>
+              <template v-else>
+                <el-tag size="small" :type="getArchTagType(row.architecture)">
+                  {{ row.architecture || '—' }}
+                </el-tag>
+              </template>
+            </div>
           </template>
         </el-table-column>
         
@@ -310,6 +325,22 @@
           <el-tag :type="getStatusType(selectedImage.sync_status)">
             {{ getStatusText(selectedImage.sync_status) }}
           </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="架构">
+          <div class="arch-tags">
+            <template v-if="getAcrArchitectures(selectedImage).length">
+              <el-tag
+                v-for="arch in getAcrArchitectures(selectedImage)"
+                :key="arch"
+                size="small"
+                :type="getArchTagType(arch)"
+                class="arch-tag"
+              >
+                {{ arch }}
+              </el-tag>
+            </template>
+            <span v-else class="muted-text">{{ selectedImage.architecture || '—' }}</span>
+          </div>
         </el-descriptions-item>
         <el-descriptions-item label="任务ID" v-if="selectedImage.task_id">
           {{ selectedImage.task_id }}
@@ -611,6 +642,27 @@ const getRowIndex = (index) => {
   return (currentPage.value - 1) * pageSize.value + index + 1
 }
 
+const getAcrArchitectures = (row) => {
+  if (!row || !row.acr_architectures) return []
+  try {
+    const arr = JSON.parse(row.acr_architectures)
+    return Array.isArray(arr) ? arr : []
+  } catch {
+    return []
+  }
+}
+
+// Element Plus tag types：与主色（primary 蓝）协调，各架构区分明显
+const getArchTagType = (arch) => {
+  if (!arch) return 'info'
+  const a = String(arch).toLowerCase()
+  if (a === 'amd64' || a === 'x86_64') return 'primary'
+  if (a === 'arm64' || a === 'aarch64') return 'success'
+  if (a === 'arm' || a === 'armv7') return 'warning'
+  if (a === 'ppc64le' || a === 's390x' || a === 'riscv64') return 'info'
+  return 'info'
+}
+
 // 获取目标镜像地址
 const getTargetImage = (row) => {
   // 如果 acr_image 有值，直接返回
@@ -700,6 +752,21 @@ onUnmounted(() => {
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 16px;
   margin-bottom: 20px;
+}
+
+.arch-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.arch-tag {
+  margin: 0 !important;
+}
+
+.muted-text {
+  color: var(--el-text-color-secondary);
 }
 
 .stat-card {

@@ -17,14 +17,15 @@
 package handlers
 
 import (
-	"context"  // 上下文管理
-	"fmt"      // 格式化输出
+	"context" // 上下文管理
+	"fmt"     // 格式化输出
 	"net/http" // HTTP状态码和处理
 	"strconv"  // 字符串转换
 	"strings"  // 字符串操作
 	"sync"     // 并发同步原语
 	"time"     // 时间处理
 
+	"docker-image-sync-platform/internal/config"   // 应用配置（同步默认值）
 	"docker-image-sync-platform/internal/database" // 数据库操作
 	"docker-image-sync-platform/internal/logger"   // 日志记录
 	"docker-image-sync-platform/internal/models"   // 数据模型
@@ -86,6 +87,32 @@ func (h *SyncHandler) Shutdown() {
 	h.wg.Wait()
 }
 
+// normalizeBatchSyncRequest 在未传或非法时，用 config.yaml 中 sync 段的值填充并发与重试。
+func normalizeBatchSyncRequest(req *models.BatchSyncRequest) {
+	syncCfg := config.AppConfig.Sync
+	if req.MaxConcurrent < 1 || req.MaxConcurrent > 10 {
+		mc := syncCfg.MaxConcurrentJobs
+		if mc < 1 || mc > 10 {
+			mc = 3
+		}
+		req.MaxConcurrent = mc
+	}
+	if !req.AutoRetry {
+		req.RetryCount = 0
+		return
+	}
+	if req.RetryCount < 1 || req.RetryCount > 5 {
+		rc := syncCfg.MaxRetryCount
+		if rc < 1 {
+			rc = 3
+		}
+		if rc > 5 {
+			rc = 5
+		}
+		req.RetryCount = rc
+	}
+}
+
 // SubmitBatchSync 提交批量镜像同步任务
 //
 // 处理批量镜像同步请求，支持多个镜像的并发同步。
@@ -97,9 +124,9 @@ func (h *SyncHandler) Shutdown() {
 //
 // 请求体: models.BatchSyncRequest
 //   - Images: 要同步的镜像列表
-//   - MaxConcurrent: 最大并发数 (1-10，默认3)
+//   - MaxConcurrent: 最大并发数 (1-10)；0 或未传时使用配置 sync.max_concurrent_jobs
 //   - AutoRetry: 是否自动重试失败的任务
-//   - RetryCount: 重试次数
+//   - RetryCount: 重试次数；开启自动重试且为 0 时使用配置 sync.max_retry_count
 //
 // 响应:
 //   - 200: 任务提交成功，返回任务ID和预计完成时间
@@ -130,11 +157,7 @@ func (h *SyncHandler) SubmitBatchSync(c *gin.Context) {
 		return
 	}
 
-	// 验证并发数限制，确保系统资源不被过度占用
-	// 允许范围：1-10，超出范围则使用默认值3
-	if req.MaxConcurrent < 1 || req.MaxConcurrent > 10 {
-		req.MaxConcurrent = 3 // 默认并发数
-	}
+	normalizeBatchSyncRequest(&req)
 
 	// ====================================================================
 	// 任务创建和初始化
@@ -182,9 +205,6 @@ func (h *SyncHandler) SubmitBatchSync(c *gin.Context) {
 			if img.Architecture != "" {
 				architecture = img.Architecture
 			}
-			if architecture == "" {
-				architecture = "amd64"
-			}
 
 			var originalInput string
 			imageWithTag := originalImage
@@ -192,11 +212,7 @@ func (h *SyncHandler) SubmitBatchSync(c *gin.Context) {
 				imageWithTag = originalImage + ":" + tag
 			}
 
-			if architecture == "arm64" {
-				originalInput = "--platform=linux/arm64 " + imageWithTag
-			} else {
-				originalInput = imageWithTag
-			}
+			originalInput = imageWithTag
 
 			record := &models.ImageSyncRecord{
 				TaskID:        taskID,
@@ -322,12 +338,7 @@ func (h *SyncHandler) SubmitSync(c *gin.Context) {
 		for i, imageStr := range req.Images {
 			originalImage, tag := h.parseImageNameAndTag(imageStr)
 
-			var originalInput string
-			if req.Architecture == "arm64" {
-				originalInput = "--platform=linux/arm64 " + imageStr
-			} else {
-				originalInput = imageStr
-			}
+			originalInput := imageStr
 
 			record := &models.ImageSyncRecord{
 				TaskID:        taskID,
@@ -803,7 +814,7 @@ func (h *SyncHandler) processSyncTask(taskID string) {
 
 // updateImagesFile 生成并提交images.txt文件到Git仓库
 //
-// 根据镜像同步记录生成符合GitHub Actions工作流要求的images.txt文件内容，
+// 根据镜像同步记录生成符合GitHub Actions工作流要求的images.txt文件内容
 // 并将其提交到Git仓库以触发自动化同步流程。
 //
 // 参数:
@@ -815,8 +826,7 @@ func (h *SyncHandler) processSyncTask(taskID string) {
 //
 // 镜像格式化规则:
 //   - 基础格式: image_name:tag
-//   - 多架构支持: --platform=linux/架构 image_name:tag
-//   - AMD64架构默认不添加platform前缀
+//   - 默认不写入 --platform，统一交由 GitHub Actions 决定多架构处理
 //   - 按输入顺序保持镜像列表顺序
 func (h *SyncHandler) updateImagesFile(records []models.ImageSyncRecord) (string, error) {
 	// ====================================================================
@@ -850,12 +860,6 @@ func (h *SyncHandler) updateImagesFile(records []models.ImageSyncRecord) (string
 		// 添加标签（如果指定）
 		if record.Tag != "" {
 			imageLine = imageLine + ":" + record.Tag
-		}
-
-		// 添加平台架构前缀（非AMD64架构）
-		// AMD64是默认架构，不需要显式指定platform参数
-		if record.Architecture != "" && record.Architecture != "amd64" {
-			imageLine = "--platform=linux/" + record.Architecture + " " + imageLine
 		}
 
 		// 添加到镜像列表
@@ -1146,11 +1150,21 @@ func (h *SyncHandler) handleSyncSuccess(taskID string) {
 
 	// 逐个验证每个镜像是否成功同步到ACR
 	for _, record := range records {
-		// 生成目标ACR镜像地址（包含架构信息）
-		acrImage := utils.GenerateACRImageWithArchitecture(record.OriginalImage, record.Tag, record.Architecture)
+		// 生成目标ACR镜像地址（最终镜像不带架构后缀）
+		acrImage := utils.GenerateACRImage(record.OriginalImage, record.Tag)
 
 		// 检查镜像是否真正存在于ACR中
 		exists := utils.CheckImageExistsInRegistry(acrImage)
+		var architectures []string
+		if detected, detectErr := utils.DetectImageArchitecturesInRegistry(acrImage); detectErr != nil {
+			logger.Logger.Warn("检测镜像架构失败",
+				zap.Error(detectErr),
+				zap.String("task_id", taskID),
+				zap.String("acr_image", acrImage))
+		} else {
+			architectures = detected
+		}
+		archJSON := utils.ArchitecturesToJSON(architectures)
 
 		// 计算同步耗时
 		completedTime := time.Now()
@@ -1168,10 +1182,11 @@ func (h *SyncHandler) handleSyncSuccess(taskID string) {
 			if err := database.DB.Model(&models.ImageSyncRecord{}).
 				Where("id = ?", record.ID).
 				Updates(map[string]interface{}{
-					"sync_status":  models.SyncStatusSuccess,
-					"completed_at": &completedTime,
-					"duration":     duration,
-					"acr_image":    acrImage,
+					"sync_status":        models.SyncStatusSuccess,
+					"completed_at":       &completedTime,
+					"duration":           duration,
+					"acr_image":          acrImage,
+					"acr_architectures":  archJSON,
 				}).Error; err != nil {
 				logger.Logger.Error("更新镜像成功状态失败", zap.Error(err))
 			} else {
@@ -1183,11 +1198,12 @@ func (h *SyncHandler) handleSyncSuccess(taskID string) {
 			if err := database.DB.Model(&models.ImageSyncRecord{}).
 				Where("id = ?", record.ID).
 				Updates(map[string]interface{}{
-					"sync_status":   models.SyncStatusFailed,
-					"completed_at":  &completedTime,
-					"duration":      duration,
-					"acr_image":     acrImage,
-					"error_message": errorMessage,
+					"sync_status":       models.SyncStatusFailed,
+					"completed_at":      &completedTime,
+					"duration":          duration,
+					"acr_image":         acrImage,
+					"acr_architectures": archJSON,
+					"error_message":     errorMessage,
 				}).Error; err != nil {
 				logger.Logger.Error("更新镜像失败状态失败", zap.Error(err))
 			}
@@ -1335,11 +1351,21 @@ func (h *SyncHandler) handlePartialSyncFailure(taskID, workflowErrorMessage stri
 
 	// 逐个验证每个镜像是否成功同步到ACR
 	for _, record := range records {
-		// 生成目标ACR镜像地址（包含架构信息）
-		acrImage := utils.GenerateACRImageWithArchitecture(record.OriginalImage, record.Tag, record.Architecture)
+		// 生成目标ACR镜像地址（最终镜像不带架构后缀）
+		acrImage := utils.GenerateACRImage(record.OriginalImage, record.Tag)
 
 		// 检查镜像是否真正存在于ACR中
 		exists := utils.CheckImageExistsInRegistry(acrImage)
+		var architectures []string
+		if detected, detectErr := utils.DetectImageArchitecturesInRegistry(acrImage); detectErr != nil {
+			logger.Logger.Warn("检测镜像架构失败",
+				zap.Error(detectErr),
+				zap.String("task_id", taskID),
+				zap.String("acr_image", acrImage))
+		} else {
+			architectures = detected
+		}
+		archJSON := utils.ArchitecturesToJSON(architectures)
 
 		// 计算同步耗时
 		var duration int64
@@ -1356,10 +1382,11 @@ func (h *SyncHandler) handlePartialSyncFailure(taskID, workflowErrorMessage stri
 			if err := database.DB.Model(&models.ImageSyncRecord{}).
 				Where("id = ?", record.ID).
 				Updates(map[string]interface{}{
-					"sync_status":  models.SyncStatusSuccess,
-					"completed_at": &now,
-					"duration":     duration,
-					"acr_image":    acrImage,
+					"sync_status":       models.SyncStatusSuccess,
+					"completed_at":      &now,
+					"duration":          duration,
+					"acr_image":         acrImage,
+					"acr_architectures": archJSON,
 				}).Error; err != nil {
 				logger.Logger.Error("更新镜像成功状态失败", zap.Error(err))
 			} else {
@@ -1375,11 +1402,12 @@ func (h *SyncHandler) handlePartialSyncFailure(taskID, workflowErrorMessage stri
 			if err := database.DB.Model(&models.ImageSyncRecord{}).
 				Where("id = ?", record.ID).
 				Updates(map[string]interface{}{
-					"sync_status":   models.SyncStatusFailed,
-					"completed_at":  &now,
-					"duration":      duration,
-					"acr_image":     acrImage,
-					"error_message": individualErrorMessage,
+					"sync_status":       models.SyncStatusFailed,
+					"completed_at":      &now,
+					"duration":          duration,
+					"acr_image":         acrImage,
+					"acr_architectures": archJSON,
+					"error_message":     individualErrorMessage,
 				}).Error; err != nil {
 				logger.Logger.Error("更新镜像失败状态失败", zap.Error(err))
 			} else {
@@ -1490,10 +1518,7 @@ func (h *SyncHandler) SubmitMockBatchSync(c *gin.Context) {
 		return
 	}
 
-	// 验证并发数限制
-	if req.MaxConcurrent < 1 || req.MaxConcurrent > 10 {
-		req.MaxConcurrent = 3 // 默认值
-	}
+	normalizeBatchSyncRequest(&req)
 
 	// 生成任务ID
 	taskID := uuid.New().String()
@@ -1536,22 +1561,13 @@ func (h *SyncHandler) SubmitMockBatchSync(c *gin.Context) {
 		if img.Architecture != "" {
 			architecture = img.Architecture
 		}
-		if architecture == "" {
-			architecture = "amd64"
-		}
 
-		// 构建原始输入格式
 		var originalInput string
 		imageWithTag := originalImage
 		if tag != "" {
 			imageWithTag = originalImage + ":" + tag
 		}
-
-		if architecture == "arm64" {
-			originalInput = "--platform=linux/arm64 " + imageWithTag
-		} else {
-			originalInput = imageWithTag
-		}
+		originalInput = imageWithTag
 
 		record := &models.ImageSyncRecord{
 			OriginalImage: originalImage,
@@ -1679,10 +1695,16 @@ func (h *SyncHandler) processSingleMockImage(taskID string, record models.ImageS
 	time.Sleep(mockDuration)
 
 	// 生成ACR镜像地址
-	acrImage := utils.GenerateACRImageWithArchitecture(record.OriginalImage, record.Tag, record.Architecture)
+	acrImage := utils.GenerateACRImage(record.OriginalImage, record.Tag)
 
 	// 检测目标镜像是否存在
 	exists := utils.CheckImageExistsInRegistry(acrImage)
+
+	var architectures []string
+	if detected, detectErr := utils.DetectImageArchitecturesInRegistry(acrImage); detectErr == nil {
+		architectures = detected
+	}
+	archJSON := utils.ArchitecturesToJSON(architectures)
 
 	completedTime := time.Now()
 	duration := int64(completedTime.Sub(startTime).Seconds())
@@ -1692,10 +1714,11 @@ func (h *SyncHandler) processSingleMockImage(taskID string, record models.ImageS
 		if err := database.DB.Model(&models.ImageSyncRecord{}).
 			Where("id = ?", record.ID).
 			Updates(map[string]interface{}{
-				"sync_status":  models.SyncStatusSuccess,
-				"completed_at": &completedTime,
-				"duration":     duration,
-				"acr_image":    acrImage,
+				"sync_status":       models.SyncStatusSuccess,
+				"completed_at":      &completedTime,
+				"duration":          duration,
+				"acr_image":         acrImage,
+				"acr_architectures": archJSON,
 			}).Error; err != nil {
 			logger.Logger.Error("更新镜像完成状态失败", zap.Error(err))
 		}
@@ -1711,11 +1734,12 @@ func (h *SyncHandler) processSingleMockImage(taskID string, record models.ImageS
 		if err := database.DB.Model(&models.ImageSyncRecord{}).
 			Where("id = ?", record.ID).
 			Updates(map[string]interface{}{
-				"sync_status":   models.SyncStatusFailed,
-				"completed_at":  &completedTime,
-				"duration":      duration,
-				"acr_image":     acrImage,
-				"error_message": errorMessage,
+				"sync_status":       models.SyncStatusFailed,
+				"completed_at":      &completedTime,
+				"duration":          duration,
+				"acr_image":         acrImage,
+				"acr_architectures": archJSON,
+				"error_message":     errorMessage,
 			}).Error; err != nil {
 			logger.Logger.Error("更新镜像失败状态失败", zap.Error(err))
 		}
