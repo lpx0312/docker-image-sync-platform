@@ -144,11 +144,27 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="architecture" label="架构" width="90" sortable="custom">
+        <el-table-column prop="architecture" label="架构" width="168" sortable="custom">
           <template #default="{ row }">
-            <el-tag :type="row.architecture === 'arm64' ? 'warning' : 'info'" size="small" round>
-              {{ row.architecture || 'amd64' }}
-            </el-tag>
+            <div class="arch-tags">
+              <template v-if="getAcrArchitectures(row).length">
+                <el-tag
+                  v-for="arch in getAcrArchitectures(row)"
+                  :key="arch"
+                  size="small"
+                  round
+                  :type="getArchTagType(arch)"
+                  class="arch-tag"
+                >
+                  {{ arch }}
+                </el-tag>
+              </template>
+              <template v-else>
+                <el-tag size="small" round :type="getArchTagType(row.architecture)">
+                  {{ row.architecture || '—' }}
+                </el-tag>
+              </template>
+            </div>
           </template>
         </el-table-column>
 
@@ -261,6 +277,27 @@
           <el-tag :type="getImageStatusType(selectedImage.sync_status)" round>
             {{ getImageStatusText(selectedImage.sync_status) }}
           </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="架构">
+          <div class="arch-tags">
+            <template v-if="getAcrArchitectures(selectedImage).length">
+              <el-tag
+                v-for="arch in getAcrArchitectures(selectedImage)"
+                :key="arch"
+                size="small"
+                round
+                :type="getArchTagType(arch)"
+                class="arch-tag"
+              >
+                {{ arch }}
+              </el-tag>
+            </template>
+            <template v-else>
+              <el-tag size="small" round :type="getArchTagType(selectedImage.architecture)">
+                {{ selectedImage.architecture || '—' }}
+              </el-tag>
+            </template>
+          </div>
         </el-descriptions-item>
         <el-descriptions-item label="任务ID" v-if="selectedImage.task_id">
           {{ selectedImage.task_id }}
@@ -478,12 +515,38 @@ const deleteImage = async (row) => {
   }
 }
 
+const getAcrArchitectures = (row) => {
+  if (!row || !row.acr_architectures) return []
+  try {
+    const arr = JSON.parse(row.acr_architectures)
+    return Array.isArray(arr) ? arr : []
+  } catch {
+    return []
+  }
+}
+
+const getArchTagType = (arch) => {
+  if (!arch) return 'info'
+  const a = String(arch).toLowerCase()
+  if (a === 'amd64' || a === 'x86_64') return 'primary'
+  if (a === 'arm64' || a === 'aarch64') return 'success'
+  if (a === 'arm' || a === 'armv7') return 'warning'
+  if (a === 'ppc64le' || a === 's390x' || a === 'riscv64') return 'info'
+  return 'info'
+}
+
+const archDisplayLabel = (row) => {
+  const list = getAcrArchitectures(row)
+  if (list.length) return list.join(', ')
+  return row?.architecture || '—'
+}
+
 const checkImageExists = async (row) => {
   checkingIds.value.push(row.id)
   try {
     const result = await imageStore.checkImageExists(row.id)
     const targetImage = getTargetImage(row)
-    const displayName = `${row.architecture}:${targetImage}`
+    const displayName = `${archDisplayLabel(row)}:${targetImage}`
     if (result.exists) {
       ElMessage.success(`镜像 ${displayName} 检测成功，状态已更新`)
     } else {
@@ -735,6 +798,17 @@ onUnmounted(() => {
   display: flex;
   gap: 4px;
   flex-wrap: wrap;
+}
+
+.arch-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.arch-tag {
+  margin: 0 !important;
 }
 
 /* ── Pagination ── */
