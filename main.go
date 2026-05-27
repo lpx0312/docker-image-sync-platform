@@ -351,6 +351,31 @@ func main() {
 				acrRegistries.DELETE("/:id", acrRegistryHandler.Delete)
 				acrRegistries.PUT("/:id/default", acrRegistryHandler.SetDefault)
 			}
+
+			// ACR镜像管理
+			acrRepositoryService := services.NewAcrRepositoryService(database.DB)
+			acrRepositoryHandler := handlers.NewAcrRepositoryHandler(acrRepositoryService)
+
+			acrRepositories := protected.Group("/acr-repositories")
+			acrRepositories.Use(middleware.PermissionRequired(models.PermConfig))
+			{
+				acrRepositories.GET("", acrRepositoryHandler.GetAll)
+				acrRepositories.POST("", acrRepositoryHandler.Create)
+				acrRepositories.POST("/batch", acrRepositoryHandler.BatchCreate)
+				acrRepositories.DELETE("/:id", acrRepositoryHandler.Delete)
+				acrRepositories.POST("/sync-from-records", acrRepositoryHandler.SyncFromRecords)
+			}
+
+			// ACR Tag查询
+			acrAPIService := services.NewAcrAPIService()
+			acrTagHandler := handlers.NewAcrTagHandler(acrAPIService, encryptionService)
+
+			acrTags := protected.Group("/acr-tags")
+			acrTags.Use(middleware.PermissionRequired(models.PermConfig))
+			{
+				acrTags.GET("", acrTagHandler.GetTags)
+				acrTags.GET("/detail", acrTagHandler.GetTagDetail)
+			}
 		}
 	}
 
