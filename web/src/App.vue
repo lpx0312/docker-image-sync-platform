@@ -129,6 +129,7 @@ const showLayout = computed(() => route.name !== 'Login' && authStore.isLoggedIn
 
 const allNavItems = [
   { path: '/sync', label: '镜像同步', icon: Box, permission: 'sync' },
+  { path: '/images', label: '镜像管理', icon: Box, permission: 'sync' },
   { path: '/github', label: 'GitHub Actions', icon: Connection, permission: 'github' },
   { path: '/config', label: '系统配置', icon: Setting, permission: 'config' },
   { path: '/users', label: '用户管理', icon: User, permission: 'users' },

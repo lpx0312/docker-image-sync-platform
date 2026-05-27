@@ -62,14 +62,25 @@ func NewAcrAPIService() *AcrAPIService {
 	}
 }
 
+// getRegionFromRegistry 从 registry 地址推断 region
+func getRegionFromRegistry(registry string) string {
+	// registry.cn-hangzhou.aliyuncs.com -> cn-hangzhou
+	// crpi-xxx.cn-hangzhou.personal.cr.aliyuncs.com -> cn-hangzhou
+	parts := strings.Split(registry, ".")
+	for i, part := range parts {
+		if part == "aliyuncs" || part == "cr" {
+			// 前一个 part 应该是 region
+			if i > 0 {
+				return parts[i-1]
+			}
+		}
+	}
+	return "cn-hangzhou"
+}
+
 // getAuthServer 从 registry 推断认证服务器地址
 func getAuthServer(registry string) string {
-	// registry.cn-hangzhou.aliyuncs.com -> dockerauth.cn-hangzhou.aliyuncs.com
-	region := "cn-hangzhou"
-	parts := strings.Split(registry, ".")
-	if len(parts) >= 3 {
-		region = parts[1]
-	}
+	region := getRegionFromRegistry(registry)
 	return fmt.Sprintf("dockerauth.%s.aliyuncs.com", region)
 }
 
@@ -83,8 +94,9 @@ func (s *AcrAPIService) GetToken(registry, username, password, namespace, repo s
 	}
 
 	authServer := getAuthServer(registry)
+	region := getRegionFromRegistry(registry)
 	scope := fmt.Sprintf("repository:%s/%s:pull", namespace, repo)
-	service := fmt.Sprintf("registry.aliyuncs.com:cn-hangzhou:%s", namespace)
+	service := fmt.Sprintf("registry.aliyuncs.com:%s:%s", region, namespace)
 
 	var result struct {
 		Token string `json:"token"`
