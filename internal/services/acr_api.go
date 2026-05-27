@@ -96,9 +96,9 @@ func (s *AcrAPIService) GetToken(registry, username, password, namespace, repo s
 	}
 
 	authServer := getAuthServer(registry)
-	region := getRegionFromRegistry(registry)
 	scope := fmt.Sprintf("repository:%s/%s:pull", namespace, repo)
-	service := fmt.Sprintf("registry.aliyuncs.com:%s:%s", region, namespace)
+	// 硬编码 DOCKER_SERVICE，后续从数据库配置读取
+	service := "registry.aliyuncs.com:cn-hangzhou:26842"
 
 	var result struct {
 		Token string `json:"token"`
