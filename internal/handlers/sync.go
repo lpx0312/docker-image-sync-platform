@@ -1277,6 +1277,24 @@ func (h *SyncHandler) handleSyncSuccess(taskID string) {
 	}
 
 	// ====================================================================
+	// 查询任务信息（获取 ACR 配置 ID）
+	// ====================================================================
+
+	var task models.SyncTask
+	if err := database.DB.Where("task_id = ?", taskID).First(&task).Error; err != nil {
+		logger.Logger.Error("查询任务失败", zap.Error(err))
+		return
+	}
+
+	// 获取 ACR 配置
+	var acrRegistry *models.AcrRegistry
+	if task.AcrRegistryID > 0 {
+		if err := database.DB.First(&acrRegistry, task.AcrRegistryID).Error; err != nil {
+			logger.Logger.Error("获取ACR配置失败", zap.Error(err))
+		}
+	}
+
+	// ====================================================================
 	// 验证镜像同步结果
 	// ====================================================================
 
@@ -1285,8 +1303,13 @@ func (h *SyncHandler) handleSyncSuccess(taskID string) {
 
 	// 逐个验证每个镜像是否成功同步到ACR
 	for _, record := range records {
-		// 生成目标ACR镜像地址（最终镜像不带架构后缀）
-		acrImage := utils.GenerateACRImage(record.OriginalImage, record.Tag)
+		// 生成目标ACR镜像地址（使用关联的 ACR 配置）
+		var acrImage string
+		if acrRegistry != nil {
+			acrImage = fmt.Sprintf("%s/%s/%s:%s", acrRegistry.RegistryURL, acrRegistry.Namespace, record.OriginalImage, record.Tag)
+		} else {
+			acrImage = utils.GenerateACRImage(record.OriginalImage, record.Tag)
+		}
 
 		// 检查镜像是否真正存在于ACR中
 		exists := utils.CheckImageExistsInRegistry(acrImage)
@@ -1476,6 +1499,24 @@ func (h *SyncHandler) handlePartialSyncFailure(taskID, workflowErrorMessage stri
 	}
 
 	// ====================================================================
+	// 查询任务信息（获取 ACR 配置 ID）
+	// ====================================================================
+
+	var task models.SyncTask
+	if err := database.DB.Where("task_id = ?", taskID).First(&task).Error; err != nil {
+		logger.Logger.Error("查询任务失败", zap.Error(err))
+		return
+	}
+
+	// 获取 ACR 配置
+	var acrRegistry *models.AcrRegistry
+	if task.AcrRegistryID > 0 {
+		if err := database.DB.First(&acrRegistry, task.AcrRegistryID).Error; err != nil {
+			logger.Logger.Error("获取ACR配置失败", zap.Error(err))
+		}
+	}
+
+	// ====================================================================
 	// 验证镜像同步结果
 	// ====================================================================
 
@@ -1486,8 +1527,13 @@ func (h *SyncHandler) handlePartialSyncFailure(taskID, workflowErrorMessage stri
 
 	// 逐个验证每个镜像是否成功同步到ACR
 	for _, record := range records {
-		// 生成目标ACR镜像地址（最终镜像不带架构后缀）
-		acrImage := utils.GenerateACRImage(record.OriginalImage, record.Tag)
+		// 生成目标ACR镜像地址（使用关联的 ACR 配置）
+		var acrImage string
+		if acrRegistry != nil {
+			acrImage = fmt.Sprintf("%s/%s/%s:%s", acrRegistry.RegistryURL, acrRegistry.Namespace, record.OriginalImage, record.Tag)
+		} else {
+			acrImage = utils.GenerateACRImage(record.OriginalImage, record.Tag)
+		}
 
 		// 检查镜像是否真正存在于ACR中
 		exists := utils.CheckImageExistsInRegistry(acrImage)
