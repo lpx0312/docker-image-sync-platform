@@ -91,8 +91,9 @@ onMounted(() => {
 const loadAcrList = async () => {
   try {
     const response = await acrRegistryAPI.getAll()
-    if (response.data && response.data.status === 'success') {
-      acrList.value = response.data.data || []
+    // axios 拦截器已返回 response.data，所以 response 就是 {status: "success", data: [...]}
+    if (response && response.status === 'success') {
+      acrList.value = response.data || []
       const defaultAcr = acrList.value.find(item => item.is_default)
       if (defaultAcr) {
         defaultAcrId.value = defaultAcr.id
