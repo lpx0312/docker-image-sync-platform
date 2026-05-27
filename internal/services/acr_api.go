@@ -67,14 +67,16 @@ func getRegionFromRegistry(registry string) string {
 	// registry.cn-hangzhou.aliyuncs.com -> cn-hangzhou
 	// crpi-xxx.cn-hangzhou.personal.cr.aliyuncs.com -> cn-hangzhou
 	parts := strings.Split(registry, ".")
-	for i, part := range parts {
-		if part == "aliyuncs" || part == "cr" {
-			// 前一个 part 应该是 region
-			if i > 0 {
-				return parts[i-1]
-			}
+
+	// 查找包含 "cn-" 或 "us-" 等 region 格式的 part
+	for _, part := range parts {
+		if strings.HasPrefix(part, "cn-") || strings.HasPrefix(part, "us-") ||
+		   strings.HasPrefix(part, "eu-") || strings.HasPrefix(part, "ap-") {
+			return part
 		}
 	}
+
+	// 如果没找到，返回默认值
 	return "cn-hangzhou"
 }
 
