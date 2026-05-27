@@ -22,6 +22,12 @@ const routes = [
     meta: { title: '镜像同步', requiredPermission: 'sync' }
   },
   {
+    path: '/images',
+    name: 'ImagesManage',
+    component: () => import('@/views/ImagesManageView.vue'),
+    meta: { title: '镜像管理', requiredPermission: 'sync' }
+  },
+  {
     path: '/github',
     name: 'GitHub',
     component: GitHubView,
