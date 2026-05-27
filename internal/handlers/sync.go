@@ -769,30 +769,72 @@ func (h *SyncHandler) processSyncTask(taskID string) {
 		zap.Int("image_count", len(records)))
 
 	// ====================================================================
-	// 生成并提交images.txt文件（事务提交后执行）
+	// 更新 images.txt 并触发 GitHub Actions（事务提交后执行）
 	// ====================================================================
 
-	// 根据镜像记录生成images.txt文件内容并提交到Git仓库
-	// 这将触发GitHub Actions工作流开始执行镜像同步
-	commitSHA, err := h.updateImagesFile(records)
+	// 1. 构建本次要同步的镜像列表
+	var images []string
+	for _, record := range records {
+		imageLine := record.OriginalImage
+		if record.Tag != "" {
+			imageLine = imageLine + ":" + record.Tag
+		}
+		images = append(images, imageLine)
+	}
+
+	// 2. 获取配置服务（自动解密加密的配置）
+	configService := h.gitServiceFactory.GetConfigService()
+
+	// 3. 获取阿里云配置
+	registry, _ := configService.GetConfig("aliyun_registry")
+	if registry == "" {
+		registry = "registry.cn-hangzhou.aliyuncs.com"
+	}
+	namespace, _ := configService.GetConfig("aliyun_namespace")
+	if namespace == "" {
+		namespace = "lpx03"
+	}
+	username, _ := configService.GetConfig("aliyun_username")
+	password, _ := configService.GetConfig("aliyun_password")
+
+	logger.Logger.Info("获取阿里云配置成功",
+		zap.String("registry", registry),
+		zap.String("namespace", namespace),
+		zap.String("username", username),
+		zap.Bool("password_set", password != ""))
+
+	// 4. 获取 GitHub 配置
+	workflowFile, _ := configService.GetConfig("workflow_file")
+	if workflowFile == "" {
+		workflowFile = "docker.yaml"
+	}
+
+	// 5. 更新 images.txt 并触发 workflow_dispatch
+	runID, runURL, err := h.updateImagesAndTriggerWorkflow(images, map[string]string{
+		"aliyun_registry":          registry,
+		"aliyun_namespace":         namespace,
+		"aliyun_registry_user":     username,
+		"aliyun_registry_password": password,
+	}, workflowFile)
 	if err != nil {
-		// Git操作失败，但数据库事务已提交，此时需要回滚数据库状态
-		logger.Logger.Error("更新images.txt失败，需要回滚数据库状态", zap.String("task_id", taskID), zap.Error(err))
-		h.handleSyncError(taskID, fmt.Sprintf("Git操作失败: %v", err))
+		logger.Logger.Error("更新 images.txt 或触发 workflow 失败", zap.String("task_id", taskID), zap.Error(err))
+		h.handleSyncError(taskID, fmt.Sprintf("触发 GitHub Actions 失败: %v", err))
 		return
 	}
 
 	// ====================================================================
-	// 更新任务的Git提交信息（单独事务）
+	// 更新任务的 GitHub 信息（单独事务）
 	// ====================================================================
 
-	// 将Git提交的SHA值保存到任务记录中
-	// 使用单独的事务，因为此时主要事务已经提交
-	if err := database.DB.Model(&models.SyncTask{}).
-		Where("task_id = ?", taskID).
-		Update("commit_sha", commitSHA).Error; err != nil {
-		logger.Logger.Error("更新commit SHA失败，但不影响主要流程", zap.String("task_id", taskID), zap.Error(err))
-		// 这里不返回错误，因为主要的同步流程已经完成
+	if runID != "" {
+		if err := database.DB.Model(&models.SyncTask{}).
+			Where("task_id = ?", taskID).
+			Updates(map[string]interface{}{
+				"github_run_id":     runID,
+				"github_action_url": runURL,
+			}).Error; err != nil {
+			logger.Logger.Error("更新 GitHub 信息失败", zap.String("task_id", taskID), zap.Error(err))
+		}
 	}
 
 	// ====================================================================
@@ -802,13 +844,14 @@ func (h *SyncHandler) processSyncTask(taskID string) {
 	h.wg.Add(1)
 	go func() {
 		defer h.wg.Done()
-		h.monitorGitHubActions(taskID, commitSHA)
+		h.monitorGitHubActions(taskID, "")
 	}()
 
 	// 记录任务提交成功的日志
-	logger.Logger.Info("同步任务已提交到Git，事务已成功提交",
+	logger.Logger.Info("同步任务已触发 workflow_dispatch",
 		zap.String("task_id", taskID),
-		zap.String("commit_sha", commitSHA),
+		zap.String("run_id", runID),
+		zap.String("run_url", runURL),
 		zap.Int("image_count", len(records)))
 }
 
@@ -918,6 +961,53 @@ func (h *SyncHandler) updateImagesFile(records []models.ImageSyncRecord) (string
 	return commitSHA, nil
 }
 
+// updateImagesAndTriggerWorkflow 更新 images.txt 并触发 GitHub Actions workflow_dispatch
+//
+// 功能说明:
+//   - 通过 GitHub API 更新 images.txt 文件
+//   - 触发 workflow_dispatch 事件
+//   - 返回工作流运行 ID 和 URL
+//
+// 参数:
+//   - images: 镜像列表
+//   - inputs: workflow_dispatch 输入参数
+//   - workflowFile: workflow 文件名
+//
+// 返回值:
+//   - runID: 工作流运行 ID
+//   - runURL: 工作流运行 URL
+//   - error: 操作过程中的错误
+func (h *SyncHandler) updateImagesAndTriggerWorkflow(images []string, inputs map[string]string, workflowFile string) (string, string, error) {
+	// 1. 更新 images.txt 文件
+	content := strings.Join(images, "\n") + "\n"
+	commitMessage := fmt.Sprintf("Update images.txt - %s", time.Now().Format(time.RFC3339))
+
+	logger.Logger.Info("开始更新 images.txt 文件",
+		zap.Int("image_count", len(images)),
+		zap.String("workflow_file", workflowFile))
+
+	// 使用 Git API 服务更新文件
+	gitFileService, err := h.gitServiceFactory.GetGitFileService()
+	if err != nil {
+		return "", "", fmt.Errorf("获取 Git 文件服务失败: %w", err)
+	}
+
+	if _, err := gitFileService.UpdateImagesFile(content, commitMessage); err != nil {
+		return "", "", fmt.Errorf("更新 images.txt 失败: %w", err)
+	}
+
+	logger.Logger.Info("images.txt 更新成功")
+
+	// 2. 触发 workflow_dispatch
+	githubAPIService := h.gitServiceFactory.GetGitHubAPIService()
+	runID, runURL, err := githubAPIService.TriggerWorkflow(workflowFile, inputs)
+	if err != nil {
+		return "", "", fmt.Errorf("触发 workflow_dispatch 失败: %w", err)
+	}
+
+	return runID, runURL, nil
+}
+
 // updateImagesFileWithAPI 使用API模式更新images.txt文件
 //
 // 参数:
@@ -998,30 +1088,46 @@ func (h *SyncHandler) monitorGitHubActions(taskID, commitSHA string) {
 	// 获取GitHub Actions运行信息
 	// ====================================================================
 
-	// 根据提交SHA查找对应的工作流运行
-	githubAPIService := h.gitServiceFactory.GetGitHubAPIService()
-	runID, runURL, err := githubAPIService.GetWorkflowRun(commitSHA)
-	if err != nil {
-		logger.Logger.Error("获取GitHub Actions运行信息失败", zap.Error(err))
-		// 对于无法获取工作流信息的情况，仍然尝试验证镜像状态
-		errorMessage := fmt.Sprintf("获取GitHub Actions运行信息失败: %v", err)
-		h.handlePartialSyncFailure(taskID, errorMessage)
-		return
-	}
+	var runID string
 
-	// ====================================================================
-	// 更新任务的GitHub集成信息
-	// ====================================================================
+	// 如果 commitSHA 为空，直接从数据库读取 github_run_id（workflow_dispatch 模式）
+	if commitSHA == "" {
+		var task models.SyncTask
+		if err := database.DB.Where("task_id = ?", taskID).First(&task).Error; err != nil {
+			logger.Logger.Error("查询任务失败", zap.String("task_id", taskID), zap.Error(err))
+			h.handlePartialSyncFailure(taskID, fmt.Sprintf("查询任务失败: %v", err))
+			return
+		}
+		runID = task.GitHubRunID
+		if runID == "" {
+			logger.Logger.Error("任务没有 github_run_id", zap.String("task_id", taskID))
+			h.handlePartialSyncFailure(taskID, "未找到 GitHub Actions 运行 ID")
+			return
+		}
+		logger.Logger.Info("使用数据库中的 github_run_id",
+			zap.String("task_id", taskID),
+			zap.String("run_id", runID))
+	} else {
+		// 根据提交SHA查找对应的工作流运行（代码提交触发模式）
+		githubAPIService := h.gitServiceFactory.GetGitHubAPIService()
+		foundRunID, runURL, err := githubAPIService.GetWorkflowRun(commitSHA)
+		if err != nil {
+			logger.Logger.Error("获取GitHub Actions运行信息失败", zap.Error(err))
+			errorMessage := fmt.Sprintf("获取GitHub Actions运行信息失败: %v", err)
+			h.handlePartialSyncFailure(taskID, errorMessage)
+			return
+		}
+		runID = foundRunID
 
-	// 将GitHub Actions的运行ID和URL保存到数据库
-	// 用于前端展示和后续状态追踪
-	if err := database.DB.Model(&models.SyncTask{}).
-		Where("task_id = ?", taskID).
-		Updates(map[string]interface{}{
-			"github_run_id":     runID,  // GitHub Actions运行ID
-			"github_action_url": runURL, // GitHub Actions运行URL
-		}).Error; err != nil {
-		logger.Logger.Error("更新GitHub信息失败", zap.Error(err))
+		// 更新任务的GitHub集成信息
+		if err := database.DB.Model(&models.SyncTask{}).
+			Where("task_id = ?", taskID).
+			Updates(map[string]interface{}{
+				"github_run_id":     runID,
+				"github_action_url": runURL,
+			}).Error; err != nil {
+			logger.Logger.Error("更新GitHub信息失败", zap.Error(err))
+		}
 	}
 
 	// ====================================================================

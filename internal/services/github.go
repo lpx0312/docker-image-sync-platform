@@ -606,3 +606,115 @@ func (s *GitHubService) CheckRateLimit() (map[string]interface{}, error) {
 func parseGitHubRepo(repoURL string) (owner, repo string) {
 	return utils.ParseGitHubRepoURLSimple(repoURL)
 }
+
+// TriggerWorkflow 触发 GitHub Actions workflow_dispatch
+//
+// 功能说明:
+//   - 通过 GitHub API 触发 workflow_dispatch 事件
+//   - 传递阿里云配置作为输入参数
+//   - 返回工作流运行 ID 和 URL
+//
+// 参数:
+//   - workflowFile: workflow 文件名（如 "docker.yaml"）
+//   - inputs: workflow_dispatch 输入参数
+//
+// 返回值:
+//   - runID: 工作流运行 ID
+//   - runURL: 工作流运行 URL
+//   - error: 操作过程中的错误
+func (s *GitHubService) TriggerWorkflow(workflowFile string, inputs map[string]string) (string, string, error) {
+	url := fmt.Sprintf("%s/repos/%s/%s/actions/workflows/%s/dispatches", s.baseURL, s.owner, s.repo, workflowFile)
+
+	logger.Logger.Info("触发 GitHub Actions workflow_dispatch",
+		zap.String("url", url),
+		zap.String("workflow", workflowFile),
+		zap.Any("inputs", inputs))
+
+	// 构建请求体
+	payload := map[string]interface{}{
+		"ref":    "main",
+		"inputs": inputs,
+	}
+
+	// 发送请求
+	resp, err := s.client.R().
+		SetHeader("Accept", "application/vnd.github.v3+json").
+		SetBody(payload).
+		Post(url)
+
+	if err != nil {
+		logger.Logger.Error("触发 workflow_dispatch 失败", zap.Error(err))
+		return "", "", fmt.Errorf("触发 workflow_dispatch 失败: %w", err)
+	}
+
+	// workflow_dispatch 成功返回 204 No Content
+	if resp.StatusCode() != 204 {
+		logger.Logger.Error("workflow_dispatch 响应错误",
+			zap.Int("status_code", resp.StatusCode()),
+			zap.String("response", string(resp.Body())))
+		return "", "", fmt.Errorf("workflow_dispatch 响应错误: %d, %s", resp.StatusCode(), string(resp.Body()))
+	}
+
+	logger.Logger.Info("workflow_dispatch 触发成功")
+
+	// workflow_dispatch 不返回 run 信息，需要通过查找最新的运行来获取
+	// 等待一小段时间让 GitHub 创建运行
+	time.Sleep(5 * time.Second)
+
+	// 获取最新的工作流运行
+	runs, err := s.ListWorkflowRuns(1, 1, "")
+	if err != nil {
+		logger.Logger.Warn("获取工作流运行信息失败", zap.Error(err))
+		return "", "", nil // 触发成功但获取运行信息失败
+	}
+
+	if len(runs.WorkflowRuns) > 0 {
+		run := runs.WorkflowRuns[0]
+		return fmt.Sprintf("%d", run.ID), run.HTMLURL, nil
+	}
+
+	return "", "", nil
+}
+
+// GetWorkflowIDByName 根据工作流文件名获取工作流 ID
+//
+// 参数:
+//   - workflowFile: workflow 文件名（如 "docker.yaml"）
+//
+// 返回值:
+//   - workflowID: 工作流 ID
+//   - error: 操作过程中的错误
+func (s *GitHubService) GetWorkflowIDByName(workflowFile string) (string, error) {
+	url := fmt.Sprintf("%s/repos/%s/%s/actions/workflows", s.baseURL, s.owner, s.repo)
+
+	resp, err := s.client.R().Get(url)
+	if err != nil {
+		return "", fmt.Errorf("获取工作流列表失败: %w", err)
+	}
+
+	if resp.StatusCode() != http.StatusOK {
+		return "", fmt.Errorf("获取工作流列表响应错误: %d", resp.StatusCode())
+	}
+
+	var response struct {
+		TotalCount int `json:"total_count"`
+		Workflows  []struct {
+			ID    int64  `json:"id"`
+			Name  string `json:"name"`
+			Path  string `json:"path"`
+			State string `json:"state"`
+		} `json:"workflows"`
+	}
+
+	if err := json.Unmarshal(resp.Body(), &response); err != nil {
+		return "", fmt.Errorf("解析工作流列表失败: %w", err)
+	}
+
+	for _, workflow := range response.Workflows {
+		if workflow.Path == ".github/workflows/"+workflowFile {
+			return fmt.Sprintf("%d", workflow.ID), nil
+		}
+	}
+
+	return "", fmt.Errorf("未找到工作流: %s", workflowFile)
+}

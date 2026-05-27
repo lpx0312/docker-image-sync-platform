@@ -370,6 +370,16 @@ func (f *GitServiceFactory) GetGitHubAPIService() *GitHubService {
 	return f.gitHubAPIService
 }
 
+// GetConfigService 获取配置服务实例
+// 用于读取和解密数据库中的配置
+func (f *GitServiceFactory) GetConfigService() *ConfigService {
+	// 创建临时的logrus logger实例
+	tempLogger := logrus.New()
+	tempLogger.SetLevel(logrus.InfoLevel)
+
+	return NewConfigService(database.DB, f.encryptionService, tempLogger)
+}
+
 // ClearGitHubAPIServiceCache 清理GitHub API服务缓存
 // 当GitHub配置更新时调用此方法，确保下次调用时重新创建服务实例
 func (f *GitServiceFactory) ClearGitHubAPIServiceCache() {
