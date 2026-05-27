@@ -555,4 +555,45 @@ export const acrRegistryAPI = {
   setDefault: (id) => api.put(`/acr-registries/${id}/default`),
 }
 
+// ACR 镜像管理 API
+export const acrRepositoryAPI = {
+  // 获取镜像列表
+  getAll: (acrRegistryId) => {
+    return api.get('/acr-repositories', { params: { acr_registry_id: acrRegistryId } })
+  },
+
+  // 添加镜像
+  create: (data) => {
+    return api.post('/acr-repositories', data)
+  },
+
+  // 批量添加镜像
+  batchCreate: (data) => {
+    return api.post('/acr-repositories/batch', data)
+  },
+
+  // 删除镜像
+  delete: (id) => {
+    return api.delete(`/acr-repositories/${id}`)
+  },
+
+  // 从同步记录导入
+  syncFromRecords: (acrRegistryId) => {
+    return api.post('/acr-repositories/sync-from-records', { acr_registry_id: acrRegistryId })
+  },
+}
+
+// ACR Tag 查询 API
+export const acrTagAPI = {
+  // 获取 Tag 列表
+  getTags: (acrRegistryId, repositoryName) => {
+    return api.get('/acr-tags', { params: { acr_registry_id: acrRegistryId, repository_name: repositoryName } })
+  },
+
+  // 获取 Tag 详细信息
+  getTagDetail: (acrRegistryId, repositoryName, tag) => {
+    return api.get('/acr-tags/detail', { params: { acr_registry_id: acrRegistryId, repository_name: repositoryName, tag } })
+  },
+}
+
 export default api
