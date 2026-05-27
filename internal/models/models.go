@@ -124,6 +124,7 @@ type SyncTask struct {
 	StartedAt       *time.Time `json:"started_at"`                                                                                         // 任务开始时间
 	CompletedAt     *time.Time `json:"completed_at"`                                                                                       // 任务完成时间
 	ErrorMessage    string     `json:"error_message" gorm:"type:text"`                                                                     // 任务级别的错误信息
+	AcrRegistryID   uint       `json:"acr_registry_id" gorm:"default:0"`                                                                  // ACR配置ID，0表示使用默认配置
 	// 批量同步相关字段
 	Description     string         `json:"description" gorm:"type:varchar(500)"`           // 任务描述，便于用户识别和管理
 	MaxConcurrent   int            `json:"max_concurrent" gorm:"default:3"`                // 最大并发数，控制同时进行的镜像同步数量
@@ -363,9 +364,10 @@ type ImageRequest struct {
 //   - 简单的批量同步
 //   - 基础的同步功能
 type SyncRequest struct {
-	Images       []string `json:"images" binding:"required"` // 镜像列表，必填字段
-	Architecture string   `json:"architecture"`              // 目标架构，可选
-	Description  string   `json:"description"`               // 任务描述，可选
+	Images        []string `json:"images" binding:"required"` // 镜像列表，必填字段
+	Architecture  string   `json:"architecture"`              // 目标架构，可选
+	Description   string   `json:"description"`               // 任务描述，可选
+	AcrRegistryID uint     `json:"acr_registry_id"`           // ACR配置ID，0表示使用默认配置
 }
 
 // BatchSyncRequest 批量镜像同步请求
@@ -394,6 +396,7 @@ type BatchSyncRequest struct {
 	MaxConcurrent int             `json:"max_concurrent"`            // 最大并发数；0 或未传由服务端按配置填充
 	AutoRetry     bool            `json:"auto_retry"`                // 是否启用自动重试
 	RetryCount    int             `json:"retry_count"`               // 重试次数；0 且启用重试时由服务端按配置填充
+	AcrRegistryID uint            `json:"acr_registry_id"`           // ACR配置ID，0表示使用默认配置
 }
 
 // ImageSyncItem 单个镜像同步项

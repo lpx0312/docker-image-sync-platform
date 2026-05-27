@@ -175,6 +175,7 @@ func (h *SyncHandler) SubmitBatchSync(c *gin.Context) {
 		TotalImages:   len(req.Images),          // 镜像总数
 		AutoRetry:     req.AutoRetry,            // 自动重试开关
 		RetryCount:    req.RetryCount,           // 重试次数限制
+		AcrRegistryID: req.AcrRegistryID,        // ACR配置ID
 	}
 
 	// 构建镜像信息的JSON字符串，用于任务记录
@@ -319,6 +320,7 @@ func (h *SyncHandler) SubmitSync(c *gin.Context) {
 		MaxConcurrent: 1,                        // 单个同步，顺序处理
 		TotalImages:   len(req.Images),          // 镜像总数
 		Description:   req.Description,          // 任务描述
+		AcrRegistryID: req.AcrRegistryID,        // ACR配置ID
 	}
 
 	// 构建镜像信息的JSON字符串
@@ -785,17 +787,42 @@ func (h *SyncHandler) processSyncTask(taskID string) {
 	// 2. 获取配置服务（自动解密加密的配置）
 	configService := h.gitServiceFactory.GetConfigService()
 
-	// 3. 获取阿里云配置
-	registry, _ := configService.GetConfig("aliyun_registry")
-	if registry == "" {
-		registry = "registry.cn-hangzhou.aliyuncs.com"
+	// 3. 获取 ACR 配置
+	var registry, namespace, username, password string
+
+	if task.AcrRegistryID > 0 {
+		// 使用指定的 ACR 配置
+		encryptionSvc := h.gitServiceFactory.GetEncryptionService()
+		acrRegistryService := services.NewAcrRegistryService(database.DB, encryptionSvc)
+		acr, err := acrRegistryService.GetByID(task.AcrRegistryID)
+		if err != nil {
+			logger.Logger.Error("获取ACR配置失败", zap.Error(err))
+			h.handleSyncError(taskID, fmt.Sprintf("获取ACR配置失败: %v", err))
+			return
+		}
+		registry = acr.RegistryURL
+		namespace = acr.Namespace
+		username = acr.Username
+		// 解密密码
+		password, err = encryptionSvc.Decrypt(acr.Password)
+		if err != nil {
+			logger.Logger.Error("解密ACR密码失败", zap.Error(err))
+			h.handleSyncError(taskID, fmt.Sprintf("解密ACR密码失败: %v", err))
+			return
+		}
+	} else {
+		// 使用默认配置（兼容旧逻辑）
+		registry, _ = configService.GetConfig("aliyun_registry")
+		if registry == "" {
+			registry = "registry.cn-hangzhou.aliyuncs.com"
+		}
+		namespace, _ = configService.GetConfig("aliyun_namespace")
+		if namespace == "" {
+			namespace = "lpx03"
+		}
+		username, _ = configService.GetConfig("aliyun_username")
+		password, _ = configService.GetConfig("aliyun_password")
 	}
-	namespace, _ := configService.GetConfig("aliyun_namespace")
-	if namespace == "" {
-		namespace = "lpx03"
-	}
-	username, _ := configService.GetConfig("aliyun_username")
-	password, _ := configService.GetConfig("aliyun_password")
 
 	logger.Logger.Info("获取阿里云配置成功",
 		zap.String("registry", registry),
@@ -1637,6 +1664,7 @@ func (h *SyncHandler) SubmitMockBatchSync(c *gin.Context) {
 		TotalImages:   len(req.Images),
 		AutoRetry:     req.AutoRetry,
 		RetryCount:    req.RetryCount,
+		AcrRegistryID: req.AcrRegistryID,
 	}
 
 	// 构建镜像JSON字符串

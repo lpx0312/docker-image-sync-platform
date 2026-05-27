@@ -380,6 +380,12 @@ func (f *GitServiceFactory) GetConfigService() *ConfigService {
 	return NewConfigService(database.DB, f.encryptionService, tempLogger)
 }
 
+// GetEncryptionService 获取加密服务实例
+// 用于创建需要加密服务的其他服务（如 AcrRegistryService）
+func (f *GitServiceFactory) GetEncryptionService() *EncryptionService {
+	return f.encryptionService
+}
+
 // ClearGitHubAPIServiceCache 清理GitHub API服务缓存
 // 当GitHub配置更新时调用此方法，确保下次调用时重新创建服务实例
 func (f *GitServiceFactory) ClearGitHubAPIServiceCache() {
