@@ -116,6 +116,10 @@ func InitDatabase() error {
 	}
 
 	log.Println("数据库连接成功")
+
+	// 执行数据库迁移
+	RunMigrations()
+
 	return nil
 }
 
