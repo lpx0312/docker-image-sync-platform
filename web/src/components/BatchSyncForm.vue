@@ -39,6 +39,21 @@
       :rules="batchRules" 
       label-width="120px"
     >
+      <el-form-item label="目标 ACR">
+        <el-select
+          v-model="selectedAcrId"
+          placeholder="选择目标 ACR"
+          style="width: 100%"
+        >
+          <el-option
+            v-for="item in acrList"
+            :key="item.id"
+            :label="item.namespace"
+            :value="item.id"
+          />
+        </el-select>
+      </el-form-item>
+
       <el-form-item label="镜像列表" prop="images">
         <div class="image-input-section">
           <!-- 输入方式选择 -->
@@ -159,10 +174,10 @@
 </template>
 
 <script setup>
-import { ref, reactive, onUnmounted } from 'vue'
+import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, RefreshLeft } from '@element-plus/icons-vue'
-import { syncAPI } from '@/api'
+import { syncAPI, acrRegistryAPI } from '@/api'
 
 // 组件事件
 const emit = defineEmits(['success'])
@@ -173,6 +188,10 @@ const uploadRef = ref()
 
 // 输入模式
 const inputMode = ref('manual')
+
+// ACR 列表和选中的 ACR
+const acrList = ref([])
+const selectedAcrId = ref(null)
 
 // 表单数据（并发与重试由服务端 config.yaml 的 sync 段决定）
 const batchForm = reactive({
@@ -187,6 +206,23 @@ const mockLoading = ref(false)
 let parseDebounceTimer = null
 
 const batchRules = {}
+
+// 组件挂载时加载 ACR 列表
+onMounted(async () => {
+  try {
+    const response = await acrRegistryAPI.getAll()
+    if (response && response.status === 'success') {
+      acrList.value = response.data || []
+      // 默认选中默认 ACR
+      const defaultAcr = acrList.value.find(item => item.is_default)
+      if (defaultAcr) {
+        selectedAcrId.value = defaultAcr.id
+      }
+    }
+  } catch (error) {
+    console.error('加载 ACR 列表失败:', error)
+  }
+})
 
 const getInputPlaceholder = () =>
   `每行一个镜像，格式：镜像名:标签（不要写 --platform，多架构由同步流水线处理）
@@ -371,7 +407,8 @@ const submitBatchSync = async () => {
       images: buildBatchImageItems(),
       max_concurrent: 0,
       auto_retry: true,
-      retry_count: 0
+      retry_count: 0,
+      acr_registry_id: selectedAcrId.value
     }
 
     const response = await syncAPI.submitBatchSync(batchData)
@@ -411,7 +448,8 @@ const submitMockBatchSync = async () => {
       images: buildBatchImageItems(),
       max_concurrent: 0,
       auto_retry: true,
-      retry_count: 0
+      retry_count: 0,
+      acr_registry_id: selectedAcrId.value
     }
 
     const response = await syncAPI.submitMockBatchSync(batchData)
@@ -443,6 +481,9 @@ const resetForm = () => {
   })
   doClearImages()
   inputMode.value = 'manual'
+  // 重置为默认 ACR
+  const defaultAcr = acrList.value.find(item => item.is_default)
+  selectedAcrId.value = defaultAcr ? defaultAcr.id : null
 }
 
 onUnmounted(() => {

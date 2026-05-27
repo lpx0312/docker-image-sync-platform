@@ -32,6 +32,21 @@
       :rules="syncRules" 
       label-width="120px"
     >
+      <el-form-item label="目标 ACR">
+        <el-select
+          v-model="selectedAcrId"
+          placeholder="选择目标 ACR"
+          style="width: 100%"
+        >
+          <el-option
+            v-for="item in acrList"
+            :key="item.id"
+            :label="item.namespace"
+            :value="item.id"
+          />
+        </el-select>
+      </el-form-item>
+
       <el-form-item label="源镜像地址" prop="sourceImage">
         <el-input
           v-model="syncForm.sourceImage"
@@ -82,10 +97,11 @@
  * - 用户交互和状态反馈
  */
 
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Upload, RefreshLeft } from '@element-plus/icons-vue'
 import { useSyncStore } from '@/stores/sync'
+import { acrRegistryAPI } from '@/api'
 
 /**
  * 组件事件定义
@@ -104,6 +120,12 @@ const syncStore = useSyncStore()
  * 用于表单验证和重置操作
  */
 const syncFormRef = ref()
+
+/**
+ * ACR 列表和选中的 ACR
+ */
+const acrList = ref([])
+const selectedAcrId = ref(null)
 
 /**
  * 表单数据模型
@@ -136,6 +158,25 @@ const syncRules = {
 }
 
 /**
+ * 组件挂载时加载 ACR 列表
+ */
+onMounted(async () => {
+  try {
+    const response = await acrRegistryAPI.getAll()
+    if (response && response.status === 'success') {
+      acrList.value = response.data || []
+      // 默认选中默认 ACR
+      const defaultAcr = acrList.value.find(item => item.is_default)
+      if (defaultAcr) {
+        selectedAcrId.value = defaultAcr.id
+      }
+    }
+  } catch (error) {
+    console.error('加载 ACR 列表失败:', error)
+  }
+})
+
+/**
  * 提交同步任务
  * 
  * 处理流程：
@@ -154,7 +195,8 @@ const submitSync = async () => {
     
     const syncData = {
       images: [syncForm.sourceImage],
-      description: syncForm.description
+      description: syncForm.description,
+      acr_registry_id: selectedAcrId.value
     }
     
     const result = await syncStore.submitSync(syncData)
@@ -192,6 +234,9 @@ const resetForm = () => {
     sourceImage: '',
     description: ''
   })
+  // 重置为默认 ACR
+  const defaultAcr = acrList.value.find(item => item.is_default)
+  selectedAcrId.value = defaultAcr ? defaultAcr.id : null
 }
 </script>
 
