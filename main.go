@@ -335,6 +335,22 @@ func main() {
 					configGroup.GET("/debug/:key", configHandler.DebugGetConfig)
 				}
 			}
+
+			// ACR配置管理
+			acrRegistryService := services.NewAcrRegistryService(database.DB, encryptionService)
+			acrRegistryHandler := handlers.NewAcrRegistryHandler(acrRegistryService)
+
+			acrRegistries := protected.Group("/acr-registries")
+			acrRegistries.Use(middleware.PermissionRequired(models.PermConfig))
+			{
+				acrRegistries.GET("", acrRegistryHandler.GetAll)
+				acrRegistries.POST("", acrRegistryHandler.Create)
+				acrRegistries.GET("/default", acrRegistryHandler.GetDefault)
+				acrRegistries.GET("/:id", acrRegistryHandler.GetByID)
+				acrRegistries.PUT("/:id", acrRegistryHandler.Update)
+				acrRegistries.DELETE("/:id", acrRegistryHandler.Delete)
+				acrRegistries.PUT("/:id/default", acrRegistryHandler.SetDefault)
+			}
 		}
 	}
 
