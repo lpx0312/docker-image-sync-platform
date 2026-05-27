@@ -480,4 +480,79 @@ export const authAPI = {
   getRoles: () => api.get('/auth/roles'),
 }
 
+/**
+ * ACR 配置管理 API
+ *
+ * 提供阿里云容器镜像服务（ACR）仓库配置的完整管理功能，包括：
+ * - 获取所有 ACR 配置
+ * - 根据 ID 获取单个配置
+ * - 获取默认 ACR 配置
+ * - 创建、更新、删除配置
+ * - 设置默认 ACR
+ */
+export const acrRegistryAPI = {
+  /**
+   * 获取所有 ACR 配置
+   *
+   * @returns {Promise} 返回 ACR 配置列表
+   */
+  getAll: () => api.get('/acr-registries'),
+
+  /**
+   * 根据 ID 获取 ACR 配置
+   *
+   * @param {number} id - ACR 配置 ID
+   * @returns {Promise} 返回单个 ACR 配置详情
+   */
+  getById: (id) => api.get(`/acr-registries/${id}`),
+
+  /**
+   * 获取默认 ACR 配置
+   *
+   * @returns {Promise} 返回默认 ACR 配置
+   */
+  getDefault: () => api.get('/acr-registries/default'),
+
+  /**
+   * 创建 ACR 配置
+   *
+   * @param {Object} data - ACR 配置数据
+   * @param {string} data.registry_url - 仓库地址
+   * @param {string} data.namespace - 命名空间
+   * @param {string} data.username - 用户名
+   * @param {string} data.password - 密码
+   * @returns {Promise} 返回创建结果
+   */
+  create: (data) => api.post('/acr-registries', data),
+
+  /**
+   * 更新 ACR 配置
+   *
+   * @param {number} id - ACR 配置 ID
+   * @param {Object} data - 需要更新的字段
+   * @param {string} [data.registry_url] - 仓库地址
+   * @param {string} [data.namespace] - 命名空间
+   * @param {string} [data.username] - 用户名
+   * @param {string} [data.password] - 密码
+   * @returns {Promise} 返回更新结果
+   */
+  update: (id, data) => api.put(`/acr-registries/${id}`, data),
+
+  /**
+   * 删除 ACR 配置
+   *
+   * @param {number} id - ACR 配置 ID
+   * @returns {Promise} 返回删除结果
+   */
+  delete: (id) => api.delete(`/acr-registries/${id}`),
+
+  /**
+   * 设置默认 ACR
+   *
+   * @param {number} id - ACR 配置 ID
+   * @returns {Promise} 返回设置结果
+   */
+  setDefault: (id) => api.put(`/acr-registries/${id}/default`),
+}
+
 export default api
