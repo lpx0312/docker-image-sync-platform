@@ -226,6 +226,7 @@ func (h *SyncHandler) SubmitBatchSync(c *gin.Context) {
 				MaxRetries:    req.RetryCount,
 				Description:   img.Description,
 				OriginalInput: originalInput,
+				AcrRegistryID: req.AcrRegistryID,
 			}
 
 			if err := tx.Create(record).Error; err != nil {
@@ -351,6 +352,7 @@ func (h *SyncHandler) SubmitSync(c *gin.Context) {
 				InputOrder:    i + 1,
 				OriginalInput: originalInput,
 				Description:   req.Description,
+				AcrRegistryID: req.AcrRegistryID,
 			}
 
 			if err := tx.Create(record).Error; err != nil {
@@ -1714,6 +1716,7 @@ func (h *SyncHandler) SubmitMockBatchSync(c *gin.Context) {
 			Priority:      img.Priority,
 			MaxRetries:    req.RetryCount,
 			Description:   img.Description, // 添加描述字段
+			AcrRegistryID: req.AcrRegistryID,
 		}
 
 		if err := database.DB.Create(record).Error; err != nil {

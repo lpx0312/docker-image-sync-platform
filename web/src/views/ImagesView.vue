@@ -663,6 +663,27 @@ const getArchTagType = (arch) => {
   return 'info'
 }
 
+// ACR 配置缓存
+const acrRegistryMap = ref({})
+
+// 加载 ACR 配置列表
+const loadAcrRegistries = async () => {
+  try {
+    const { acrRegistryAPI } = await import('@/api')
+    const response = await acrRegistryAPI.getAll()
+    if (response && response.status === 'success') {
+      const list = response.data || []
+      const map = {}
+      list.forEach(item => {
+        map[item.id] = item
+      })
+      acrRegistryMap.value = map
+    }
+  } catch (error) {
+    console.error('加载 ACR 配置失败:', error)
+  }
+}
+
 // 获取目标镜像地址
 const getTargetImage = (row) => {
   // 如果 acr_image 有值，直接返回
@@ -670,7 +691,15 @@ const getTargetImage = (row) => {
     return row.acr_image
   }
 
-  // 否则生成默认的 ACR 地址，使用动态配置
+  // 根据 acr_registry_id 获取对应的 ACR 配置
+  if (row.acr_registry_id && acrRegistryMap.value[row.acr_registry_id]) {
+    const acr = acrRegistryMap.value[row.acr_registry_id]
+    if (row.original_image && row.tag) {
+      return `${acr.registry_url}/${acr.namespace}/${row.original_image}:${row.tag}`
+    }
+  }
+
+  // 否则使用默认配置
   if (row.original_image && row.tag) {
     return `${aliyunConfig.value.registry}/${aliyunConfig.value.namespace}/${row.original_image}:${row.tag}`
   }
@@ -723,11 +752,14 @@ onMounted(() => {
   searchText.value = imageStore.filters.search
   architectureFilter.value = imageStore.filters.architecture
   deduplicateEnabled.value = imageStore.filters.deduplicate
-  
+
+  // 加载 ACR 配置
+  loadAcrRegistries()
+
   loadData().catch(error => {
     console.error('ImagesView loadData error:', error)
   })
-  
+
   // 开始状态轮询
   startStatusPolling()
 })
