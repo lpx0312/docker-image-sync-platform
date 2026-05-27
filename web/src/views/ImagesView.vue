@@ -67,7 +67,7 @@
     <el-card class="list-card">
       <template #header>
         <div class="card-header">
-          <span>镜像列表</span>
+          <span>镜像同步记录</span>
           <div class="header-actions">
             <el-button 
               type="success" 
