@@ -146,20 +146,26 @@ func (s *AcrRepositoryService) SyncFromRecords(acrRegistryID uint) (int, error) 
 	return created, nil
 }
 
-// extractRepoName 从镜像地址中提取仓库名称
+// extractRepoName 从镜像地址中提取仓库名称（不含 tag 和 registry/命名空间前缀）
+// 与 utils.GenerateACRImage 的命名规则一致：取路径最后一段
 func extractRepoName(image string) string {
-	// 移除 tag
-	parts := strings.Split(image, ":")
-	if len(parts) > 1 {
-		image = parts[0]
+	image = strings.TrimSpace(image)
+	if image == "" {
+		return ""
 	}
 
-	// 移除 registry 前缀
-	if strings.Contains(image, ".") {
-		parts = strings.SplitN(image, "/", 2)
-		if len(parts) > 1 {
-			return parts[1]
+	// 移除 tag（OriginalImage 通常不含 tag，此处作防御性处理）
+	if idx := strings.LastIndex(image, ":"); idx != -1 {
+		afterColon := image[idx+1:]
+		if !strings.Contains(afterColon, "/") {
+			image = image[:idx]
 		}
+	}
+
+	// 如 gitlab/gitlab-ce -> gitlab-ce，gcr.io/google-containers/pause -> pause
+	if strings.Contains(image, "/") {
+		parts := strings.Split(image, "/")
+		return parts[len(parts)-1]
 	}
 
 	return image
