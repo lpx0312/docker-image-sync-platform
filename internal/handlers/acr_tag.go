@@ -65,8 +65,8 @@ func (h *AcrTagHandler) GetTags(c *gin.Context) {
 		return
 	}
 
-	// 获取 Tag 列表
-	tags, err := h.acrAPIService.GetTags(acr.RegistryURL, acr.Username, password, acr.Namespace, repositoryName)
+	// 获取 Tag 列表及详细信息（服务端批量拉取，避免前端 N+1 触发 ACR 限流）
+	tags, err := h.acrAPIService.GetTagsWithDetails(acr.RegistryURL, acr.Username, password, acr.Namespace, repositoryName, acr.AuthServer, acr.DockerService)
 	if err != nil {
 		logger.Logger.Error("获取Tag列表失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
@@ -101,7 +101,7 @@ func (h *AcrTagHandler) GetTagDetail(c *gin.Context) {
 	}
 
 	// 获取 Tag 详细信息
-	detail, err := h.acrAPIService.GetTagDetail(acr.RegistryURL, acr.Username, password, acr.Namespace, repositoryName, tag)
+	detail, err := h.acrAPIService.GetTagDetail(acr.RegistryURL, acr.Username, password, acr.Namespace, repositoryName, tag, acr.AuthServer, acr.DockerService)
 	if err != nil {
 		logger.Logger.Error("获取Tag详细信息失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})

@@ -127,15 +127,17 @@ func main() {
 	// 负责数据库配置的CRUD操作和加密解密
 	configService := services.NewConfigService(database.DB, encryptionService, logrusLogger)
 
-	// 初始化认证服务和用户服务
+	// 初始化认证服务和角色/用户服务
 	authService := services.NewAuthService()
-	userService := services.NewUserService(database.DB, authService)
+	roleService := services.NewRoleService(database.DB)
+	userService := services.NewUserService(database.DB, authService, roleService)
 
 	// 初始化HTTP请求处理器
 	syncHandler := handlers.NewSyncHandler(gitServiceFactory)
 	imageHandler := handlers.NewImageHandler()
 	configHandler := handlers.NewConfigHandler(gitServiceFactory, configService)
 	authHandler := handlers.NewAuthHandler(authService, userService)
+	roleHandler := handlers.NewRoleHandler(roleService)
 
 	// TODO: 定时任务初始化
 	// 可以在这里添加定时任务，用于：
@@ -221,20 +223,32 @@ func main() {
 			authProtected.GET("/me", authHandler.GetCurrentUser)
 			authProtected.PUT("/password", authHandler.ChangePassword)
 			authProtected.POST("/logout", authHandler.Logout)
+			authProtected.GET("/roles/options", roleHandler.ListRoleOptions)
 		}
 
-		// 管理员接口
-		authAdmin := api.Group("/auth")
-		authAdmin.Use(middleware.AuthRequired(authService), middleware.AdminRequired())
+		// 用户管理接口
+		authUsers := api.Group("/auth")
+		authUsers.Use(middleware.AuthRequired(authService), middleware.PermissionRequired(roleService, models.PermUsers))
 		{
-			authAdmin.GET("/roles", authHandler.GetRoles)
-			authAdmin.GET("/login-logs", authHandler.GetLoginLogs)
-			authAdmin.GET("/users", authHandler.ListUsers)
-			authAdmin.POST("/users", authHandler.CreateUser)
-			authAdmin.PUT("/users/:id/status", authHandler.UpdateUserStatus)
-			authAdmin.PUT("/users/:id/role", authHandler.UpdateUserRole)
-			authAdmin.DELETE("/users/:id", authHandler.DeleteUser)
-			authAdmin.PUT("/users/:id/password", authHandler.ResetUserPassword)
+			authUsers.GET("/login-logs", authHandler.GetLoginLogs)
+			authUsers.GET("/users", authHandler.ListUsers)
+			authUsers.POST("/users", authHandler.CreateUser)
+			authUsers.PUT("/users/:id/status", authHandler.UpdateUserStatus)
+			authUsers.PUT("/users/:id/role", authHandler.UpdateUserRole)
+			authUsers.DELETE("/users/:id", authHandler.DeleteUser)
+			authUsers.PUT("/users/:id/password", authHandler.ResetUserPassword)
+		}
+
+		// 角色管理接口
+		authRoles := api.Group("/auth")
+		authRoles.Use(middleware.AuthRequired(authService), middleware.PermissionRequired(roleService, models.PermRoles))
+		{
+			authRoles.GET("/permissions", roleHandler.ListPermissions)
+			authRoles.GET("/roles", roleHandler.ListRoles)
+			authRoles.POST("/roles", roleHandler.CreateRole)
+			authRoles.GET("/roles/:id", roleHandler.GetRole)
+			authRoles.PUT("/roles/:id", roleHandler.UpdateRole)
+			authRoles.DELETE("/roles/:id", roleHandler.DeleteRole)
 		}
 
 		// 以下所有业务接口需要登录
@@ -242,6 +256,7 @@ func main() {
 		protected.Use(middleware.AuthRequired(authService))
 		{
 			syncGroup := protected.Group("/sync")
+			syncGroup.Use(middleware.PermissionRequired(roleService, models.PermSync))
 			{
 				syncGroup.POST("/submit", middleware.SyncRateLimit(), syncHandler.SubmitSync)
 				syncGroup.POST("/batch", middleware.SyncRateLimit(), syncHandler.SubmitBatchSync)
@@ -252,6 +267,7 @@ func main() {
 			}
 
 			images := protected.Group("/images")
+			images.Use(middleware.PermissionRequiredAny(roleService, models.PermSync, models.PermImages))
 			{
 				images.GET("/list", imageHandler.GetImages)
 				images.GET("/stats", imageHandler.GetImageStats)
@@ -263,7 +279,7 @@ func main() {
 			}
 
 			github := protected.Group("/github")
-			github.Use(middleware.PermissionRequired(models.PermGitHub))
+			github.Use(middleware.PermissionRequired(roleService, models.PermGitHub))
 			{
 			github.GET("/runs", func(c *gin.Context) {
 				page := 1
@@ -311,7 +327,7 @@ func main() {
 			}
 
 			configGroup := protected.Group("/config")
-			configGroup.Use(middleware.PermissionRequired(models.PermConfig))
+			configGroup.Use(middleware.PermissionRequired(roleService, models.PermConfig))
 			{
 				configGroup.GET("/status", configHandler.GetConfigStatus)
 				configGroup.GET("/git-repository", configHandler.GetGitRepositoryConfig)
@@ -340,16 +356,21 @@ func main() {
 			acrRegistryService := services.NewAcrRegistryService(database.DB, encryptionService)
 			acrRegistryHandler := handlers.NewAcrRegistryHandler(acrRegistryService)
 
-			acrRegistries := protected.Group("/acr-registries")
-			acrRegistries.Use(middleware.PermissionRequired(models.PermConfig))
+			acrRegistriesRead := protected.Group("/acr-registries")
+			acrRegistriesRead.Use(middleware.PermissionRequiredAny(roleService, models.PermSync, models.PermImages, models.PermConfig))
 			{
-				acrRegistries.GET("", acrRegistryHandler.GetAll)
-				acrRegistries.POST("", acrRegistryHandler.Create)
-				acrRegistries.GET("/default", acrRegistryHandler.GetDefault)
-				acrRegistries.GET("/:id", acrRegistryHandler.GetByID)
-				acrRegistries.PUT("/:id", acrRegistryHandler.Update)
-				acrRegistries.DELETE("/:id", acrRegistryHandler.Delete)
-				acrRegistries.PUT("/:id/default", acrRegistryHandler.SetDefault)
+				acrRegistriesRead.GET("", acrRegistryHandler.GetAll)
+				acrRegistriesRead.GET("/default", acrRegistryHandler.GetDefault)
+				acrRegistriesRead.GET("/:id", acrRegistryHandler.GetByID)
+			}
+
+			acrRegistriesWrite := protected.Group("/acr-registries")
+			acrRegistriesWrite.Use(middleware.PermissionRequired(roleService, models.PermConfig))
+			{
+				acrRegistriesWrite.POST("", acrRegistryHandler.Create)
+				acrRegistriesWrite.PUT("/:id", acrRegistryHandler.Update)
+				acrRegistriesWrite.DELETE("/:id", acrRegistryHandler.Delete)
+				acrRegistriesWrite.PUT("/:id/default", acrRegistryHandler.SetDefault)
 			}
 
 			// ACR镜像管理
@@ -357,7 +378,7 @@ func main() {
 			acrRepositoryHandler := handlers.NewAcrRepositoryHandler(acrRepositoryService)
 
 			acrRepositories := protected.Group("/acr-repositories")
-			acrRepositories.Use(middleware.PermissionRequired(models.PermConfig))
+			acrRepositories.Use(middleware.PermissionRequired(roleService, models.PermImages))
 			{
 				acrRepositories.GET("", acrRepositoryHandler.GetAll)
 				acrRepositories.POST("", acrRepositoryHandler.Create)
@@ -371,7 +392,7 @@ func main() {
 			acrTagHandler := handlers.NewAcrTagHandler(acrAPIService, encryptionService)
 
 			acrTags := protected.Group("/acr-tags")
-			acrTags.Use(middleware.PermissionRequired(models.PermConfig))
+			acrTags.Use(middleware.PermissionRequired(roleService, models.PermImages))
 			{
 				acrTags.GET("", acrTagHandler.GetTags)
 				acrTags.GET("/detail", acrTagHandler.GetTagDetail)

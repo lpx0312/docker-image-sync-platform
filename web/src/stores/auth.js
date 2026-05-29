@@ -9,7 +9,7 @@ export const useAuthStore = defineStore('auth', () => {
   let autoLogoutTimer = null
 
   const isLoggedIn = computed(() => !!token.value)
-  const isAdmin = computed(() => user.value?.role === 'admin')
+  const isAdmin = computed(() => user.value?.role_code === 'admin')
   const username = computed(() => user.value?.username || '')
   const permissions = computed(() => user.value?.permissions || [])
 

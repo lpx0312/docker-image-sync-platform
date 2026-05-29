@@ -16,10 +16,10 @@
           <el-table-column prop="id" label="ID" width="70" />
           <el-table-column prop="username" label="用户名" width="150" />
           <el-table-column prop="email" label="邮箱" min-width="180" />
-          <el-table-column prop="role" label="角色" width="120">
+          <el-table-column prop="role_name" label="角色" width="120">
             <template #default="{ row }">
-              <el-tag :type="roleTagType(row.role)" size="small">
-                {{ roleLabel(row.role) }}
+              <el-tag :type="roleTagType(row.role_code)" size="small">
+                {{ row.role_name || row.role_code || '未知' }}
               </el-tag>
             </template>
           </el-table-column>
@@ -135,17 +135,20 @@
         <el-form-item label="邮箱" prop="email">
           <el-input v-model="createForm.email" placeholder="可选" />
         </el-form-item>
-        <el-form-item label="角色" prop="role">
-          <el-select v-model="createForm.role" style="width: 100%">
-            <el-option label="普通用户" value="user" />
-            <el-option label="运维员" value="operator" />
-            <el-option label="管理员" value="admin" />
+        <el-form-item label="角色" prop="role_id">
+          <el-select v-model="createForm.role_id" style="width: 100%">
+            <el-option
+              v-for="role in roleOptions"
+              :key="role.id"
+              :label="role.name"
+              :value="role.id"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="权限预览">
           <div class="permission-preview">
             <el-tag
-              v-for="perm in getPermissionLabels(createForm.role)"
+              v-for="perm in getPermissionLabelsByRoleId(createForm.role_id)"
               :key="perm"
               size="small"
               type="success"
@@ -192,21 +195,24 @@
       </p>
       <el-form label-width="80px">
         <el-form-item label="当前角色">
-          <el-tag :type="roleTagType(roleTarget?.role)" size="small">
-            {{ roleLabel(roleTarget?.role) }}
+          <el-tag :type="roleTagType(roleTarget?.role_code)" size="small">
+            {{ roleTarget?.role_name || roleTarget?.role_code }}
           </el-tag>
         </el-form-item>
         <el-form-item label="新角色">
-          <el-select v-model="newRole" style="width: 100%">
-            <el-option label="普通用户" value="user" />
-            <el-option label="运维员" value="operator" />
-            <el-option label="管理员" value="admin" />
+          <el-select v-model="newRoleId" style="width: 100%">
+            <el-option
+              v-for="role in roleOptions"
+              :key="role.id"
+              :label="role.name"
+              :value="role.id"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="权限预览">
           <div class="permission-preview">
             <el-tag
-              v-for="perm in getPermissionLabels(newRole)"
+              v-for="perm in getPermissionLabelsByRoleId(newRoleId)"
               :key="perm"
               size="small"
               type="success"
@@ -226,6 +232,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { authAPI } from '@/api'
+import { permissionLabel } from '@/constants/permissions'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
@@ -277,10 +284,13 @@ const strongPasswordValidator = (rule, value, callback) => {
   }
 }
 
+const roleOptions = ref([])
+
 const showCreateDialog = ref(false)
 const createLoading = ref(false)
 const createFormRef = ref()
-const createForm = ref({ username: '', password: '', email: '', role: 'user' })
+const defaultRoleId = computed(() => roleOptions.value.find(r => r.code === 'user')?.id || roleOptions.value[0]?.id || null)
+const createForm = ref({ username: '', password: '', email: '', role_id: null })
 const createPasswordStrength = computed(() => getPasswordStrength(createForm.value.password))
 const createRules = {
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
@@ -288,7 +298,7 @@ const createRules = {
     { required: true, message: '请输入密码', trigger: 'blur' },
     { validator: strongPasswordValidator, trigger: 'blur' },
   ],
-  role: [{ required: true, message: '请选择角色', trigger: 'change' }],
+  role_id: [{ required: true, message: '请选择角色', trigger: 'change' }],
 }
 
 const showResetDialog = ref(false)
@@ -307,50 +317,48 @@ const resetRules = {
 const showRoleDialog = ref(false)
 const roleLoading = ref(false)
 const roleTarget = ref(null)
-const newRole = ref('user')
+const newRoleId = ref(null)
 
-const permissionMap = {
-  sync: '镜像同步',
-  github: 'GitHub Actions',
-  config: '系统配置',
-  users: '用户管理',
-}
-
-const rolePermissions = {
-  admin: ['sync', 'github', 'config', 'users'],
-  operator: ['sync', 'github', 'config'],
-  user: ['sync'],
-}
-
-function roleLabel(role) {
-  const map = { admin: '管理员', operator: '运维员', user: '普通用户' }
-  return map[role] || role
-}
-
-function roleTagType(role) {
+function roleTagType(roleCode) {
   const map = { admin: 'danger', operator: 'warning', user: 'info' }
-  return map[role] || 'info'
+  return map[roleCode] || 'info'
 }
 
-function getPermissionLabels(role) {
-  const perms = rolePermissions[role] || ['sync']
-  return perms.map(p => permissionMap[p] || p)
+function getRoleOptionById(roleId) {
+  return roleOptions.value.find(r => r.id === roleId)
+}
+
+function getPermissionLabelsByRoleId(roleId) {
+  const role = getRoleOptionById(roleId)
+  return (role?.permissions || []).map(p => permissionLabel(p))
+}
+
+async function loadRoleOptions() {
+  try {
+    const res = await authAPI.getRoleOptions()
+    roleOptions.value = res.data || []
+    if (!createForm.value.role_id && defaultRoleId.value) {
+      createForm.value.role_id = defaultRoleId.value
+    }
+  } catch {
+    //
+  }
 }
 
 function openChangeRole(user) {
   roleTarget.value = user
-  newRole.value = user.role
+  newRoleId.value = user.role_id
   showRoleDialog.value = true
 }
 
 async function handleUpdateRole() {
-  if (!roleTarget.value || newRole.value === roleTarget.value.role) {
+  if (!roleTarget.value || newRoleId.value === roleTarget.value.role_id) {
     showRoleDialog.value = false
     return
   }
   roleLoading.value = true
   try {
-    await authAPI.updateUserRole(roleTarget.value.id, { role: newRole.value })
+    await authAPI.updateUserRole(roleTarget.value.id, { role_id: newRoleId.value })
     ElMessage.success('角色已更新')
     showRoleDialog.value = false
     loadUsers()
@@ -430,7 +438,7 @@ async function handleCreateUser() {
     await authAPI.createUser(createForm.value)
     ElMessage.success('用户创建成功')
     showCreateDialog.value = false
-    createForm.value = { username: '', password: '', email: '', role: 'user' }
+    createForm.value = { username: '', password: '', email: '', role_id: defaultRoleId.value }
     loadUsers()
   } catch {
     //
@@ -466,6 +474,7 @@ async function handleResetPassword() {
 }
 
 onMounted(() => {
+  loadRoleOptions()
   loadUsers()
 })
 

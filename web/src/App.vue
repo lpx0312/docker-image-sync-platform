@@ -115,9 +115,10 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { ArrowDown, Key, SwitchButton, Box, Connection, Setting, User, Menu } from '@element-plus/icons-vue'
+import { ArrowDown, Key, SwitchButton, Box, Connection, Setting, User, UserFilled, Menu } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import ChangePasswordDialog from '@/components/ChangePasswordDialog.vue'
+import { PERM_SYNC, PERM_IMAGES, PERM_GITHUB, PERM_CONFIG, PERM_USERS, PERM_ROLES } from '@/constants/permissions'
 
 const router = useRouter()
 const route = useRoute()
@@ -128,11 +129,12 @@ const mobileMenuOpen = ref(false)
 const showLayout = computed(() => route.name !== 'Login' && authStore.isLoggedIn)
 
 const allNavItems = [
-  { path: '/sync', label: '镜像同步', icon: Box, permission: 'sync' },
-  { path: '/images', label: '镜像管理', icon: Box, permission: 'sync' },
-  { path: '/github', label: 'GitHub Actions', icon: Connection, permission: 'github' },
-  { path: '/config', label: '系统配置', icon: Setting, permission: 'config' },
-  { path: '/users', label: '用户管理', icon: User, permission: 'users' },
+  { path: '/sync', label: '镜像同步', icon: Box, permission: PERM_SYNC },
+  { path: '/images', label: '镜像管理', icon: Box, permission: PERM_IMAGES },
+  { path: '/github', label: 'GitHub Actions', icon: Connection, permission: PERM_GITHUB },
+  { path: '/config', label: '系统配置', icon: Setting, permission: PERM_CONFIG },
+  { path: '/users', label: '用户管理', icon: User, permission: PERM_USERS },
+  { path: '/roles', label: '角色管理', icon: UserFilled, permission: PERM_ROLES },
 ]
 
 const navItems = computed(() => {

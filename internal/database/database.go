@@ -144,10 +144,31 @@ func InitDatabase() error {
 //   - error: 迁移失败时返回错误信息，成功时返回nil
 func AutoMigrate() error {
 	// ====================================================================
-	// 第一步：执行数据库表结构迁移
+	// 第一步：RBAC 表与数据（须在 users.role_id 外键之前完成）
 	// ====================================================================
-	// 使用GORM的AutoMigrate功能自动创建或更新表结构
-	// 这会根据模型定义创建表、字段、索引等
+	if err := DB.AutoMigrate(&models.Permission{}, &models.Role{}); err != nil {
+		return fmt.Errorf("RBAC 表迁移失败: %w", err)
+	}
+
+	if err := initRolesAndPermissions(); err != nil {
+		return fmt.Errorf("初始化角色权限失败: %w", err)
+	}
+
+	if err := ensureUserRoleIDColumn(); err != nil {
+		return fmt.Errorf("准备用户角色字段失败: %w", err)
+	}
+
+	if err := migrateUserRoleIDs(); err != nil {
+		return fmt.Errorf("迁移用户角色数据失败: %w", err)
+	}
+
+	if err := dropLegacyUserRoleColumn(); err != nil {
+		return fmt.Errorf("清理旧用户角色字段失败: %w", err)
+	}
+
+	// ====================================================================
+	// 第二步：执行其余数据库表结构迁移
+	// ====================================================================
 	err := DB.AutoMigrate(
 		&models.ImageSyncRecord{},
 		&models.SyncTask{},
@@ -195,11 +216,16 @@ func initDefaultAdmin() error {
 		return fmt.Errorf("加密默认管理员密码失败: %w", err)
 	}
 
+	adminRoleID, err := getRoleIDByCode(models.RoleAdmin)
+	if err != nil {
+		return err
+	}
+
 	admin := models.User{
 		Username:     username,
 		PasswordHash: string(hash),
 		Email:        "admin@example.com",
-		Role:         models.RoleAdmin,
+		RoleID:       adminRoleID,
 		Status:       models.UserStatusActive,
 	}
 
@@ -209,6 +235,137 @@ func initDefaultAdmin() error {
 
 	log.Printf("默认管理员账号已创建: %s (请及时修改默认密码)", username)
 	return nil
+}
+
+func initRolesAndPermissions() error {
+	for _, seed := range models.DefaultPermissionSeeds {
+		var perm models.Permission
+		result := DB.Where("code = ?", seed.Code).First(&perm)
+		if result.Error != nil {
+			if err := DB.Create(&seed).Error; err != nil {
+				return fmt.Errorf("创建权限 %s 失败: %w", seed.Code, err)
+			}
+			continue
+		}
+		if err := DB.Model(&perm).Updates(map[string]interface{}{
+			"name":        seed.Name,
+			"description": seed.Description,
+			"sort_order":  seed.SortOrder,
+		}).Error; err != nil {
+			return fmt.Errorf("更新权限 %s 失败: %w", seed.Code, err)
+		}
+	}
+
+	for _, seed := range models.DefaultRoleSeeds {
+		var role models.Role
+		result := DB.Where("code = ?", seed.Code).First(&role)
+		if result.Error != nil {
+			role = models.Role{
+				Code:        seed.Code,
+				Name:        seed.Name,
+				Description: seed.Description,
+				IsSystem:    seed.IsSystem,
+			}
+			if err := DB.Create(&role).Error; err != nil {
+				return fmt.Errorf("创建角色 %s 失败: %w", seed.Code, err)
+			}
+		} else {
+			if err := DB.Model(&role).Updates(map[string]interface{}{
+				"name":        seed.Name,
+				"description": seed.Description,
+				"is_system":   seed.IsSystem,
+			}).Error; err != nil {
+				return fmt.Errorf("更新角色 %s 失败: %w", seed.Code, err)
+			}
+		}
+
+		var perms []models.Permission
+		if err := DB.Where("code IN ?", seed.Permissions).Find(&perms).Error; err != nil {
+			return fmt.Errorf("查询角色 %s 权限失败: %w", seed.Code, err)
+		}
+		if err := DB.Model(&role).Association("Permissions").Replace(perms); err != nil {
+			return fmt.Errorf("同步角色 %s 权限失败: %w", seed.Code, err)
+		}
+	}
+
+	log.Println("角色与权限初始化完成")
+	return nil
+}
+
+func ensureUserRoleIDColumn() error {
+	var count int64
+	DB.Raw(`
+		SELECT COUNT(*) FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'role_id'
+	`).Scan(&count)
+	if count > 0 {
+		return nil
+	}
+
+	var tableCount int64
+	DB.Raw(`
+		SELECT COUNT(*) FROM information_schema.tables
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND table_type = 'BASE TABLE'
+	`).Scan(&tableCount)
+	if tableCount == 0 {
+		return nil
+	}
+
+	if err := DB.Exec("ALTER TABLE users ADD COLUMN role_id bigint unsigned NULL").Error; err != nil {
+		return fmt.Errorf("添加 users.role_id 列失败: %w", err)
+	}
+	log.Println("已添加 users.role_id 列")
+	return nil
+}
+
+func migrateUserRoleIDs() error {
+	if hasUsersRoleColumn() {
+		if err := DB.Exec(`
+			UPDATE users u
+			INNER JOIN roles r ON u.role = r.code
+			SET u.role_id = r.id
+			WHERE u.role_id IS NULL OR u.role_id = 0
+		`).Error; err != nil {
+			return fmt.Errorf("从旧 role 字段迁移失败: %w", err)
+		}
+	}
+
+	defaultRoleID, err := getRoleIDByCode(models.RoleUser)
+	if err != nil {
+		return err
+	}
+	if err := DB.Exec("UPDATE users SET role_id = ? WHERE role_id IS NULL OR role_id = 0", defaultRoleID).Error; err != nil {
+		return fmt.Errorf("设置默认角色失败: %w", err)
+	}
+	return nil
+}
+
+func dropLegacyUserRoleColumn() error {
+	if !hasUsersRoleColumn() {
+		return nil
+	}
+	if err := DB.Exec("ALTER TABLE users DROP COLUMN role").Error; err != nil {
+		return fmt.Errorf("删除 users.role 列失败: %w", err)
+	}
+	log.Println("已移除 users 表旧 role 字段")
+	return nil
+}
+
+func hasUsersRoleColumn() bool {
+	var count int64
+	DB.Raw(`
+		SELECT COUNT(*) FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'role'
+	`).Scan(&count)
+	return count > 0
+}
+
+func getRoleIDByCode(code string) (uint, error) {
+	var role models.Role
+	if err := DB.Where("code = ?", code).First(&role).Error; err != nil {
+		return 0, fmt.Errorf("角色 %s 不存在", code)
+	}
+	return role.ID, nil
 }
 
 // encryptSensitiveValue 加密敏感配置值

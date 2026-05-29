@@ -120,19 +120,27 @@ docker-image-sync-platform/
 - `POST /auth/login` — 用户登录（返回 JWT Token）
 
 ### 认证 (Auth) — 需登录
-- `GET /auth/me` — 获取当前用户信息
+- `GET /auth/me` — 获取当前用户信息（含 permissions、role_id、role_name）
 - `PUT /auth/password` — 修改密码
 - `POST /auth/logout` — 登出
+- `GET /auth/roles/options` — 角色下拉选项（创建用户用）
 
-### 用户管理 (Auth) — 仅管理员
-- `GET /auth/roles` — 角色列表
+### 用户管理 (Auth) — 需 `users` 权限
 - `GET /auth/login-logs` — 登录日志
 - `GET /auth/users` — 用户列表
-- `POST /auth/users` — 创建用户
+- `POST /auth/users` — 创建用户（body 使用 `role_id`）
 - `PUT /auth/users/:id/status` — 更新用户状态（启用/禁用）
-- `PUT /auth/users/:id/role` — 更新用户角色
+- `PUT /auth/users/:id/role` — 更新用户角色（body 使用 `role_id`）
 - `DELETE /auth/users/:id` — 删除用户
 - `PUT /auth/users/:id/password` — 重置用户密码
+
+### 角色管理 (Auth) — 需 `roles` 权限
+- `GET /auth/permissions` — 全部权限列表
+- `GET /auth/roles` — 角色列表（含权限与用户数）
+- `POST /auth/roles` — 创建自定义角色
+- `GET /auth/roles/:id` — 角色详情
+- `PUT /auth/roles/:id` — 更新角色名称/描述/权限
+- `DELETE /auth/roles/:id` — 删除角色（内置角色不可删）
 
 ### 同步 (Sync) — 需登录
 - `POST /sync/submit` — 提交单镜像同步（同步限流）
@@ -207,7 +215,10 @@ docker-image-sync-platform/
 - `image_sync_records`：单条镜像同步记录
 - `sync_tasks`：批量任务
 - `system_configs`：加密配置
-- `users`：用户账号（用户名、密码哈希、邮箱、角色、状态）
+- `users`：用户账号（用户名、密码哈希、邮箱、role_id、状态）
+- `roles`：角色定义（code、name、is_system）
+- `permissions`：权限注册表（code、name）
+- `role_permissions`：角色与权限多对多关联
 - `login_logs`：登录日志审计（用户、IP、User-Agent、状态）
 
 ### 关键字段
@@ -216,11 +227,20 @@ docker-image-sync-platform/
 - 多架构（amd64、arm64）
 - 重试与优先级
 
-### 角色与权限
-- **admin**（管理员）：拥有所有权限 — sync、github、config、users
-- **operator**（运维员）：sync、github、config
-- **user**（普通用户）：sync
-- 权限标识：`PermSync`、`PermGitHub`、`PermConfig`、`PermUsers`
+### 角色与权限（数据库驱动 RBAC）
+
+- 权限在 `permissions` 表注册，启动时 seed；角色在 `roles` 表管理，支持自定义 CRUD
+- 内置角色（不可删除）：**admin**、**operator**、**user**
+- 默认权限映射：admin → 全部；operator → sync/images/github/config；user → sync（不含镜像管理）
+- 权限标识：`PermSync`、`PermImages`、`PermGitHub`、`PermConfig`、`PermUsers`、`PermRoles`
+- 用户通过 `users.role_id` 关联角色，登录/`/auth/me` 返回 `permissions` 数组
+- 新增功能模块时：在 seed 注册 permission → 路由加 `PermissionRequired` → 前端 router/App.vue 加菜单 → 管理员在「角色管理」分配权限
+
+### 新增菜单标准流程
+
+1. 后端：在 `DefaultPermissionSeeds` 注册新 permission code；路由加 `PermissionRequired`
+2. 前端：在 `web/src/constants/permissions.js`、router、App.vue 各加一处
+3. 运营：管理员在「角色管理」界面给相关角色勾选新权限
 
 ## 前端主要页面与组件
 
@@ -230,7 +250,8 @@ docker-image-sync-platform/
 - `ImagesView.vue` — 镜像管理与状态
 - `ConfigView.vue` — 系统配置
 - `GitHubView.vue` — 工作流监控
-- `UserManageView.vue` — 用户管理（管理员）
+- `UserManageView.vue` — 用户管理（需 users 权限）
+- `RoleManageView.vue` — 角色管理（需 roles 权限）
 
 ### 重要组件
 - `SingleSyncForm.vue` — 单镜像同步
@@ -248,7 +269,7 @@ docker-image-sync-platform/
 ### 路由守卫
 - 未登录自动跳转登录页
 - 基于角色权限的路由守卫（`requiredPermission`）
-- 路由：`/login`、`/sync`、`/github`、`/config`、`/users`
+- 路由：`/login`、`/sync`、`/github`、`/config`、`/users`、`/roles`
 
 ## GitHub 代码操作测试功能
 

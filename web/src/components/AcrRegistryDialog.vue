@@ -40,6 +40,56 @@
           show-password
         />
       </el-form-item>
+
+      <el-form-item label="认证服务器">
+        <div style="display: flex; align-items: center; gap: 8px; width: 100%;">
+          <el-input
+            v-model="form.auth_server"
+            placeholder="留空自动推断 (如 dockerauth.cn-hangzhou.aliyuncs.com)"
+            style="flex: 1;"
+          />
+          <el-tooltip
+            placement="top"
+            :width="420"
+            trigger="hover"
+          >
+            <template #content>
+              <div style="font-size: 12px; line-height: 1.6;">
+                <p style="margin: 0 0 8px 0; font-weight: bold;">如何获取认证服务器地址？</p>
+                <p style="margin: 0 0 4px 0;">执行以下命令查看 Www-Authenticate 响应头：</p>
+                <code style="display: block; background: #1a1a2e; color: #e94560; padding: 8px; border-radius: 4px; font-size: 11px; white-space: pre-wrap; margin: 4px 0;">curl -I https://&lt;你的registry地址&gt;/v2/</code>
+                <p style="margin: 4px 0 0 0;">从 <code>realm="https://<b>dockerauth.cn-hangzhou.aliyuncs.com</b>/auth"</code> 中提取。</p>
+              </div>
+            </template>
+            <el-icon style="cursor: pointer; color: #909399;"><QuestionFilled /></el-icon>
+          </el-tooltip>
+        </div>
+      </el-form-item>
+
+      <el-form-item label="Docker Service">
+        <div style="display: flex; align-items: center; gap: 8px; width: 100%;">
+          <el-input
+            v-model="form.docker_service"
+            placeholder="留空使用默认值 (registry.aliyuncs.com:cn-hangzhou:26842)"
+            style="flex: 1;"
+          />
+          <el-tooltip
+            placement="top"
+            :width="420"
+            trigger="hover"
+          >
+            <template #content>
+              <div style="font-size: 12px; line-height: 1.6;">
+                <p style="margin: 0 0 8px 0; font-weight: bold;">如何获取 Docker Service 值？</p>
+                <p style="margin: 0 0 4px 0;">执行以下命令查看 Www-Authenticate 响应头：</p>
+                <code style="display: block; background: #1a1a2e; color: #e94560; padding: 8px; border-radius: 4px; font-size: 11px; white-space: pre-wrap; margin: 4px 0;">curl -I https://&lt;你的registry地址&gt;/v2/</code>
+                <p style="margin: 4px 0 0 0;">从 <code>service="<b>registry.aliyuncs.com:cn-hangzhou:26842</b>"</code> 中提取。</p>
+              </div>
+            </template>
+            <el-icon style="cursor: pointer; color: #909399;"><QuestionFilled /></el-icon>
+          </el-tooltip>
+        </div>
+      </el-form-item>
     </el-form>
 
     <template #footer>
@@ -56,6 +106,7 @@
 <script setup>
 import { ref, reactive, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { QuestionFilled } from '@element-plus/icons-vue'
 import { acrRegistryAPI } from '@/api'
 
 const props = defineProps({
@@ -76,6 +127,8 @@ const form = reactive({
   namespace: '',
   username: '',
   password: '',
+  auth_server: '',
+  docker_service: '',
 })
 
 const rules = {
@@ -94,6 +147,8 @@ watch(() => props.modelValue, (val) => {
       namespace: props.editData.namespace,
       username: props.editData.username,
       password: '***',
+      auth_server: props.editData.auth_server || '',
+      docker_service: props.editData.docker_service || '',
     })
   } else {
     isEdit.value = false
@@ -102,6 +157,8 @@ watch(() => props.modelValue, (val) => {
       namespace: '',
       username: '',
       password: '',
+      auth_server: '',
+      docker_service: '',
     })
   }
 })

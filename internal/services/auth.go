@@ -14,7 +14,8 @@ import (
 type Claims struct {
 	UserID   uint   `json:"user_id"`
 	Username string `json:"username"`
-	Role     string `json:"role"`
+	RoleID   uint   `json:"role_id"`
+	RoleCode string `json:"role_code"`
 	jwt.RegisteredClaims
 }
 
@@ -27,7 +28,7 @@ func NewAuthService() *AuthService {
 }
 
 // GenerateToken 生成 JWT Token
-func (s *AuthService) GenerateToken(userID uint, username, role string, rememberMe bool) (string, time.Time, error) {
+func (s *AuthService) GenerateToken(userID uint, username string, roleID uint, roleCode string, rememberMe bool) (string, time.Time, error) {
 	secret := config.AppConfig.Auth.JWTSecret
 	if secret == "" {
 		secret = "docker-sync-platform-jwt-secret-change-me"
@@ -55,7 +56,8 @@ func (s *AuthService) GenerateToken(userID uint, username, role string, remember
 	claims := &Claims{
 		UserID:   userID,
 		Username: username,
-		Role:     role,
+		RoleID:   roleID,
+		RoleCode: roleCode,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

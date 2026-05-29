@@ -477,7 +477,16 @@ export const authAPI = {
   updateUserRole: (id, data) => api.put(`/auth/users/${id}/role`, data),
   deleteUser: (id) => api.delete(`/auth/users/${id}`),
   resetUserPassword: (id, data) => api.put(`/auth/users/${id}/password`, data),
-  getRoles: () => api.get('/auth/roles'),
+  getRoleOptions: () => api.get('/auth/roles/options'),
+}
+
+export const roleAPI = {
+  listPermissions: () => api.get('/auth/permissions'),
+  listRoles: () => api.get('/auth/roles'),
+  createRole: (data) => api.post('/auth/roles', data),
+  getRole: (id) => api.get(`/auth/roles/${id}`),
+  updateRole: (id, data) => api.put(`/auth/roles/${id}`, data),
+  deleteRole: (id) => api.delete(`/auth/roles/${id}`),
 }
 
 /**
@@ -585,9 +594,12 @@ export const acrRepositoryAPI = {
 
 // ACR Tag 查询 API
 export const acrTagAPI = {
-  // 获取 Tag 列表
+  // 获取 Tag 列表（含架构、Digest 等详细信息）
   getTags: (acrRegistryId, repositoryName) => {
-    return api.get('/acr-tags', { params: { acr_registry_id: acrRegistryId, repository_name: repositoryName } })
+    return api.get('/acr-tags', {
+      params: { acr_registry_id: acrRegistryId, repository_name: repositoryName },
+      timeout: 120000,
+    })
   },
 
   // 获取 Tag 详细信息

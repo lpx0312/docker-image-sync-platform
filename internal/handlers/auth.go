@@ -91,7 +91,12 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	token, expiresAt, err := h.authService.GenerateToken(user.ID, user.Username, user.Role, req.RememberMe)
+	roleCode := ""
+	if user.Role != nil {
+		roleCode = user.Role.Code
+	}
+
+	token, expiresAt, err := h.authService.GenerateToken(user.ID, user.Username, user.RoleID, roleCode, req.RememberMe)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成Token失败"})
 		return
@@ -100,15 +105,15 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	h.userService.UpdateLastLogin(user.ID)
 	h.userService.RecordLoginLog(user.ID, req.Username, ip, ua, models.LoginStatusSuccess, "登录成功")
 
+	userResp, err := h.userService.BuildUserResponse(user)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取用户信息失败"})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"token": token,
-		"user": gin.H{
-			"id":          user.ID,
-			"username":    user.Username,
-			"role":        user.Role,
-			"email":       user.Email,
-			"permissions": models.GetRolePermissions(user.Role),
-		},
+		"token":      token,
+		"user":       userResp,
 		"expires_at": expiresAt,
 	})
 }
@@ -122,16 +127,13 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"id":            user.ID,
-		"username":      user.Username,
-		"role":          user.Role,
-		"email":         user.Email,
-		"status":        user.Status,
-		"permissions":   models.GetRolePermissions(user.Role),
-		"last_login_at": user.LastLoginAt,
-		"created_at":    user.CreatedAt,
-	})
+	userResp, err := h.userService.BuildUserResponse(user)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取用户信息失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, userResp)
 }
 
 type changePasswordRequest struct {
@@ -212,14 +214,24 @@ func (h *AuthHandler) ListUsers(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"total": total, "data": users})
+	data := make([]map[string]interface{}, 0, len(users))
+	for i := range users {
+		item, buildErr := h.userService.BuildUserResponse(&users[i])
+		if buildErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "构建用户列表失败"})
+			return
+		}
+		data = append(data, item)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"total": total, "data": data})
 }
 
 type createUserRequest struct {
 	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required"`
 	Email    string `json:"email"`
-	Role     string `json:"role" binding:"required,oneof=admin operator user"`
+	RoleID   uint   `json:"role_id" binding:"required"`
 }
 
 // CreateUser 创建用户
@@ -235,13 +247,19 @@ func (h *AuthHandler) CreateUser(c *gin.Context) {
 		return
 	}
 
-	user, err := h.userService.CreateUser(req.Username, req.Password, req.Email, req.Role)
+	user, err := h.userService.CreateUser(req.Username, req.Password, req.Email, req.RoleID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "用户创建成功", "user": user})
+	userResp, err := h.userService.BuildUserResponse(user)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"message": "用户创建成功", "user": user})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "用户创建成功", "user": userResp})
 }
 
 type updateStatusRequest struct {
@@ -323,13 +341,8 @@ func (h *AuthHandler) ResetUserPassword(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "密码已重置"})
 }
 
-// GetRoles 获取所有可用角色及其权限
-func (h *AuthHandler) GetRoles(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"roles": models.GetAllRoles()})
-}
-
-type updateRoleRequest struct {
-	Role string `json:"role" binding:"required"`
+type updateUserRoleRequest struct {
+	RoleID uint `json:"role_id" binding:"required"`
 }
 
 // UpdateUserRole 修改用户角色
@@ -340,14 +353,9 @@ func (h *AuthHandler) UpdateUserRole(c *gin.Context) {
 		return
 	}
 
-	var req updateRoleRequest
+	var req updateUserRoleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "角色值无效"})
-		return
-	}
-
-	if !models.IsValidRole(req.Role) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的角色类型"})
 		return
 	}
 
@@ -357,7 +365,7 @@ func (h *AuthHandler) UpdateUserRole(c *gin.Context) {
 		return
 	}
 
-	if err := h.userService.UpdateUserRole(uint(id), req.Role); err != nil {
+	if err := h.userService.UpdateUserRole(uint(id), req.RoleID); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}

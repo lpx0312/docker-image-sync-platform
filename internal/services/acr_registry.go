@@ -65,10 +65,12 @@ func (s *AcrRegistryService) Create(req *models.AcrRegistryRequest) (*models.Acr
 	}
 
 	registry := &models.AcrRegistry{
-		RegistryURL: req.RegistryURL,
-		Namespace:   req.Namespace,
-		Username:    req.Username,
-		Password:    encryptedPassword,
+		RegistryURL:   req.RegistryURL,
+		Namespace:     req.Namespace,
+		Username:      req.Username,
+		Password:      encryptedPassword,
+		AuthServer:    req.AuthServer,
+		DockerService: req.DockerService,
 	}
 
 	// 如果是第一个ACR，自动设为默认
@@ -108,6 +110,13 @@ func (s *AcrRegistryService) Update(id uint, req *models.AcrRegistryUpdateReques
 			return nil, fmt.Errorf("加密密码失败: %w", err)
 		}
 		updates["password"] = encryptedPassword
+	}
+	// auth_server 和 docker_service 允许设置为空字符串（清除值）
+	if req.AuthServer != "" {
+		updates["auth_server"] = req.AuthServer
+	}
+	if req.DockerService != "" {
+		updates["docker_service"] = req.DockerService
 	}
 
 	if err := s.db.Model(registry).Updates(updates).Error; err != nil {

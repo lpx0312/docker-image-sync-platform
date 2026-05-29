@@ -1,10 +1,5 @@
 <template>
-  <el-dialog
-    v-model="visible"
-    :title="`${repositoryName} - Tag 列表`"
-    width="900px"
-    @close="handleClose"
-  >
+  <div class="acr-tag-list-panel">
     <!-- 搜索区域 -->
     <div class="search-section">
       <el-row :gutter="16">
@@ -13,7 +8,6 @@
             v-model="searchTag"
             placeholder="搜索 Tag 名称"
             clearable
-            @input="handleSearch"
           />
         </el-col>
         <el-col :span="8">
@@ -21,7 +15,6 @@
             v-model="searchDigest"
             placeholder="搜索 SHA256"
             clearable
-            @input="handleSearch"
           />
         </el-col>
         <el-col :span="8">
@@ -29,7 +22,7 @@
             v-model="searchArch"
             placeholder="筛选架构"
             clearable
-            @change="handleSearch"
+            style="width: 100%;"
           >
             <el-option label="amd64" value="amd64" />
             <el-option label="arm64" value="arm64" />
@@ -40,39 +33,50 @@
 
     <!-- Tag 列表 -->
     <el-table
-      :data="filteredTags"
+      :data="paginatedTags"
       v-loading="loading"
       empty-text="暂无 Tag 数据"
       style="margin-top: 16px;"
     >
       <el-table-column prop="tag" label="Tag" width="150" />
-      <el-table-column label="架构" width="120">
+      <el-table-column label="架构" width="100">
         <template #default="{ row }">
-          <div class="arch-tags">
-            <el-tag
-              v-for="arch in row.architectures"
+          <div class="stacked-cell">
+            <div
+              v-for="arch in getOrderedArchs(row.architectures)"
               :key="arch"
-              size="small"
-              :type="getArchTagType(arch)"
+              class="stacked-row"
             >
-              {{ arch }}
-            </el-tag>
+              <el-tag size="small" :type="getArchTagType(arch)">
+                {{ arch }}
+              </el-tag>
+            </div>
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="Digest" min-width="200">
+      <el-table-column label="Digest" min-width="240">
         <template #default="{ row }">
-          <div v-for="arch in row.architectures" :key="arch" class="digest-item">
-            <el-text type="info" size="small">{{ arch }}:</el-text>
-            <el-text size="small" class="digest-value">{{ row.digests[arch] || '-' }}</el-text>
+          <div class="stacked-cell">
+            <div
+              v-for="arch in getOrderedArchs(row.architectures)"
+              :key="arch"
+              class="stacked-row"
+            >
+              <span class="digest-value">{{ row.digests[arch] || '-' }}</span>
+            </div>
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="大小" width="120">
+      <el-table-column label="大小" width="100">
         <template #default="{ row }">
-          <div v-for="arch in row.architectures" :key="arch" class="size-item">
-            <el-text type="info" size="small">{{ arch }}:</el-text>
-            <el-text size="small">{{ formatSize(row.sizes[arch]) }}</el-text>
+          <div class="stacked-cell">
+            <div
+              v-for="arch in getOrderedArchs(row.architectures)"
+              :key="arch"
+              class="stacked-row"
+            >
+              <span>{{ formatSize(row.sizes[arch]) }}</span>
+            </div>
           </div>
         </template>
       </el-table-column>
@@ -85,43 +89,41 @@
       </el-table-column>
     </el-table>
 
-    <template #footer>
-      <el-button @click="handleClose">关闭</el-button>
-    </template>
-  </el-dialog>
+    <div class="pagination-section">
+      <el-pagination
+        v-model:current-page="currentPage"
+        v-model:page-size="pageSize"
+        :page-sizes="[10, 20, 50, 100]"
+        :total="filteredTags.length"
+        layout="total, sizes, prev, pager, next, jumper"
+        background
+        @size-change="handlePageSizeChange"
+        @current-change="handlePageChange"
+      />
+    </div>
+  </div>
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { acrTagAPI } from '@/api'
 import { copyToClipboard } from '@/utils/clipboard'
 
 const props = defineProps({
-  modelValue: Boolean,
   acrRegistryId: Number,
   repositoryName: String,
+  registryUrl: String,
+  namespace: String,
 })
 
-const emit = defineEmits(['update:modelValue'])
-
-const visible = ref(false)
 const loading = ref(false)
 const tags = ref([])
 const searchTag = ref('')
 const searchDigest = ref('')
 const searchArch = ref('')
-
-watch(() => props.modelValue, (val) => {
-  visible.value = val
-  if (val && props.acrRegistryId && props.repositoryName) {
-    loadTags()
-  }
-})
-
-watch(visible, (val) => {
-  emit('update:modelValue', val)
-})
+const currentPage = ref(1)
+const pageSize = ref(20)
 
 const filteredTags = computed(() => {
   return tags.value.filter(tag => {
@@ -141,35 +143,24 @@ const filteredTags = computed(() => {
   })
 })
 
+const paginatedTags = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return filteredTags.value.slice(start, start + pageSize.value)
+})
+
+watch([searchTag, searchDigest, searchArch], () => {
+  currentPage.value = 1
+})
+
 const loadTags = async () => {
+  if (!props.acrRegistryId || !props.repositoryName) return
+
   loading.value = true
   try {
     const response = await acrTagAPI.getTags(props.acrRegistryId, props.repositoryName)
     if (response && response.status === 'success') {
-      const tagNames = response.data || []
-      // 获取每个 tag 的详细信息
-      const details = []
-      for (const tagName of tagNames) {
-        try {
-          const detailResp = await acrTagAPI.getTagDetail(
-            props.acrRegistryId,
-            props.repositoryName,
-            tagName
-          )
-          if (detailResp && detailResp.status === 'success') {
-            details.push(detailResp.data)
-          }
-        } catch (e) {
-          console.error(`获取 ${tagName} 详情失败:`, e)
-          details.push({
-            tag: tagName,
-            architectures: [],
-            digests: {},
-            sizes: {},
-          })
-        }
-      }
-      tags.value = details
+      tags.value = response.data || []
+      currentPage.value = 1
     }
   } catch (error) {
     console.error('加载Tag列表失败:', error)
@@ -179,22 +170,25 @@ const loadTags = async () => {
   }
 }
 
-const handleSearch = () => {
-  // 搜索是响应式的，无需额外处理
+const handlePageSizeChange = () => {
+  currentPage.value = 1
 }
 
-const handleCopy = (tag) => {
-  const text = `${props.repositoryName}:${tag.tag}`
-  copyToClipboard(text)
-  ElMessage.success('已复制到剪贴板')
+const handlePageChange = () => {}
+
+const buildImageRef = (tagName) => {
+  const registry = (props.registryUrl || '').replace(/^https?:\/\//, '')
+  const parts = [registry, props.namespace, props.repositoryName].filter(Boolean)
+  return `${parts.join('/')}:${tagName}`
 }
 
-const handleClose = () => {
-  visible.value = false
-  tags.value = []
-  searchTag.value = ''
-  searchDigest.value = ''
-  searchArch.value = ''
+const handleCopy = async (tag) => {
+  await copyToClipboard(buildImageRef(tag.tag))
+}
+
+const getOrderedArchs = (architectures = []) => {
+  const order = { amd64: 0, arm64: 1 }
+  return [...architectures].sort((a, b) => (order[a] ?? 99) - (order[b] ?? 99))
 }
 
 const getArchTagType = (arch) => {
@@ -210,6 +204,22 @@ const formatSize = (bytes) => {
   if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
   return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB'
 }
+
+watch(
+  () => [props.acrRegistryId, props.repositoryName],
+  () => {
+    loadTags()
+  }
+)
+
+onMounted(() => {
+  loadTags()
+})
+
+defineExpose({
+  loadTags,
+  loading,
+})
 </script>
 
 <style scoped>
@@ -217,20 +227,26 @@ const formatSize = (bytes) => {
   margin-bottom: 16px;
 }
 
-.arch-tags {
+.stacked-cell {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+  flex-direction: column;
+  gap: 6px;
 }
 
-.digest-item,
-.size-item {
+.stacked-row {
+  min-height: 24px;
   display: flex;
-  gap: 4px;
-  margin-bottom: 2px;
+  align-items: center;
 }
 
 .digest-value {
   word-break: break-all;
+  line-height: 1.4;
+}
+
+.pagination-section {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
 }
 </style>

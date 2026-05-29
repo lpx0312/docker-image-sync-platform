@@ -34,6 +34,10 @@
     {
       "name": "Health",
       "description": "健康检查"
+    },
+    {
+      "name": "Auth",
+      "description": "认证、用户与角色管理"
     }
   ],
   "paths": {
@@ -710,6 +714,79 @@
           }
         }
       }
+    },
+    "/auth/roles": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "角色列表",
+        "description": "获取所有角色及其权限（需 roles 权限）",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": { "description": "成功" },
+          "403": { "description": "无权限" }
+        }
+      },
+      "post": {
+        "tags": ["Auth"],
+        "summary": "创建角色",
+        "description": "创建自定义角色（需 roles 权限）",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{
+          "in": "body",
+          "name": "body",
+          "required": true,
+          "schema": { "$ref": "#/definitions/CreateRoleRequest" }
+        }],
+        "responses": {
+          "200": { "description": "创建成功" },
+          "400": { "description": "参数错误" },
+          "403": { "description": "无权限" }
+        }
+      }
+    },
+    "/auth/roles/{id}": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "角色详情",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "type": "integer" }],
+        "responses": { "200": { "description": "成功" }, "404": { "description": "不存在" } }
+      },
+      "put": {
+        "tags": ["Auth"],
+        "summary": "更新角色",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "type": "integer" },
+          { "in": "body", "name": "body", "required": true, "schema": { "$ref": "#/definitions/UpdateRoleRequest" } }
+        ],
+        "responses": { "200": { "description": "更新成功" }, "400": { "description": "参数错误" } }
+      },
+      "delete": {
+        "tags": ["Auth"],
+        "summary": "删除角色",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "type": "integer" }],
+        "responses": { "200": { "description": "删除成功" }, "400": { "description": "不可删除" } }
+      }
+    },
+    "/auth/permissions": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "权限列表",
+        "description": "获取系统注册的全部权限（需 roles 权限）",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "200": { "description": "成功" } }
+      }
+    },
+    "/auth/roles/options": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "角色下拉选项",
+        "description": "供用户管理表单使用（仅需登录）",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "200": { "description": "成功" } }
+      }
     }
   },
   "definitions": {
@@ -1277,6 +1354,29 @@
           "type": "string",
           "description": "系统版本号"
         }
+      }
+    },
+    "CreateRoleRequest": {
+      "type": "object",
+      "required": ["name", "code", "permissions"],
+      "properties": {
+        "name": { "type": "string", "description": "角色名称" },
+        "code": { "type": "string", "description": "角色标识（小写字母开头）" },
+        "description": { "type": "string", "description": "描述" },
+        "permissions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "权限 code 列表"
+        }
+      }
+    },
+    "UpdateRoleRequest": {
+      "type": "object",
+      "required": ["name", "permissions"],
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "permissions": { "type": "array", "items": { "type": "string" } }
       }
     }
   }

@@ -54,7 +54,7 @@
         <el-table-column type="index" label="序号" width="60" />
         <el-table-column prop="repository_name" label="镜像名称" min-width="200">
           <template #default="{ row }">
-            <el-button type="primary" link @click="showTagList(row)">
+            <el-button type="primary" link @click="goToTags(row)">
               {{ row.repository_name }}
             </el-button>
           </template>
@@ -69,8 +69,11 @@
             {{ formatTime(row.updated_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="100" fixed="right">
+        <el-table-column label="操作" width="140" fixed="right">
           <template #default="{ row }">
+            <el-button type="primary" link size="small" @click="goToTags(row)">
+              查看 Tag
+            </el-button>
             <el-popconfirm
               title="确定要删除这个镜像吗？"
               @confirm="handleDelete(row)"
@@ -97,25 +100,21 @@
       :acr-registry-id="selectedAcrId"
       @success="loadRepositories"
     />
-
-    <!-- Tag 列表对话框 -->
-    <AcrTagList
-      v-model="tagListVisible"
-      :acr-registry-id="selectedAcrId"
-      :repository-name="selectedRepoName"
-    />
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { acrRegistryAPI, acrRepositoryAPI } from '@/api'
 import { formatTime } from '@/utils/format'
 import AddRepositoryDialog from '@/components/AddRepositoryDialog.vue'
 import BatchAddRepositoryDialog from '@/components/BatchAddRepositoryDialog.vue'
-import AcrTagList from '@/components/AcrTagList.vue'
+
+const router = useRouter()
+const route = useRoute()
 
 const acrList = ref([])
 const selectedAcrId = ref(null)
@@ -125,23 +124,41 @@ const syncing = ref(false)
 
 const addDialogVisible = ref(false)
 const batchAddDialogVisible = ref(false)
-const tagListVisible = ref(false)
-const selectedRepoName = ref('')
 
 onMounted(() => {
   loadAcrList()
 })
+
+const applyAcrSelection = () => {
+  const queryAcrId = Number(route.query.acrId)
+  if (queryAcrId && acrList.value.some(item => item.id === queryAcrId)) {
+    selectedAcrId.value = queryAcrId
+    loadRepositories()
+    return true
+  }
+  return false
+}
+
+watch(
+  () => route.query.acrId,
+  () => {
+    if (acrList.value.length > 0) {
+      applyAcrSelection()
+    }
+  }
+)
 
 const loadAcrList = async () => {
   try {
     const response = await acrRegistryAPI.getAll()
     if (response && response.status === 'success') {
       acrList.value = response.data || []
-      // 默认选中默认 ACR
-      const defaultAcr = acrList.value.find(item => item.is_default)
-      if (defaultAcr) {
-        selectedAcrId.value = defaultAcr.id
-        loadRepositories()
+      if (!applyAcrSelection()) {
+        const defaultAcr = acrList.value.find(item => item.is_default)
+        if (defaultAcr) {
+          selectedAcrId.value = defaultAcr.id
+          loadRepositories()
+        }
       }
     }
   } catch (error) {
@@ -151,6 +168,7 @@ const loadAcrList = async () => {
 
 const handleAcrChange = () => {
   if (selectedAcrId.value) {
+    router.replace({ path: '/images', query: { acrId: selectedAcrId.value } })
     loadRepositories()
   }
 }
@@ -188,9 +206,18 @@ const showBatchAddDialog = () => {
   batchAddDialogVisible.value = true
 }
 
-const showTagList = (row) => {
-  selectedRepoName.value = row.repository_name
-  tagListVisible.value = true
+const goToTags = (row) => {
+  if (!selectedAcrId.value) {
+    ElMessage.warning('请先选择 ACR')
+    return
+  }
+  router.push({
+    name: 'ImageTags',
+    params: {
+      acrId: selectedAcrId.value,
+      repoName: row.repository_name,
+    },
+  })
 }
 
 const handleSyncFromRecords = async () => {
