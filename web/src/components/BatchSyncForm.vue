@@ -1,35 +1,5 @@
 <!--
   批量镜像同步表单组件
-  
-  功能说明：
-  - 提供批量Docker镜像的同步配置界面
-  - 支持手动输入和文件导入两种方式
-  - 支持镜像列表预览和验证
-  - 支持架构选择和同步选项配置
-  - 提供模拟同步和实际同步功能
-  - 集成进度跟踪和状态显示
-  
-  输入方式：
-  - 手动输入: 文本框输入，每行一个镜像
-  - 文件导入: 支持.txt和.csv文件上传
-  
-  功能特性：
-  - 镜像格式验证和去重
-  - 实时预览和统计
-  - 模拟同步测试
-  - 批量任务进度跟踪
-  - 错误处理和重试机制
-  
-  事件：
-  - @success: 批量同步任务提交成功时触发
-  - @progress: 同步进度更新时触发
-  
-  依赖：
-  - Element Plus UI组件库
-  - Pinia状态管理 (syncStore)
-  
-  @author Docker Image Sync Platform
-  @version 1.0.0
 -->
 <template>
   <div class="batch-sync-form">
@@ -44,25 +14,34 @@
           v-model="selectedAcrId"
           placeholder="选择目标 ACR"
           style="width: 100%"
+          :disabled="isMultiImage"
+          @change="handleAcrChange"
         >
           <el-option
             v-for="item in acrList"
             :key="item.id"
-            :label="item.namespace"
+            :label="getAcrLabel(item)"
             :value="item.id"
+            :disabled="isAcrOptionDisabled(item.id)"
           />
         </el-select>
       </el-form-item>
 
+      <div v-if="isMultiImage" class="multi-acr-hint">
+        同步多个镜像时目标 ACR 将自动选择，无法进行手动调整
+      </div>
+
+      <div v-else-if="forceOverrideWarning" class="force-override-warning">
+        {{ forceOverrideWarning }}
+      </div>
+
       <el-form-item label="镜像列表" prop="images">
         <div class="image-input-section">
-          <!-- 输入方式选择 -->
           <el-radio-group v-model="inputMode" class="input-mode-selector">
             <el-radio-button label="manual">手动输入</el-radio-button>
             <el-radio-button label="file">文件导入</el-radio-button>
           </el-radio-group>
 
-          <!-- 手动输入模式 -->
           <div v-if="inputMode === 'manual'" class="manual-input">
             <el-input
               v-model="imageInput"
@@ -78,7 +57,6 @@
             </div>
           </div>
 
-          <!-- 文件导入模式 -->
           <div v-if="inputMode === 'file'" class="file-input">
             <el-upload
               ref="uploadRef"
@@ -102,7 +80,6 @@
             </el-upload>
           </div>
 
-          <!-- 镜像列表预览 -->
           <div v-if="parsedImages.length > 0" class="image-preview">
             <div class="preview-header">
               <span>镜像预览 ({{ parsedImages.length }} 个镜像)</span>
@@ -174,54 +151,152 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, RefreshLeft } from '@element-plus/icons-vue'
 import { syncAPI, acrRegistryAPI } from '@/api'
 
-// 组件事件
 const emit = defineEmits(['success'])
 
-// 表单引用
 const batchFormRef = ref()
 const uploadRef = ref()
 
-// 输入模式
 const inputMode = ref('manual')
 
-// ACR 列表和选中的 ACR
 const acrList = ref([])
 const selectedAcrId = ref(null)
+const quotaMap = ref({})
+const currentAffinity = ref(null)
+const userChangedAcr = ref(false)
 
-// 表单数据（并发与重试由服务端 config.yaml 的 sync 段决定）
 const batchForm = reactive({
   description: ''
 })
 
-// 镜像输入
 const imageInput = ref('')
 const parsedImages = ref([])
 const loading = ref(false)
 const mockLoading = ref(false)
 let parseDebounceTimer = null
+let suggestTimer = null
 
 const batchRules = {}
 
-// 组件挂载时加载 ACR 列表
-onMounted(async () => {
+const isSingleImage = computed(() => parsedImages.value.length === 1)
+const isMultiImage = computed(() => parsedImages.value.length > 1)
+
+const getAcrNamespace = (acrId) => {
+  const acr = acrList.value.find(item => item.id === acrId)
+  return acr?.namespace || `ID:${acrId}`
+}
+
+const forceOverrideWarning = computed(() => {
+  if (!isSingleImage.value || !currentAffinity.value?.has_affinity || !userChangedAcr.value) {
+    return ''
+  }
+  if (selectedAcrId.value === currentAffinity.value.acr_registry_id) {
+    return ''
+  }
+  const forcedNamespace = getAcrNamespace(selectedAcrId.value)
+  return `仓库「${currentAffinity.value.repository_name}」已归属 ACR「${currentAffinity.value.acr_namespace}」，但强制选择了 ACR[${forcedNamespace}]`
+})
+
+const getAcrLabel = (item) => {
+  const quota = quotaMap.value[item.id]
+  if (quota) {
+    return `${item.namespace} (${quota.repo_count}/${quota.repo_quota})`
+  }
+  return item.namespace
+}
+
+const isAcrOptionDisabled = (acrId) => {
+  const quota = quotaMap.value[acrId]
+  if (!quota?.is_full) {
+    return false
+  }
+  return !(currentAffinity.value?.has_affinity && currentAffinity.value.acr_registry_id === acrId)
+}
+
+const loadAcrData = async () => {
   try {
-    const response = await acrRegistryAPI.getAll()
-    if (response && response.status === 'success') {
-      acrList.value = response.data || []
-      // 默认选中默认 ACR
+    const [acrResponse, quotaResponse] = await Promise.all([
+      acrRegistryAPI.getAll(),
+      acrRegistryAPI.getQuotaSummary(),
+    ])
+
+    if (acrResponse?.status === 'success') {
+      acrList.value = acrResponse.data || []
       const defaultAcr = acrList.value.find(item => item.is_default)
       if (defaultAcr) {
         selectedAcrId.value = defaultAcr.id
       }
     }
+
+    if (quotaResponse?.status === 'success') {
+      const map = {}
+      for (const item of quotaResponse.data || []) {
+        map[item.acr_registry_id] = item
+      }
+      quotaMap.value = map
+    }
   } catch (error) {
     console.error('加载 ACR 列表失败:', error)
   }
+}
+
+const applySuggestion = (data) => {
+  currentAffinity.value = data?.affinity || null
+  if (!userChangedAcr.value && data?.suggested_acr_id) {
+    selectedAcrId.value = data.suggested_acr_id
+  }
+}
+
+const suggestAcrForSingleImage = async () => {
+  if (!isSingleImage.value) {
+    currentAffinity.value = null
+    return
+  }
+
+  const image = parsedImages.value[0]
+  if (!image || !isValidImageFormat(image)) {
+    currentAffinity.value = null
+    return
+  }
+
+  try {
+    const response = await syncAPI.suggestAcr(image)
+    if (response?.status === 'success') {
+      const quotaSummary = response.data?.quota_summary || []
+      const map = { ...quotaMap.value }
+      for (const item of quotaSummary) {
+        map[item.acr_registry_id] = item
+      }
+      quotaMap.value = map
+      applySuggestion(response.data)
+    }
+  } catch (error) {
+    console.error('查询 ACR 建议失败:', error)
+  }
+}
+
+const debouncedSuggestAcrForImages = () => {
+  userChangedAcr.value = false
+  if (suggestTimer) {
+    clearTimeout(suggestTimer)
+  }
+  suggestTimer = setTimeout(() => {
+    suggestAcrForSingleImage()
+  }, 500)
+}
+
+const handleAcrChange = () => {
+  if (isSingleImage.value) {
+    userChangedAcr.value = true
+  }
+}
+
+onMounted(async () => {
+  await loadAcrData()
 })
 
 const getInputPlaceholder = () =>
@@ -249,7 +324,6 @@ const validateInput = (inputText) => {
   return errors
 }
 
-// 带防抖的解析入口，避免每次按键都弹校验错误
 const debouncedParseImageInput = () => {
   if (parseDebounceTimer) {
     clearTimeout(parseDebounceTimer)
@@ -259,7 +333,6 @@ const debouncedParseImageInput = () => {
   }, 500)
 }
 
-// 解析镜像输入（仅 image:tag，去重保序）
 const parseImageInput = () => {
   const validationErrors = validateInput(imageInput.value)
   if (validationErrors.length > 0) {
@@ -281,16 +354,14 @@ const parseImageInput = () => {
     images.push(trimmed)
   }
   parsedImages.value = images
+  debouncedSuggestAcrForImages()
 }
 
-// 验证镜像格式
 const isValidImageFormat = (image) => {
-  // 基本的镜像格式验证
   const imageRegex = /^[a-zA-Z0-9._/-]+:[a-zA-Z0-9._-]+$/
   return imageRegex.test(image)
 }
 
-// 处理文件变化
 const handleFileChange = (file) => {
   const reader = new FileReader()
   reader.onload = (e) => {
@@ -300,12 +371,10 @@ const handleFileChange = (file) => {
   reader.readAsText(file.raw)
 }
 
-// 解析文件内容
 const parseFileContent = (content, fileName) => {
   const images = []
   
   if (fileName.endsWith('.csv')) {
-    // CSV格式解析
     const lines = content.split('\n')
     for (const line of lines) {
       const columns = line.split(',')
@@ -319,7 +388,6 @@ const parseFileContent = (content, fileName) => {
       }
     }
   } else {
-    // 文本格式解析
     const lines = content.split('\n')
     for (const line of lines) {
       const trimmed = line.trim()
@@ -335,12 +403,13 @@ const parseFileContent = (content, fileName) => {
   imageInput.value = images.join('\n')
   
   ElMessage.success(`成功解析 ${images.length} 个镜像`)
+  debouncedSuggestAcrForImages()
 }
 
-// 处理文件移除
 const handleFileRemove = () => {
   parsedImages.value = []
   imageInput.value = ''
+  currentAffinity.value = null
 }
 
 const rebuildImageInput = () => {
@@ -350,18 +419,19 @@ const rebuildImageInput = () => {
 const removeImage = (index) => {
   parsedImages.value.splice(index, 1)
   rebuildImageInput()
+  debouncedSuggestAcrForImages()
 }
 
-// 清空镜像列表（内部实现）
 const doClearImages = () => {
   parsedImages.value = []
   imageInput.value = ''
+  currentAffinity.value = null
+  userChangedAcr.value = false
   if (uploadRef.value) {
     uploadRef.value.clearFiles()
   }
 }
 
-// 清空镜像列表（带二次确认）
 const clearImages = async () => {
   if (parsedImages.value.length === 0) {
     doClearImages()
@@ -391,7 +461,22 @@ const buildBatchImageItems = () =>
     }
   })
 
-// 提交批量同步
+const confirmRiskIfNeeded = async () => {
+  if (!isSingleImage.value || !forceOverrideWarning.value) {
+    return
+  }
+
+  await ElMessageBox.confirm(
+    forceOverrideWarning.value + '。确定仍要同步到当前所选 ACR 吗？',
+    'ACR 归属风险确认',
+    {
+      confirmButtonText: '确认风险并继续',
+      cancelButtonText: '取消',
+      type: 'warning',
+    }
+  )
+}
+
 const submitBatchSync = async () => {
   try {
     await batchFormRef.value.validate()
@@ -401,6 +486,8 @@ const submitBatchSync = async () => {
       return
     }
 
+    await confirmRiskIfNeeded()
+
     loading.value = true
 
     const batchData = {
@@ -408,22 +495,20 @@ const submitBatchSync = async () => {
       max_concurrent: 0,
       auto_retry: true,
       retry_count: 0,
-      acr_registry_id: selectedAcrId.value
+      acr_registry_id: isMultiImage.value ? 0 : selectedAcrId.value
     }
 
     const response = await syncAPI.submitBatchSync(batchData)
     
     ElMessage.success('批量同步任务已提交')
-    
-    // 通知父组件
     emit('success', response)
-    
-    // 重置表单
     resetForm()
     
   } catch (error) {
+    if (error === 'cancel' || error?.message === 'cancel') {
+      return
+    }
     if (error.errors) {
-      // 表单验证错误
       return
     }
     ElMessage.error('提交批量同步任务失败')
@@ -432,7 +517,6 @@ const submitBatchSync = async () => {
   }
 }
 
-// 提交模拟批量同步
 const submitMockBatchSync = async () => {
   try {
     await batchFormRef.value.validate()
@@ -442,6 +526,8 @@ const submitMockBatchSync = async () => {
       return
     }
 
+    await confirmRiskIfNeeded()
+
     mockLoading.value = true
 
     const batchData = {
@@ -449,22 +535,20 @@ const submitMockBatchSync = async () => {
       max_concurrent: 0,
       auto_retry: true,
       retry_count: 0,
-      acr_registry_id: selectedAcrId.value
+      acr_registry_id: isMultiImage.value ? 0 : selectedAcrId.value
     }
 
     const response = await syncAPI.submitMockBatchSync(batchData)
     
     ElMessage.success('模拟批量同步任务已提交')
-    
-    // 通知父组件
     emit('success', response)
-    
-    // 重置表单
     resetForm()
     
   } catch (error) {
+    if (error === 'cancel' || error?.message === 'cancel') {
+      return
+    }
     if (error.errors) {
-      // 表单验证错误
       return
     }
     ElMessage.error('提交模拟批量同步任务失败')
@@ -473,7 +557,6 @@ const submitMockBatchSync = async () => {
   }
 }
 
-// 重置表单
 const resetForm = () => {
   batchFormRef.value?.resetFields()
   Object.assign(batchForm, {
@@ -481,7 +564,6 @@ const resetForm = () => {
   })
   doClearImages()
   inputMode.value = 'manual'
-  // 重置为默认 ACR
   const defaultAcr = acrList.value.find(item => item.is_default)
   selectedAcrId.value = defaultAcr ? defaultAcr.id : null
 }
@@ -490,6 +572,10 @@ onUnmounted(() => {
   if (parseDebounceTimer) {
     clearTimeout(parseDebounceTimer)
     parseDebounceTimer = null
+  }
+  if (suggestTimer) {
+    clearTimeout(suggestTimer)
+    suggestTimer = null
   }
 })
 </script>
@@ -566,5 +652,19 @@ onUnmounted(() => {
   font-size: 12px;
   color: #909399;
   margin-top: 4px;
+}
+
+.multi-acr-hint {
+  margin: -8px 0 16px 120px;
+  color: #909399;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.force-override-warning {
+  margin: -8px 0 16px 120px;
+  color: #f56c6c;
+  font-size: 13px;
+  line-height: 1.5;
 }
 </style>

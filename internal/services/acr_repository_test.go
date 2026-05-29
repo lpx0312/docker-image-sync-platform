@@ -24,8 +24,8 @@ func TestExtractRepoName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			if got := extractRepoName(tt.input); got != tt.want {
-				t.Errorf("extractRepoName(%q) = %q, want %q", tt.input, got, tt.want)
+			if got := ExtractRepoName(tt.input); got != tt.want {
+				t.Errorf("ExtractRepoName(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
 	}

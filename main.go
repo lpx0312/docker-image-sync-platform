@@ -264,6 +264,8 @@ func main() {
 				syncGroup.GET("/status/:taskId", syncHandler.GetSyncStatus)
 				syncGroup.GET("/batch/status/:taskId", syncHandler.GetBatchSyncStatus)
 				syncGroup.GET("/history", syncHandler.GetSyncHistory)
+				syncGroup.GET("/suggest-acr", syncHandler.SuggestAcr)
+				syncGroup.POST("/check-acr", syncHandler.CheckAcr)
 			}
 
 			images := protected.Group("/images")
@@ -361,6 +363,7 @@ func main() {
 			{
 				acrRegistriesRead.GET("", acrRegistryHandler.GetAll)
 				acrRegistriesRead.GET("/default", acrRegistryHandler.GetDefault)
+				acrRegistriesRead.GET("/quota-summary", acrRegistryHandler.GetQuotaSummary)
 				acrRegistriesRead.GET("/:id", acrRegistryHandler.GetByID)
 			}
 
@@ -382,6 +385,7 @@ func main() {
 			acrRepositories.Use(middleware.PermissionRequired(roleService, models.PermImages))
 			{
 				acrRepositories.GET("", acrRepositoryHandler.GetAll)
+				acrRepositories.GET("/duplicates", acrRepositoryHandler.GetDuplicates)
 				acrRepositories.POST("", acrRepositoryHandler.Create)
 				acrRepositories.POST("/batch", acrRepositoryHandler.BatchCreate)
 				acrRepositories.DELETE("/:id", acrRepositoryHandler.Delete)
@@ -395,6 +399,7 @@ func main() {
 			acrTags.Use(middleware.PermissionRequired(roleService, models.PermImages))
 			{
 				acrTags.GET("", acrTagHandler.GetTags)
+				acrTags.GET("/details", acrTagHandler.GetTagsDetails)
 				acrTags.GET("/detail", acrTagHandler.GetTagDetail)
 			}
 		}

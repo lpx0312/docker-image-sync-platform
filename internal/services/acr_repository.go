@@ -126,6 +126,33 @@ func (s *AcrRepositoryService) Delete(id uint) error {
 	return nil
 }
 
+// EnsureRepository 确保仓库台账中存在指定仓库（同步成功后自动登记）
+func (s *AcrRepositoryService) EnsureRepository(acrRegistryID uint, repositoryName string) error {
+	repositoryName = strings.TrimSpace(repositoryName)
+	if acrRegistryID == 0 || repositoryName == "" {
+		return nil
+	}
+
+	var count int64
+	if err := s.db.Model(&models.AcrRepository{}).
+		Where("acr_registry_id = ? AND repository_name = ?", acrRegistryID, repositoryName).
+		Count(&count).Error; err != nil {
+		return fmt.Errorf("检查仓库台账失败: %w", err)
+	}
+	if count > 0 {
+		return nil
+	}
+
+	repo := &models.AcrRepository{
+		AcrRegistryID:  acrRegistryID,
+		RepositoryName: repositoryName,
+	}
+	if err := s.db.Create(repo).Error; err != nil {
+		return fmt.Errorf("登记仓库台账失败: %w", err)
+	}
+	return nil
+}
+
 // SyncFromRecords 从同步记录中提取镜像名称，仅导入 ACR 中仍存在的仓库
 func (s *AcrRepositoryService) SyncFromRecords(acrRegistryID uint) (*SyncFromRecordsResult, error) {
 	var acr models.AcrRegistry
@@ -146,7 +173,7 @@ func (s *AcrRepositoryService) SyncFromRecords(acrRegistryID uint) (*SyncFromRec
 
 	repoNames := make(map[string]struct{})
 	for _, record := range records {
-		repoName := extractRepoName(record.OriginalImage)
+		repoName := ExtractRepoName(record.OriginalImage)
 		if repoName != "" {
 			repoNames[repoName] = struct{}{}
 		}
@@ -213,9 +240,9 @@ func (s *AcrRepositoryService) SyncFromRecords(acrRegistryID uint) (*SyncFromRec
 	return result, nil
 }
 
-// extractRepoName 从镜像地址中提取仓库名称（不含 tag 和 registry/命名空间前缀）
+// ExtractRepoName 从镜像地址中提取仓库名称（不含 tag 和 registry/命名空间前缀）
 // 与 utils.GenerateACRImage 的命名规则一致：取路径最后一段
-func extractRepoName(image string) string {
+func ExtractRepoName(image string) string {
 	image = strings.TrimSpace(image)
 	if image == "" {
 		return ""

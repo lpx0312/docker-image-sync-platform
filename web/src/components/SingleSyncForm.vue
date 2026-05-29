@@ -4,28 +4,12 @@
   功能说明：
   - 提供单个Docker镜像的同步配置界面
   - 支持源镜像地址输入和验证
-  - 支持架构选择 (amd64/arm64)
+  - 支持 ACR 仓库归属提示与自动预选
   - 支持同步说明描述
   - 集成表单验证和提交处理
-  
-  使用场景：
-  - 用户需要同步单个镜像时使用
-  - 提供简洁的表单界面
-  - 支持实时验证和错误提示
-  
-  事件：
-  - @success: 同步任务提交成功时触发，传递任务信息
-  
-  依赖：
-  - Element Plus UI组件库
-  - Pinia状态管理 (syncStore)
-  
-  @author Docker Image Sync Platform
-  @version 1.0.0
 -->
 <template>
   <div class="single-sync-form">
-    <!-- 同步表单 -->
     <el-form 
       ref="syncFormRef" 
       :model="syncForm" 
@@ -37,21 +21,28 @@
           v-model="selectedAcrId"
           placeholder="选择目标 ACR"
           style="width: 100%"
+          @change="handleAcrChange"
         >
           <el-option
             v-for="item in acrList"
             :key="item.id"
-            :label="item.namespace"
+            :label="getAcrLabel(item)"
             :value="item.id"
+            :disabled="isAcrOptionDisabled(item.id)"
           />
         </el-select>
       </el-form-item>
+
+      <div v-if="forceOverrideWarning" class="force-override-warning">
+        {{ forceOverrideWarning }}
+      </div>
 
       <el-form-item label="源镜像地址" prop="sourceImage">
         <el-input
           v-model="syncForm.sourceImage"
           placeholder="例如: nginx:latest 或 docker.io/library/nginx:latest"
           clearable
+          @input="debouncedSuggestAcr"
         />
         <div class="form-tip">
           支持Docker Hub、Quay.io等公共镜像仓库的镜像
@@ -88,64 +79,30 @@
 </template>
 
 <script setup>
-/**
- * 单个镜像同步表单组件逻辑
- * 
- * 主要功能：
- * - 表单数据管理和验证
- * - 同步任务提交处理
- * - 用户交互和状态反馈
- */
-
-import { ref, reactive, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, RefreshLeft } from '@element-plus/icons-vue'
 import { useSyncStore } from '@/stores/sync'
-import { acrRegistryAPI } from '@/api'
+import { acrRegistryAPI, syncAPI } from '@/api'
 
-/**
- * 组件事件定义
- * @event success - 同步任务提交成功时触发
- */
 const emit = defineEmits(['success'])
 
-/**
- * 同步状态管理store
- * 用于处理同步任务的提交和状态跟踪
- */
 const syncStore = useSyncStore()
-
-/**
- * 表单DOM引用
- * 用于表单验证和重置操作
- */
 const syncFormRef = ref()
 
-/**
- * ACR 列表和选中的 ACR
- */
 const acrList = ref([])
+const quotaMap = ref({})
 const selectedAcrId = ref(null)
+const currentAffinity = ref(null)
+const userChangedAcr = ref(false)
 
-/**
- * 表单数据模型
- * @property {string} sourceImage - 源镜像地址
- * @property {string} architecture - 目标架构 (amd64/arm64)
- * @property {string} description - 同步说明描述
- */
+let suggestTimer = null
+
 const syncForm = reactive({
   sourceImage: '',
   description: ''
 })
 
-/**
- * 表单验证规则配置
- * 
- * 验证规则：
- * - sourceImage: 必填，格式验证 (镜像名:标签)
- * - architecture: 可选，默认amd64
- * - description: 可选，最大500字符
- */
 const syncRules = {
   sourceImage: [
     { required: true, message: '请输入源镜像地址', trigger: 'blur' },
@@ -157,41 +114,137 @@ const syncRules = {
   ]
 }
 
-/**
- * 组件挂载时加载 ACR 列表
- */
-onMounted(async () => {
+const getAcrNamespace = (acrId) => {
+  const acr = acrList.value.find(item => item.id === acrId)
+  return acr?.namespace || `ID:${acrId}`
+}
+
+const forceOverrideWarning = computed(() => {
+  if (!currentAffinity.value?.has_affinity || !userChangedAcr.value) {
+    return ''
+  }
+  if (selectedAcrId.value === currentAffinity.value.acr_registry_id) {
+    return ''
+  }
+  const forcedNamespace = getAcrNamespace(selectedAcrId.value)
+  return `仓库「${currentAffinity.value.repository_name}」已归属 ACR「${currentAffinity.value.acr_namespace}」，但强制选择了 ACR[${forcedNamespace}]`
+})
+
+const getAcrLabel = (item) => {
+  const quota = quotaMap.value[item.id]
+  if (quota) {
+    return `${item.namespace} (${quota.repo_count}/${quota.repo_quota})`
+  }
+  return item.namespace
+}
+
+const isAcrOptionDisabled = (acrId) => {
+  const quota = quotaMap.value[acrId]
+  if (!quota?.is_full) {
+    return false
+  }
+  return !(currentAffinity.value?.has_affinity && currentAffinity.value.acr_registry_id === acrId)
+}
+
+const loadAcrData = async () => {
   try {
-    const response = await acrRegistryAPI.getAll()
-    if (response && response.status === 'success') {
-      acrList.value = response.data || []
-      // 默认选中默认 ACR
-      const defaultAcr = acrList.value.find(item => item.is_default)
-      if (defaultAcr) {
-        selectedAcrId.value = defaultAcr.id
+    const [acrResponse, quotaResponse] = await Promise.all([
+      acrRegistryAPI.getAll(),
+      acrRegistryAPI.getQuotaSummary(),
+    ])
+
+    if (acrResponse?.status === 'success') {
+      acrList.value = acrResponse.data || []
+      if (!selectedAcrId.value) {
+        const defaultAcr = acrList.value.find(item => item.is_default)
+        if (defaultAcr) {
+          selectedAcrId.value = defaultAcr.id
+        }
       }
+    }
+
+    if (quotaResponse?.status === 'success') {
+      const map = {}
+      for (const item of quotaResponse.data || []) {
+        map[item.acr_registry_id] = item
+      }
+      quotaMap.value = map
     }
   } catch (error) {
     console.error('加载 ACR 列表失败:', error)
   }
+}
+
+const applySuggestion = (data) => {
+  currentAffinity.value = data?.affinity || null
+
+  if (!userChangedAcr.value && data?.suggested_acr_id) {
+    selectedAcrId.value = data.suggested_acr_id
+  }
+}
+
+const suggestAcrForInput = async () => {
+  const image = syncForm.sourceImage.trim()
+  if (!image || !/^[a-zA-Z0-9._/-]+:[a-zA-Z0-9._-]+$/.test(image)) {
+    currentAffinity.value = null
+    return
+  }
+
+  try {
+    const response = await syncAPI.suggestAcr(image)
+    if (response?.status === 'success') {
+      const quotaSummary = response.data?.quota_summary || []
+      const map = { ...quotaMap.value }
+      for (const item of quotaSummary) {
+        map[item.acr_registry_id] = item
+      }
+      quotaMap.value = map
+      applySuggestion(response.data)
+    }
+  } catch (error) {
+    console.error('查询 ACR 建议失败:', error)
+  }
+}
+
+const debouncedSuggestAcr = () => {
+  userChangedAcr.value = false
+  if (suggestTimer) {
+    clearTimeout(suggestTimer)
+  }
+  suggestTimer = setTimeout(() => {
+    suggestAcrForInput()
+  }, 500)
+}
+
+const handleAcrChange = () => {
+  userChangedAcr.value = true
+}
+
+onMounted(() => {
+  loadAcrData()
 })
 
-/**
- * 提交同步任务
- * 
- * 处理流程：
- * 1. 验证表单数据
- * 2. 构造同步请求数据
- * 3. 调用store提交同步任务
- * 4. 处理成功/失败反馈
- * 5. 通知父组件任务状态
- * 
- * @async
- * @throws {Error} 表单验证失败或网络请求失败
- */
+onUnmounted(() => {
+  if (suggestTimer) {
+    clearTimeout(suggestTimer)
+  }
+})
+
 const submitSync = async () => {
   try {
     await syncFormRef.value.validate()
+
+    if (forceOverrideWarning.value) {
+      await ElMessageBox.confirm(
+        forceOverrideWarning.value + '。确定仍要同步到当前所选 ACR 吗？',
+        'ACR 归属风险确认',
+        {
+          confirmButtonText: '确认风险并继续',
+          cancelButtonText: '取消',
+          type: 'warning',
+        }
+      )
+    }
     
     const syncData = {
       images: [syncForm.sourceImage],
@@ -199,42 +252,29 @@ const submitSync = async () => {
       acr_registry_id: selectedAcrId.value
     }
     
-    const result = await syncStore.submitSync(syncData)
-    
-    // 成功提示
+    await syncStore.submitSync(syncData)
     ElMessage.success('同步任务已提交')
-    
-    // 通知父组件同步成功
     emit('success', syncStore.currentTask)
-    
   } catch (error) {
-    console.error('Submit sync error:', error)
-    if (error.errors) {
-      // 表单验证错误，不显示额外提示
+    if (error === 'cancel' || error?.message === 'cancel') {
       return
     }
-    // 网络或其他错误
+    console.error('Submit sync error:', error)
+    if (error.errors) {
+      return
+    }
     ElMessage.error('提交同步任务失败')
   }
 }
 
-/**
- * 重置表单数据
- * 
- * 功能：
- * - 清空所有表单字段
- * - 重置验证状态
- * - 恢复默认值
- */
 const resetForm = () => {
-  // 重置表单验证状态
   syncFormRef.value.resetFields()
-  // 重置表单数据到初始状态
   Object.assign(syncForm, {
     sourceImage: '',
     description: ''
   })
-  // 重置为默认 ACR
+  userChangedAcr.value = false
+  currentAffinity.value = null
   const defaultAcr = acrList.value.find(item => item.is_default)
   selectedAcrId.value = defaultAcr ? defaultAcr.id : null
 }
@@ -249,5 +289,12 @@ const resetForm = () => {
   font-size: 12px;
   color: #909399;
   margin-top: 4px;
+}
+
+.force-override-warning {
+  margin: -8px 0 16px 120px;
+  color: #f56c6c;
+  font-size: 13px;
+  line-height: 1.5;
 }
 </style>

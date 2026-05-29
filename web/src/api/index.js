@@ -153,7 +153,25 @@ export const syncAPI = {
    * @param {string} [params.image] - 镜像名筛选
    * @returns {Promise} 返回分页的历史记录列表
    */
-  getSyncHistory: (params) => api.get('/sync/history', { params })
+  getSyncHistory: (params) => api.get('/sync/history', { params }),
+
+  /**
+   * 根据源镜像建议目标 ACR
+   *
+   * @param {string} image - 源镜像地址，如 nginx:1.21
+   * @returns {Promise} 返回归属建议与配额摘要
+   */
+  suggestAcr: (image) => api.get('/sync/suggest-acr', { params: { image } }),
+
+  /**
+   * 批量检查镜像与所选 ACR 的归属冲突
+   *
+   * @param {Object} data
+   * @param {string[]} data.images - 镜像列表
+   * @param {number} [data.acr_registry_id] - 所选 ACR ID
+   * @returns {Promise} 返回冲突检查结果
+   */
+  checkAcr: (data) => api.post('/sync/check-acr', data),
 }
 
 /**
@@ -562,6 +580,13 @@ export const acrRegistryAPI = {
    * @returns {Promise} 返回设置结果
    */
   setDefault: (id) => api.put(`/acr-registries/${id}/default`),
+
+  /**
+   * 获取所有 ACR 的仓库配额用量
+   *
+   * @returns {Promise} 返回各 ACR 的仓库数与剩余配额
+   */
+  getQuotaSummary: () => api.get('/acr-registries/quota-summary'),
 }
 
 // ACR 镜像管理 API
@@ -590,19 +615,34 @@ export const acrRepositoryAPI = {
   syncFromRecords: (acrRegistryId) => {
     return api.post('/acr-repositories/sync-from-records', { acr_registry_id: acrRegistryId })
   },
+
+  // 获取跨 ACR 重复的仓库名
+  getDuplicates: () => api.get('/acr-repositories/duplicates'),
 }
 
 // ACR Tag 查询 API
 export const acrTagAPI = {
-  // 获取 Tag 列表（含架构、Digest 等详细信息）
+  // 获取 Tag 名称列表（轻量，不含详情）
   getTags: (acrRegistryId, repositoryName) => {
     return api.get('/acr-tags', {
       params: { acr_registry_id: acrRegistryId, repository_name: repositoryName },
-      timeout: 120000,
+      timeout: 30000,
     })
   },
 
-  // 获取 Tag 详细信息
+  // 批量获取 Tag 详细信息
+  getTagDetailsBatch: (acrRegistryId, repositoryName, tags) => {
+    return api.get('/acr-tags/details', {
+      params: {
+        acr_registry_id: acrRegistryId,
+        repository_name: repositoryName,
+        tags: tags.join(','),
+      },
+      timeout: 60000,
+    })
+  },
+
+  // 获取单个 Tag 详细信息
   getTagDetail: (acrRegistryId, repositoryName, tag) => {
     return api.get('/acr-tags/detail', { params: { acr_registry_id: acrRegistryId, repository_name: repositoryName, tag } })
   },

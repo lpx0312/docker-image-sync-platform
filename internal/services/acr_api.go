@@ -220,9 +220,10 @@ func (s *AcrAPIService) RepositoryExists(registry, username, password, namespace
 }
 
 const (
-	tagDetailMaxRetries   = 4
-	tagDetailConcurrency  = 3
-	tagDetailRetryBaseGap = 300 * time.Millisecond
+	tagDetailMaxRetries      = 4
+	tagDetailConcurrency     = 5
+	tagDetailRetryBaseGap    = 300 * time.Millisecond
+	tagDetailsBatchMaxSize   = 50
 )
 
 func inferArchFromTag(tag string) string {
@@ -416,15 +417,28 @@ func (s *AcrAPIService) GetTagDetail(registry, username, password, namespace, re
 	return s.parseManifestToTagDetail(tag, registry, namespace, repo, token, body, contentDigest)
 }
 
-// GetTagsWithDetails 获取 Tag 列表及其详细信息，带并发控制和限流重试
-func (s *AcrAPIService) GetTagsWithDetails(registry, username, password, namespace, repo, authServer, dockerService string) ([]*TagDetail, error) {
-	tagNames, err := s.GetTags(registry, username, password, namespace, repo, authServer, dockerService)
-	if err != nil {
-		return nil, err
+func emptyTagDetail(tag string) *TagDetail {
+	return &TagDetail{
+		Tag:           tag,
+		Architectures: []string{},
+		Digests:       map[string]string{},
+		Sizes:         map[string]int64{},
+		PushedAt:      map[string]string{},
 	}
+}
 
+// GetTagNames 获取镜像 Tag 名称列表
+func (s *AcrAPIService) GetTagNames(registry, username, password, namespace, repo, authServer, dockerService string) ([]string, error) {
+	return s.GetTags(registry, username, password, namespace, repo, authServer, dockerService)
+}
+
+// GetTagsDetailsBatch 批量获取指定 Tag 的详细信息，带并发控制和限流重试
+func (s *AcrAPIService) GetTagsDetailsBatch(registry, username, password, namespace, repo, authServer, dockerService string, tagNames []string) ([]*TagDetail, error) {
 	if len(tagNames) == 0 {
 		return []*TagDetail{}, nil
+	}
+	if len(tagNames) > tagDetailsBatchMaxSize {
+		return nil, fmt.Errorf("单次最多查询 %d 个 Tag", tagDetailsBatchMaxSize)
 	}
 
 	var tokenMu sync.Mutex
@@ -463,26 +477,14 @@ func (s *AcrAPIService) GetTagsWithDetails(registry, username, password, namespa
 
 			body, contentDigest, _, err := s.fetchManifestWithRetry(registry, namespace, repo, tag, getToken)
 			if err != nil {
-				details[index] = &TagDetail{
-					Tag:           tag,
-					Architectures: []string{},
-					Digests:       map[string]string{},
-					Sizes:         map[string]int64{},
-					PushedAt:      map[string]string{},
-				}
+				details[index] = emptyTagDetail(tag)
 				return
 			}
 
 			token, _ := getToken(false)
 			detail, err := s.parseManifestToTagDetail(tag, registry, namespace, repo, token, body, contentDigest)
 			if err != nil {
-				details[index] = &TagDetail{
-					Tag:           tag,
-					Architectures: []string{},
-					Digests:       map[string]string{},
-					Sizes:         map[string]int64{},
-					PushedAt:      map[string]string{},
-				}
+				details[index] = emptyTagDetail(tag)
 				return
 			}
 
@@ -492,4 +494,14 @@ func (s *AcrAPIService) GetTagsWithDetails(registry, username, password, namespa
 
 	wg.Wait()
 	return details, nil
+}
+
+// GetTagsWithDetails 获取 Tag 列表及其详细信息，带并发控制和限流重试
+func (s *AcrAPIService) GetTagsWithDetails(registry, username, password, namespace, repo, authServer, dockerService string) ([]*TagDetail, error) {
+	tagNames, err := s.GetTagNames(registry, username, password, namespace, repo, authServer, dockerService)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.GetTagsDetailsBatch(registry, username, password, namespace, repo, authServer, dockerService, tagNames)
 }

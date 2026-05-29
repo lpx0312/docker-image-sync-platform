@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"docker-image-sync-platform/internal/database"
 	"docker-image-sync-platform/internal/logger"
 	"docker-image-sync-platform/internal/models"
 	"docker-image-sync-platform/internal/services"
@@ -137,4 +138,17 @@ func (h *AcrRepositoryHandler) SyncFromRecords(c *gin.Context) {
 		"message": message,
 		"data":    created,
 	})
+}
+
+// GetDuplicates 获取跨 ACR 重复的仓库名
+func (h *AcrRepositoryHandler) GetDuplicates(c *gin.Context) {
+	affinitySvc := services.NewAcrAffinityService(database.DB)
+	duplicates, err := affinitySvc.GetDuplicateRepositories()
+	if err != nil {
+		logger.Logger.Error("查询跨 ACR 重复仓库失败", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "success", "data": duplicates})
 }

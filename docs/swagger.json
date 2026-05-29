@@ -190,6 +190,46 @@
         }
       }
     },
+    "/sync/suggest-acr": {
+      "get": {
+        "tags": ["Sync"],
+        "summary": "根据源镜像建议目标 ACR",
+        "description": "按仓库名查询历史归属并返回 ACR 建议与配额摘要",
+        "parameters": [
+          {
+            "name": "image",
+            "in": "query",
+            "type": "string",
+            "required": true,
+            "description": "源镜像地址，如 nginx:1.21"
+          }
+        ],
+        "responses": {
+          "200": { "description": "查询成功" },
+          "400": { "description": "请求参数错误" },
+          "500": { "description": "服务器内部错误" }
+        }
+      }
+    },
+    "/sync/check-acr": {
+      "post": {
+        "tags": ["Sync"],
+        "summary": "批量检查镜像与所选 ACR 的归属冲突",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": { "$ref": "#/definitions/CheckAcrRequest" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "检查成功" },
+          "400": { "description": "请求参数错误" },
+          "500": { "description": "服务器内部错误" }
+        }
+      }
+    },
     "/images/list": {
       "get": {
         "tags": ["Images"],
@@ -808,6 +848,21 @@
         "description": {
           "type": "string",
           "description": "同步任务描述"
+        }
+      }
+    },
+    "CheckAcrRequest": {
+      "type": "object",
+      "required": ["images"],
+      "properties": {
+        "images": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "要检查的镜像列表"
+        },
+        "acr_registry_id": {
+          "type": "integer",
+          "description": "所选 ACR 配置 ID"
         }
       }
     },

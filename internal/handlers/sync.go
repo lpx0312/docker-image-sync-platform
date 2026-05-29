@@ -159,6 +159,9 @@ func (h *SyncHandler) SubmitBatchSync(c *gin.Context) {
 
 	normalizeBatchSyncRequest(&req)
 
+	affinitySvc := services.NewAcrAffinityService(database.DB)
+	autoResolveAcr := len(req.Images) > 1
+
 	// ====================================================================
 	// 任务创建和初始化
 	// ====================================================================
@@ -215,6 +218,21 @@ func (h *SyncHandler) SubmitBatchSync(c *gin.Context) {
 
 			originalInput = imageWithTag
 
+			acrRegistryID := req.AcrRegistryID
+			if autoResolveAcr {
+				resolved, resolveErr := affinitySvc.ResolveTargetAcr(imageWithTag)
+				if resolveErr != nil {
+					return fmt.Errorf("解析镜像目标 ACR 失败: %w", resolveErr)
+				}
+				acrRegistryID = resolved.SuggestedAcrID
+			} else if acrRegistryID == 0 {
+				resolved, resolveErr := affinitySvc.ResolveTargetAcr(imageWithTag)
+				if resolveErr != nil {
+					return fmt.Errorf("解析镜像目标 ACR 失败: %w", resolveErr)
+				}
+				acrRegistryID = resolved.SuggestedAcrID
+			}
+
 			record := &models.ImageSyncRecord{
 				TaskID:        taskID,
 				OriginalImage: originalImage,
@@ -226,7 +244,7 @@ func (h *SyncHandler) SubmitBatchSync(c *gin.Context) {
 				MaxRetries:    req.RetryCount,
 				Description:   img.Description,
 				OriginalInput: originalInput,
-				AcrRegistryID: req.AcrRegistryID,
+				AcrRegistryID: acrRegistryID,
 			}
 
 			if err := tx.Create(record).Error; err != nil {
@@ -776,80 +794,41 @@ func (h *SyncHandler) processSyncTask(taskID string) {
 	// 更新 images.txt 并触发 GitHub Actions（事务提交后执行）
 	// ====================================================================
 
-	// 1. 构建本次要同步的镜像列表
-	var images []string
-	for _, record := range records {
-		imageLine := record.OriginalImage
-		if record.Tag != "" {
-			imageLine = imageLine + ":" + record.Tag
-		}
-		images = append(images, imageLine)
-	}
-
-	// 2. 获取配置服务（自动解密加密的配置）
 	configService := h.gitServiceFactory.GetConfigService()
-
-	// 3. 获取 ACR 配置
-	var registry, namespace, username, password string
-
-	if task.AcrRegistryID > 0 {
-		// 使用指定的 ACR 配置
-		encryptionSvc := h.gitServiceFactory.GetEncryptionService()
-		acrRegistryService := services.NewAcrRegistryService(database.DB, encryptionSvc)
-		acr, err := acrRegistryService.GetByID(task.AcrRegistryID)
-		if err != nil {
-			logger.Logger.Error("获取ACR配置失败", zap.Error(err))
-			h.handleSyncError(taskID, fmt.Sprintf("获取ACR配置失败: %v", err))
-			return
-		}
-		registry = acr.RegistryURL
-		namespace = acr.Namespace
-		username = acr.Username
-		// 解密密码
-		password, err = encryptionSvc.Decrypt(acr.Password)
-		if err != nil {
-			logger.Logger.Error("解密ACR密码失败", zap.Error(err))
-			h.handleSyncError(taskID, fmt.Sprintf("解密ACR密码失败: %v", err))
-			return
-		}
-	} else {
-		// 使用默认配置（兼容旧逻辑）
-		registry, _ = configService.GetConfig("aliyun_registry")
-		if registry == "" {
-			registry = "registry.cn-hangzhou.aliyuncs.com"
-		}
-		namespace, _ = configService.GetConfig("aliyun_namespace")
-		if namespace == "" {
-			namespace = "lpx03"
-		}
-		username, _ = configService.GetConfig("aliyun_username")
-		password, _ = configService.GetConfig("aliyun_password")
-	}
-
-	logger.Logger.Info("获取阿里云配置成功",
-		zap.String("registry", registry),
-		zap.String("namespace", namespace),
-		zap.String("username", username),
-		zap.Bool("password_set", password != ""))
-
-	// 4. 获取 GitHub 配置
 	workflowFile, _ := configService.GetConfig("workflow_file")
 	if workflowFile == "" {
 		workflowFile = "docker.yaml"
 	}
 
-	// 5. 更新 images.txt 并触发 workflow_dispatch
-	runID, runURL, err := h.updateImagesAndTriggerWorkflow(images, map[string]string{
-		"aliyun_registry":          registry,
-		"aliyun_namespace":         namespace,
-		"aliyun_registry_user":     username,
-		"aliyun_registry_password": password,
-	}, workflowFile)
-	if err != nil {
-		logger.Logger.Error("更新 images.txt 或触发 workflow 失败", zap.String("task_id", taskID), zap.Error(err))
-		h.handleSyncError(taskID, fmt.Sprintf("触发 GitHub Actions 失败: %v", err))
-		return
+	acrGroups := groupRecordsByAcrRegistry(records, task.AcrRegistryID)
+	var lastRunID, lastRunURL string
+
+	for acrRegistryID, groupRecords := range acrGroups {
+		var images []string
+		for _, record := range groupRecords {
+			images = append(images, buildImageLineFromRecord(record))
+		}
+
+		inputs, err := h.buildAcrWorkflowInputs(acrRegistryID)
+		if err != nil {
+			logger.Logger.Error("获取ACR配置失败", zap.Error(err), zap.Uint("acr_registry_id", acrRegistryID))
+			h.handleSyncError(taskID, fmt.Sprintf("获取ACR配置失败: %v", err))
+			return
+		}
+
+		runID, runURL, err := h.updateImagesAndTriggerWorkflow(images, inputs, workflowFile)
+		if err != nil {
+			logger.Logger.Error("更新 images.txt 或触发 workflow 失败",
+				zap.String("task_id", taskID),
+				zap.Uint("acr_registry_id", acrRegistryID),
+				zap.Error(err))
+			h.handleSyncError(taskID, fmt.Sprintf("触发 GitHub Actions 失败: %v", err))
+			return
+		}
+		lastRunID, lastRunURL = runID, runURL
 	}
+
+	runID, runURL := lastRunID, lastRunURL
 
 	// ====================================================================
 	// 更新任务的 GitHub 信息（单独事务）
@@ -1286,14 +1265,6 @@ func (h *SyncHandler) handleSyncSuccess(taskID string) {
 		return
 	}
 
-	// 获取 ACR 配置
-	var acrRegistry *models.AcrRegistry
-	if task.AcrRegistryID > 0 {
-		if err := database.DB.First(&acrRegistry, task.AcrRegistryID).Error; err != nil {
-			logger.Logger.Error("获取ACR配置失败", zap.Error(err))
-		}
-	}
-
 	// ====================================================================
 	// 验证镜像同步结果
 	// ====================================================================
@@ -1304,12 +1275,7 @@ func (h *SyncHandler) handleSyncSuccess(taskID string) {
 	// 逐个验证每个镜像是否成功同步到ACR
 	for _, record := range records {
 		// 生成目标ACR镜像地址（使用关联的 ACR 配置）
-		var acrImage string
-		if acrRegistry != nil {
-			acrImage = fmt.Sprintf("%s/%s/%s:%s", acrRegistry.RegistryURL, acrRegistry.Namespace, record.OriginalImage, record.Tag)
-		} else {
-			acrImage = utils.GenerateACRImage(record.OriginalImage, record.Tag)
-		}
+		acrImage := h.buildACRImageForRecord(record)
 
 		// 检查镜像是否真正存在于ACR中
 		exists := utils.CheckImageExistsInRegistry(acrImage)
@@ -1349,6 +1315,7 @@ func (h *SyncHandler) handleSyncSuccess(taskID string) {
 				logger.Logger.Error("更新镜像成功状态失败", zap.Error(err))
 			} else {
 				successCount++
+				h.registerRepositoryOnSyncSuccess(&record)
 			}
 		} else {
 			// 镜像不存在，标记为失败
@@ -1508,14 +1475,6 @@ func (h *SyncHandler) handlePartialSyncFailure(taskID, workflowErrorMessage stri
 		return
 	}
 
-	// 获取 ACR 配置
-	var acrRegistry *models.AcrRegistry
-	if task.AcrRegistryID > 0 {
-		if err := database.DB.First(&acrRegistry, task.AcrRegistryID).Error; err != nil {
-			logger.Logger.Error("获取ACR配置失败", zap.Error(err))
-		}
-	}
-
 	// ====================================================================
 	// 验证镜像同步结果
 	// ====================================================================
@@ -1528,12 +1487,7 @@ func (h *SyncHandler) handlePartialSyncFailure(taskID, workflowErrorMessage stri
 	// 逐个验证每个镜像是否成功同步到ACR
 	for _, record := range records {
 		// 生成目标ACR镜像地址（使用关联的 ACR 配置）
-		var acrImage string
-		if acrRegistry != nil {
-			acrImage = fmt.Sprintf("%s/%s/%s:%s", acrRegistry.RegistryURL, acrRegistry.Namespace, record.OriginalImage, record.Tag)
-		} else {
-			acrImage = utils.GenerateACRImage(record.OriginalImage, record.Tag)
-		}
+		acrImage := h.buildACRImageForRecord(record)
 
 		// 检查镜像是否真正存在于ACR中
 		exists := utils.CheckImageExistsInRegistry(acrImage)
@@ -1576,6 +1530,7 @@ func (h *SyncHandler) handlePartialSyncFailure(taskID, workflowErrorMessage stri
 					zap.String("task_id", taskID),
 					zap.String("image", record.OriginalImage),
 					zap.String("acr_image", acrImage))
+				h.registerRepositoryOnSyncSuccess(&record)
 			}
 		} else {
 			// 镜像不存在，标记为失败
@@ -1701,6 +1656,9 @@ func (h *SyncHandler) SubmitMockBatchSync(c *gin.Context) {
 
 	normalizeBatchSyncRequest(&req)
 
+	affinitySvc := services.NewAcrAffinityService(database.DB)
+	autoResolveAcr := len(req.Images) > 1
+
 	// 生成任务ID
 	taskID := uuid.New().String()
 
@@ -1751,6 +1709,23 @@ func (h *SyncHandler) SubmitMockBatchSync(c *gin.Context) {
 		}
 		originalInput = imageWithTag
 
+		acrRegistryID := req.AcrRegistryID
+		if autoResolveAcr {
+			resolved, resolveErr := affinitySvc.ResolveTargetAcr(imageWithTag)
+			if resolveErr != nil {
+				logger.Logger.Error("解析镜像目标 ACR 失败", zap.Error(resolveErr), zap.String("image", imageWithTag))
+				continue
+			}
+			acrRegistryID = resolved.SuggestedAcrID
+		} else if acrRegistryID == 0 {
+			resolved, resolveErr := affinitySvc.ResolveTargetAcr(imageWithTag)
+			if resolveErr != nil {
+				logger.Logger.Error("解析镜像目标 ACR 失败", zap.Error(resolveErr), zap.String("image", imageWithTag))
+				continue
+			}
+			acrRegistryID = resolved.SuggestedAcrID
+		}
+
 		record := &models.ImageSyncRecord{
 			OriginalImage: originalImage,
 			Tag:           tag,
@@ -1762,7 +1737,7 @@ func (h *SyncHandler) SubmitMockBatchSync(c *gin.Context) {
 			Priority:      img.Priority,
 			MaxRetries:    req.RetryCount,
 			Description:   img.Description, // 添加描述字段
-			AcrRegistryID: req.AcrRegistryID,
+			AcrRegistryID: acrRegistryID,
 		}
 
 		if err := database.DB.Create(record).Error; err != nil {
@@ -1878,7 +1853,7 @@ func (h *SyncHandler) processSingleMockImage(taskID string, record models.ImageS
 	time.Sleep(mockDuration)
 
 	// 生成ACR镜像地址
-	acrImage := utils.GenerateACRImage(record.OriginalImage, record.Tag)
+	acrImage := h.buildACRImageForRecord(record)
 
 	// 检测目标镜像是否存在
 	exists := utils.CheckImageExistsInRegistry(acrImage)
@@ -1904,6 +1879,8 @@ func (h *SyncHandler) processSingleMockImage(taskID string, record models.ImageS
 				"acr_architectures": archJSON,
 			}).Error; err != nil {
 			logger.Logger.Error("更新镜像完成状态失败", zap.Error(err))
+		} else {
+			h.registerRepositoryOnSyncSuccess(&record)
 		}
 
 		logger.Logger.Info("模拟镜像同步完成",
@@ -2095,4 +2072,160 @@ func (h *SyncHandler) updateTaskStatus(taskID, status, errorMessage string) {
 		Updates(updates).Error; err != nil {
 		logger.Logger.Error("更新任务状态失败", zap.Error(err))
 	}
+}
+
+// SuggestAcr 根据源镜像建议目标 ACR
+//
+// HTTP方法: GET
+// 路径: /api/v1/sync/suggest-acr?image=nginx:1.21
+func (h *SyncHandler) SuggestAcr(c *gin.Context) {
+	image := strings.TrimSpace(c.Query("image"))
+	if image == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 image 参数"})
+		return
+	}
+
+	affinitySvc := services.NewAcrAffinityService(database.DB)
+	resolved, err := affinitySvc.ResolveTargetAcr(image)
+	if err != nil {
+		logger.Logger.Error("查询 ACR 建议失败", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询 ACR 建议失败"})
+		return
+	}
+
+	quotaSummary, err := affinitySvc.GetQuotaSummary()
+	if err != nil {
+		logger.Logger.Error("查询 ACR 配额失败", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询 ACR 配额失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status": "success",
+		"data": gin.H{
+			"affinity":            resolved.Affinity,
+			"suggested_acr_id":    resolved.SuggestedAcrID,
+			"suggested_namespace": resolved.SuggestedNamespace,
+			"suggestion_reason":   resolved.SuggestionReason,
+			"quota_summary":       quotaSummary,
+		},
+	})
+}
+
+// CheckAcr 批量检查镜像与所选 ACR 的归属冲突
+//
+// HTTP方法: POST
+// 路径: /api/v1/sync/check-acr
+func (h *SyncHandler) CheckAcr(c *gin.Context) {
+	var req models.CheckAcrRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数格式错误"})
+		return
+	}
+
+	affinitySvc := services.NewAcrAffinityService(database.DB)
+	result, err := affinitySvc.CheckImages(req.Images, req.AcrRegistryID)
+	if err != nil {
+		logger.Logger.Error("检查 ACR 冲突失败", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "检查 ACR 冲突失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status": "success",
+		"data":   result,
+	})
+}
+
+func (h *SyncHandler) registerRepositoryOnSyncSuccess(record *models.ImageSyncRecord) {
+	if record == nil || record.AcrRegistryID == 0 {
+		return
+	}
+
+	repoSvc := services.NewAcrRepositoryService(
+		database.DB,
+		services.NewAcrAPIService(),
+		h.gitServiceFactory.GetEncryptionService(),
+	)
+	repoName := services.ExtractRepoName(record.OriginalImage)
+	if err := repoSvc.EnsureRepository(record.AcrRegistryID, repoName); err != nil {
+		logger.Logger.Warn("同步成功后登记仓库台账失败",
+			zap.Error(err),
+			zap.Uint("acr_registry_id", record.AcrRegistryID),
+			zap.String("repository_name", repoName))
+	}
+}
+
+func buildImageLineFromRecord(record models.ImageSyncRecord) string {
+	imageLine := record.OriginalImage
+	if record.Tag != "" {
+		imageLine = imageLine + ":" + record.Tag
+	}
+	return imageLine
+}
+
+func groupRecordsByAcrRegistry(records []models.ImageSyncRecord, fallbackAcrID uint) map[uint][]models.ImageSyncRecord {
+	groups := make(map[uint][]models.ImageSyncRecord)
+	for _, record := range records {
+		acrID := record.AcrRegistryID
+		if acrID == 0 {
+			acrID = fallbackAcrID
+		}
+		groups[acrID] = append(groups[acrID], record)
+	}
+	return groups
+}
+
+func (h *SyncHandler) buildAcrWorkflowInputs(acrRegistryID uint) (map[string]string, error) {
+	if acrRegistryID > 0 {
+		encryptionSvc := h.gitServiceFactory.GetEncryptionService()
+		acrRegistryService := services.NewAcrRegistryService(database.DB, encryptionSvc)
+		acr, err := acrRegistryService.GetByID(acrRegistryID)
+		if err != nil {
+			return nil, err
+		}
+		password, err := encryptionSvc.Decrypt(acr.Password)
+		if err != nil {
+			return nil, fmt.Errorf("解密ACR密码失败: %w", err)
+		}
+		return map[string]string{
+			"aliyun_registry":          acr.RegistryURL,
+			"aliyun_namespace":         acr.Namespace,
+			"aliyun_registry_user":     acr.Username,
+			"aliyun_registry_password": password,
+		}, nil
+	}
+
+	configService := h.gitServiceFactory.GetConfigService()
+	registry, _ := configService.GetConfig("aliyun_registry")
+	if registry == "" {
+		registry = "registry.cn-hangzhou.aliyuncs.com"
+	}
+	namespace, _ := configService.GetConfig("aliyun_namespace")
+	if namespace == "" {
+		namespace = "lpx03"
+	}
+	username, _ := configService.GetConfig("aliyun_username")
+	password, _ := configService.GetConfig("aliyun_password")
+	return map[string]string{
+		"aliyun_registry":          registry,
+		"aliyun_namespace":         namespace,
+		"aliyun_registry_user":     username,
+		"aliyun_registry_password": password,
+	}, nil
+}
+
+func (h *SyncHandler) buildACRImageForRecord(record models.ImageSyncRecord) string {
+	if record.AcrRegistryID > 0 {
+		var acr models.AcrRegistry
+		if err := database.DB.First(&acr, record.AcrRegistryID).Error; err == nil {
+			imageName := services.ExtractRepoName(record.OriginalImage)
+			tag := record.Tag
+			if tag == "" {
+				tag = "latest"
+			}
+			return fmt.Sprintf("%s/%s/%s:%s", acr.RegistryURL, acr.Namespace, imageName, tag)
+		}
+	}
+	return utils.GenerateACRImage(record.OriginalImage, record.Tag)
 }

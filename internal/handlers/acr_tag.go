@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"docker-image-sync-platform/internal/database"
 	"docker-image-sync-platform/internal/logger"
@@ -42,7 +43,7 @@ func (h *AcrTagHandler) getAcrConfig(acrRegistryID uint) (*models.AcrRegistry, s
 	return &acr, password, nil
 }
 
-// GetTags 获取镜像的Tag列表
+// GetTags 获取镜像的 Tag 名称列表（轻量，不含 manifest 详情）
 func (h *AcrTagHandler) GetTags(c *gin.Context) {
 	acrRegistryIDStr := c.Query("acr_registry_id")
 	repositoryName := c.Query("repository_name")
@@ -58,22 +59,77 @@ func (h *AcrTagHandler) GetTags(c *gin.Context) {
 		return
 	}
 
-	// 获取 ACR 配置
 	acr, password, err := h.getAcrConfig(uint(acrRegistryID))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "ACR配置不存在"})
 		return
 	}
 
-	// 获取 Tag 列表及详细信息（服务端批量拉取，避免前端 N+1 触发 ACR 限流）
-	tags, err := h.acrAPIService.GetTagsWithDetails(acr.RegistryURL, acr.Username, password, acr.Namespace, repositoryName, acr.AuthServer, acr.DockerService)
+	tagNames, err := h.acrAPIService.GetTagNames(acr.RegistryURL, acr.Username, password, acr.Namespace, repositoryName, acr.AuthServer, acr.DockerService)
 	if err != nil {
 		logger.Logger.Error("获取Tag列表失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"status": "success", "data": tags})
+	c.JSON(http.StatusOK, gin.H{
+		"status": "success",
+		"data": gin.H{
+			"tags":  tagNames,
+			"total": len(tagNames),
+		},
+	})
+}
+
+// GetTagsDetails 批量获取指定 Tag 的详细信息
+func (h *AcrTagHandler) GetTagsDetails(c *gin.Context) {
+	acrRegistryIDStr := c.Query("acr_registry_id")
+	repositoryName := c.Query("repository_name")
+	tagsParam := c.Query("tags")
+
+	if acrRegistryIDStr == "" || repositoryName == "" || tagsParam == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "缺少必要参数"})
+		return
+	}
+
+	acrRegistryID, err := strconv.ParseUint(acrRegistryIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "无效的 acr_registry_id"})
+		return
+	}
+
+	tagNames := splitTagsParam(tagsParam)
+	if len(tagNames) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "tags 参数无效"})
+		return
+	}
+
+	acr, password, err := h.getAcrConfig(uint(acrRegistryID))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "ACR配置不存在"})
+		return
+	}
+
+	details, err := h.acrAPIService.GetTagsDetailsBatch(acr.RegistryURL, acr.Username, password, acr.Namespace, repositoryName, acr.AuthServer, acr.DockerService, tagNames)
+	if err != nil {
+		logger.Logger.Error("批量获取Tag详情失败", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "success", "data": details})
+}
+
+func splitTagsParam(tagsParam string) []string {
+	parts := strings.Split(tagsParam, ",")
+	tagNames := make([]string, 0, len(parts))
+	for _, part := range parts {
+		tag := strings.TrimSpace(part)
+		if tag != "" {
+			tagNames = append(tagNames, tag)
+		}
+	}
+	return tagNames
 }
 
 // GetTagDetail 获取Tag详细信息

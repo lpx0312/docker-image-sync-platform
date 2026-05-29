@@ -1,5 +1,30 @@
 <template>
   <div class="images-manage-view">
+    <!-- ACR 配额概览 -->
+    <el-card v-if="quotaSummary.length" class="quota-card">
+      <template #header>
+        <div class="card-header">
+          <span>ACR 仓库配额</span>
+          <el-button type="warning" link size="small" @click="showDuplicateReport">
+            检测跨 ACR 重复
+          </el-button>
+        </div>
+      </template>
+      <div class="quota-list">
+        <div v-for="item in quotaSummary" :key="item.acr_registry_id" class="quota-item">
+          <div class="quota-label">
+            <span>{{ item.namespace }}</span>
+            <span class="quota-count">{{ item.repo_count }}/{{ item.repo_quota }}</span>
+          </div>
+          <el-progress
+            :percentage="getQuotaPercent(item)"
+            :status="item.is_full ? 'exception' : (getQuotaPercent(item) >= 80 ? 'warning' : '')"
+            :stroke-width="10"
+          />
+        </div>
+      </div>
+    </el-card>
+
     <el-card class="list-card">
       <template #header>
         <div class="card-header">
@@ -14,7 +39,7 @@
               <el-option
                 v-for="item in acrList"
                 :key="item.id"
-                :label="item.namespace"
+                :label="getAcrLabel(item)"
                 :value="item.id"
               />
             </el-select>
@@ -121,13 +146,67 @@ const selectedAcrId = ref(null)
 const repositories = ref([])
 const loading = ref(false)
 const syncing = ref(false)
+const quotaSummary = ref([])
+const quotaMap = ref({})
 
 const addDialogVisible = ref(false)
 const batchAddDialogVisible = ref(false)
 
 onMounted(() => {
   loadAcrList()
+  loadQuotaSummary()
 })
+
+const getAcrLabel = (item) => {
+  const quota = quotaMap.value[item.id]
+  if (quota) {
+    return `${item.namespace} (${quota.repo_count}/${quota.repo_quota})`
+  }
+  return item.namespace
+}
+
+const getQuotaPercent = (item) => {
+  if (!item.repo_quota) return 0
+  return Math.min(100, Math.round((item.repo_count / item.repo_quota) * 100))
+}
+
+const loadQuotaSummary = async () => {
+  try {
+    const response = await acrRegistryAPI.getQuotaSummary()
+    if (response?.status === 'success') {
+      quotaSummary.value = response.data || []
+      const map = {}
+      for (const item of quotaSummary.value) {
+        map[item.acr_registry_id] = item
+      }
+      quotaMap.value = map
+    }
+  } catch (error) {
+    console.error('加载 ACR 配额失败:', error)
+  }
+}
+
+const showDuplicateReport = async () => {
+  try {
+    const response = await acrRepositoryAPI.getDuplicates()
+    const duplicates = response?.data || []
+    if (!duplicates.length) {
+      ElMessage.success('未发现跨 ACR 重复的仓库')
+      return
+    }
+
+    const lines = duplicates.map(item =>
+      `${item.repository_name}：出现在 ${item.namespaces.join('、')}（${item.acr_count} 个 ACR）`
+    )
+    ElMessageBox.alert(lines.join('\n'), '跨 ACR 重复仓库', {
+      type: 'warning',
+      confirmButtonText: '知道了',
+    })
+  } catch (error) {
+    console.error('查询重复仓库失败:', error)
+    ElMessage.error('查询重复仓库失败')
+  }
+}
 
 const applyAcrSelection = () => {
   const queryAcrId = Number(route.query.acrId)
@@ -261,7 +340,7 @@ const handleSyncFromRecords = async () => {
     const response = await acrRepositoryAPI.syncFromRecords(selectedAcrId.value)
     if (response && response.status === 'success') {
       showSyncImportResult(response.data || {})
-      loadRepositories()
+      await Promise.all([loadRepositories(), loadQuotaSummary()])
     }
   } catch (error) {
     console.error('导入失败:', error)
@@ -275,7 +354,7 @@ const handleDelete = async (row) => {
   try {
     await acrRepositoryAPI.delete(row.id)
     ElMessage.success('删除成功')
-    loadRepositories()
+    await Promise.all([loadRepositories(), loadQuotaSummary()])
   } catch (error) {
     ElMessage.error('删除失败')
   }
@@ -286,6 +365,31 @@ const handleDelete = async (row) => {
 .images-manage-view {
   max-width: var(--max-width);
   margin: 0 auto;
+}
+
+.quota-card {
+  margin-bottom: 20px;
+}
+
+.quota-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.quota-item {
+  width: 100%;
+}
+
+.quota-label {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+
+.quota-count {
+  color: #909399;
 }
 
 .list-card {

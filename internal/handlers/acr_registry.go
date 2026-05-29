@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"docker-image-sync-platform/internal/database"
 	"docker-image-sync-platform/internal/logger"
 	"docker-image-sync-platform/internal/models"
 	"docker-image-sync-platform/internal/services"
@@ -138,4 +139,17 @@ func (h *AcrRegistryHandler) SetDefault(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": "success", "message": "默认ACR已更新"})
+}
+
+// GetQuotaSummary 获取所有 ACR 的仓库配额用量
+func (h *AcrRegistryHandler) GetQuotaSummary(c *gin.Context) {
+	affinitySvc := services.NewAcrAffinityService(database.DB)
+	summary, err := affinitySvc.GetQuotaSummary()
+	if err != nil {
+		logger.Logger.Error("获取 ACR 配额摘要失败", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "success", "data": summary})
 }

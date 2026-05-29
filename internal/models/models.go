@@ -358,6 +358,12 @@ type BatchSyncRequest struct {
 	AcrRegistryID uint            `json:"acr_registry_id"`           // ACR配置ID，0表示使用默认配置
 }
 
+// CheckAcrRequest 批量检查镜像与 ACR 归属冲突
+type CheckAcrRequest struct {
+	Images        []string `json:"images" binding:"required,min=1"`
+	AcrRegistryID uint     `json:"acr_registry_id"`
+}
+
 // ImageSyncItem 单个镜像同步项
 //
 // 表示批量同步请求中的单个镜像配置，提供了详细的同步参数。
