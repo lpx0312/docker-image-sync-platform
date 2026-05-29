@@ -3,21 +3,41 @@ package services
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
+	"docker-image-sync-platform/internal/logger"
 	"docker-image-sync-platform/internal/models"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
+// SyncFromRecordsResult 从同步记录导入的结果
+type SyncFromRecordsResult struct {
+	Created           int      `json:"created"`
+	Skipped           int      `json:"skipped"`
+	AlreadyExist      int      `json:"already_exist"`
+	CreatedNames      []string `json:"created_names"`
+	MissingInACR      []string `json:"missing_in_acr"`
+	CheckFailedNames  []string `json:"check_failed_names"`
+	AlreadyExistNames []string `json:"already_exist_names"`
+}
+
 // AcrRepositoryService ACR镜像仓库服务
 type AcrRepositoryService struct {
-	db *gorm.DB
+	db            *gorm.DB
+	acrAPIService *AcrAPIService
+	encryptionSvc *EncryptionService
 }
 
 // NewAcrRepositoryService 创建ACR镜像仓库服务实例
-func NewAcrRepositoryService(db *gorm.DB) *AcrRepositoryService {
-	return &AcrRepositoryService{db: db}
+func NewAcrRepositoryService(db *gorm.DB, acrAPIService *AcrAPIService, encryptionSvc *EncryptionService) *AcrRepositoryService {
+	return &AcrRepositoryService{
+		db:            db,
+		acrAPIService: acrAPIService,
+		encryptionSvc: encryptionSvc,
+	}
 }
 
 // GetAll 获取指定ACR的所有镜像
@@ -106,29 +126,73 @@ func (s *AcrRepositoryService) Delete(id uint) error {
 	return nil
 }
 
-// SyncFromRecords 从同步记录中提取镜像名称
-func (s *AcrRepositoryService) SyncFromRecords(acrRegistryID uint) (int, error) {
-	// 查询指定 ACR 的成功同步记录
+// SyncFromRecords 从同步记录中提取镜像名称，仅导入 ACR 中仍存在的仓库
+func (s *AcrRepositoryService) SyncFromRecords(acrRegistryID uint) (*SyncFromRecordsResult, error) {
+	var acr models.AcrRegistry
+	if err := s.db.First(&acr, acrRegistryID).Error; err != nil {
+		return nil, fmt.Errorf("ACR配置不存在: %w", err)
+	}
+
+	password, err := s.encryptionSvc.Decrypt(acr.Password)
+	if err != nil {
+		return nil, fmt.Errorf("解密ACR密码失败: %w", err)
+	}
+
 	var records []models.ImageSyncRecord
 	if err := s.db.Where("acr_registry_id = ? AND sync_status = ?", acrRegistryID, models.SyncStatusSuccess).
 		Find(&records).Error; err != nil {
-		return 0, fmt.Errorf("查询同步记录失败: %w", err)
+		return nil, fmt.Errorf("查询同步记录失败: %w", err)
 	}
 
-	created := 0
+	repoNames := make(map[string]struct{})
 	for _, record := range records {
-		// 提取镜像名称（不含 tag）
 		repoName := extractRepoName(record.OriginalImage)
-		if repoName == "" {
-			continue
+		if repoName != "" {
+			repoNames[repoName] = struct{}{}
 		}
+	}
 
-		// 检查是否已存在
+	result := &SyncFromRecordsResult{
+		CreatedNames:      []string{},
+		MissingInACR:      []string{},
+		CheckFailedNames:  []string{},
+		AlreadyExistNames: []string{},
+	}
+
+	names := make([]string, 0, len(repoNames))
+	for name := range repoNames {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, repoName := range names {
 		var count int64
 		s.db.Model(&models.AcrRepository{}).
 			Where("acr_registry_id = ? AND repository_name = ?", acrRegistryID, repoName).
 			Count(&count)
 		if count > 0 {
+			result.AlreadyExist++
+			result.AlreadyExistNames = append(result.AlreadyExistNames, repoName)
+			continue
+		}
+
+		exists, err := s.acrAPIService.RepositoryExists(
+			acr.RegistryURL, acr.Username, password, acr.Namespace, repoName,
+			acr.AuthServer, acr.DockerService,
+		)
+		if err != nil {
+			logger.Logger.Warn("检查ACR仓库是否存在失败，跳过导入",
+				zap.String("repository", repoName),
+				zap.Error(err))
+			result.Skipped++
+			result.CheckFailedNames = append(result.CheckFailedNames, repoName)
+			continue
+		}
+		if !exists {
+			logger.Logger.Info("ACR中不存在该仓库，跳过导入",
+				zap.String("repository", repoName))
+			result.Skipped++
+			result.MissingInACR = append(result.MissingInACR, repoName)
 			continue
 		}
 
@@ -136,14 +200,17 @@ func (s *AcrRepositoryService) SyncFromRecords(acrRegistryID uint) (int, error) 
 			AcrRegistryID:  acrRegistryID,
 			RepositoryName: repoName,
 		}
-
 		if err := s.db.Create(repo).Error; err != nil {
+			logger.Logger.Warn("创建镜像记录失败，跳过",
+				zap.String("repository", repoName),
+				zap.Error(err))
 			continue
 		}
-		created++
+		result.Created++
+		result.CreatedNames = append(result.CreatedNames, repoName)
 	}
 
-	return created, nil
+	return result, nil
 }
 
 // extractRepoName 从镜像地址中提取仓库名称（不含 tag 和 registry/命名空间前缀）

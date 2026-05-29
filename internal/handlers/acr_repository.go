@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"docker-image-sync-platform/internal/logger"
 	"docker-image-sync-platform/internal/models"
@@ -120,9 +121,20 @@ func (h *AcrRepositoryHandler) SyncFromRecords(c *gin.Context) {
 		return
 	}
 
+	message := fmt.Sprintf("成功导入 %d 个镜像", created.Created)
+	if len(created.MissingInACR) > 0 {
+		message += fmt.Sprintf("，%d 个在 ACR 中不存在：%s", len(created.MissingInACR), strings.Join(created.MissingInACR, "、"))
+	}
+	if len(created.CheckFailedNames) > 0 {
+		message += fmt.Sprintf("，%d 个检查失败：%s", len(created.CheckFailedNames), strings.Join(created.CheckFailedNames, "、"))
+	}
+	if created.AlreadyExist > 0 {
+		message += fmt.Sprintf("，%d 个已存在", created.AlreadyExist)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "success",
-		"message": fmt.Sprintf("成功导入 %d 个镜像", created),
-		"data":    gin.H{"created": created},
+		"message": message,
+		"data":    created,
 	})
 }

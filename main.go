@@ -374,7 +374,8 @@ func main() {
 			}
 
 			// ACR镜像管理
-			acrRepositoryService := services.NewAcrRepositoryService(database.DB)
+			acrAPIService := services.NewAcrAPIService()
+			acrRepositoryService := services.NewAcrRepositoryService(database.DB, acrAPIService, encryptionService)
 			acrRepositoryHandler := handlers.NewAcrRepositoryHandler(acrRepositoryService)
 
 			acrRepositories := protected.Group("/acr-repositories")
@@ -388,7 +389,6 @@ func main() {
 			}
 
 			// ACR Tag查询
-			acrAPIService := services.NewAcrAPIService()
 			acrTagHandler := handlers.NewAcrTagHandler(acrAPIService, encryptionService)
 
 			acrTags := protected.Group("/acr-tags")

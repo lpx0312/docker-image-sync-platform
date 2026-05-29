@@ -195,6 +195,10 @@ func (s *AcrAPIService) GetTags(registry, username, password, namespace, repo, a
 			continue
 		}
 
+		if resp.StatusCode() == 404 {
+			return []string{}, nil
+		}
+
 		if resp.StatusCode() != 200 {
 			return nil, fmt.Errorf("获取Tag列表失败: HTTP %d", resp.StatusCode())
 		}
@@ -203,6 +207,16 @@ func (s *AcrAPIService) GetTags(registry, username, password, namespace, repo, a
 	}
 
 	return nil, fmt.Errorf("获取Tag列表失败: HTTP 401")
+}
+
+// RepositoryExists 检查 ACR 中仓库是否存在（有至少一个 Tag）
+// 通过 tags/list 判断：404 或空 Tag 列表视为不存在
+func (s *AcrAPIService) RepositoryExists(registry, username, password, namespace, repo, authServer, dockerService string) (bool, error) {
+	tags, err := s.GetTags(registry, username, password, namespace, repo, authServer, dockerService)
+	if err != nil {
+		return false, err
+	}
+	return len(tags) > 0, nil
 }
 
 const (

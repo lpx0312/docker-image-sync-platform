@@ -106,7 +106,7 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { acrRegistryAPI, acrRepositoryAPI } from '@/api'
 import { formatTime } from '@/utils/format'
@@ -220,6 +220,36 @@ const goToTags = (row) => {
   })
 }
 
+const formatNameList = (names) => (names && names.length ? names.join('、') : '无')
+
+const showSyncImportResult = (data) => {
+  const sections = []
+
+  if (data.created_names?.length) {
+    sections.push(`成功导入 ${data.created_names.length} 个：\n${formatNameList(data.created_names)}`)
+  }
+  if (data.missing_in_acr?.length) {
+    sections.push(`ACR 中不存在，已跳过 ${data.missing_in_acr.length} 个：\n${formatNameList(data.missing_in_acr)}`)
+  }
+  if (data.check_failed_names?.length) {
+    sections.push(`检查失败，已跳过 ${data.check_failed_names.length} 个：\n${formatNameList(data.check_failed_names)}`)
+  }
+  if (data.already_exist_names?.length) {
+    sections.push(`本地已存在，未重复导入 ${data.already_exist_names.length} 个：\n${formatNameList(data.already_exist_names)}`)
+  }
+
+  if (sections.length === 0) {
+    ElMessage.info('没有可导入的新镜像')
+    return
+  }
+
+  const hasIssue = data.missing_in_acr?.length || data.check_failed_names?.length
+  ElMessageBox.alert(sections.join('\n\n'), '导入结果', {
+    type: hasIssue ? 'warning' : 'success',
+    confirmButtonText: '知道了',
+  })
+}
+
 const handleSyncFromRecords = async () => {
   if (!selectedAcrId.value) {
     ElMessage.warning('请先选择 ACR')
@@ -230,7 +260,7 @@ const handleSyncFromRecords = async () => {
   try {
     const response = await acrRepositoryAPI.syncFromRecords(selectedAcrId.value)
     if (response && response.status === 'success') {
-      ElMessage.success(response.message || '导入成功')
+      showSyncImportResult(response.data || {})
       loadRepositories()
     }
   } catch (error) {
