@@ -69,9 +69,21 @@
         </el-button>
       </div>
 
+      <!-- 搜索 -->
+      <div class="filter-section">
+        <el-input
+          v-model="searchText"
+          placeholder="搜索镜像名称"
+          :prefix-icon="Search"
+          clearable
+          style="max-width: 320px;"
+          @input="handleSearch"
+        />
+      </div>
+
       <!-- 镜像列表 -->
       <el-table
-        :data="repositories"
+        :data="paginatedRepositories"
         v-loading="loading"
         empty-text="暂无镜像数据"
         style="margin-top: 16px;"
@@ -110,6 +122,19 @@
           </template>
         </el-table-column>
       </el-table>
+
+      <div class="pagination-section">
+        <el-pagination
+          v-model:current-page="currentPage"
+          v-model:page-size="pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="filteredRepositories.length"
+          layout="total, sizes, prev, pager, next, jumper"
+          background
+          @size-change="handlePageSizeChange"
+          @current-change="handlePageChange"
+        />
+      </div>
     </el-card>
 
     <!-- 添加镜像对话框 -->
@@ -129,10 +154,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh } from '@element-plus/icons-vue'
+import { Refresh, Search } from '@element-plus/icons-vue'
 import { acrRegistryAPI, acrRepositoryAPI } from '@/api'
 import { formatTime } from '@/utils/format'
 import AddRepositoryDialog from '@/components/AddRepositoryDialog.vue'
@@ -151,6 +176,41 @@ const quotaMap = ref({})
 
 const addDialogVisible = ref(false)
 const batchAddDialogVisible = ref(false)
+const searchText = ref('')
+const currentPage = ref(1)
+const pageSize = ref(20)
+
+let searchTimer = null
+
+const filteredRepositories = computed(() => {
+  const keyword = searchText.value.trim().toLowerCase()
+  if (!keyword) {
+    return repositories.value
+  }
+  return repositories.value.filter(item =>
+    item.repository_name.toLowerCase().includes(keyword)
+  )
+})
+
+const paginatedRepositories = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return filteredRepositories.value.slice(start, start + pageSize.value)
+})
+
+const handleSearch = () => {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    currentPage.value = 1
+  }, 300)
+}
+
+const handlePageSizeChange = () => {
+  currentPage.value = 1
+}
+
+const handlePageChange = () => {
+  // 分页由 computed 自动处理
+}
 
 onMounted(() => {
   loadAcrList()
@@ -260,6 +320,7 @@ const loadRepositories = async () => {
     const response = await acrRepositoryAPI.getAll(selectedAcrId.value)
     if (response && response.status === 'success') {
       repositories.value = response.data || []
+      currentPage.value = 1
     }
   } catch (error) {
     console.error('加载镜像列表失败:', error)
@@ -410,5 +471,15 @@ const handleDelete = async (row) => {
 .action-section {
   display: flex;
   gap: 8px;
+}
+
+.filter-section {
+  margin-top: 16px;
+}
+
+.pagination-section {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
 }
 </style>

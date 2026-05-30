@@ -82,10 +82,24 @@ func (h *AcrRepositoryHandler) BatchCreate(c *gin.Context) {
 		return
 	}
 
+	message := fmt.Sprintf("成功添加 %d 个镜像", created.Created)
+	if len(created.DuplicateInInput) > 0 {
+		message += fmt.Sprintf("，输入重复 %d 个：%s", len(created.DuplicateInInput), strings.Join(created.DuplicateInInput, "、"))
+	}
+	if len(created.AlreadyExistNames) > 0 {
+		message += fmt.Sprintf("，本地已存在 %d 个：%s", len(created.AlreadyExistNames), strings.Join(created.AlreadyExistNames, "、"))
+	}
+	if len(created.MissingInACR) > 0 {
+		message += fmt.Sprintf("，ACR 中不存在 %d 个：%s", len(created.MissingInACR), strings.Join(created.MissingInACR, "、"))
+	}
+	if len(created.CheckFailedNames) > 0 {
+		message += fmt.Sprintf("，检查失败 %d 个：%s", len(created.CheckFailedNames), strings.Join(created.CheckFailedNames, "、"))
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "success",
-		"message": fmt.Sprintf("成功添加 %d 个镜像", created),
-		"data":    gin.H{"created": created},
+		"message": message,
+		"data":    created,
 	})
 }
 

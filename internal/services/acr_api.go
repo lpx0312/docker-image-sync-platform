@@ -219,6 +219,16 @@ func (s *AcrAPIService) RepositoryExists(registry, username, password, namespace
 	return len(tags) > 0, nil
 }
 
+// IsRepositoryNotFound 判断 tags/list 错误是否表示仓库不存在。
+// 阿里云 ACR 对不存在的仓库可能返回 404 或 401，而非标准 404。
+func (s *AcrAPIService) IsRepositoryNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "HTTP 404") || strings.Contains(msg, "HTTP 401")
+}
+
 const (
 	tagDetailMaxRetries      = 4
 	tagDetailConcurrency     = 5
@@ -299,7 +309,69 @@ func (s *AcrAPIService) fetchImageArch(registry, token, namespace, repo, configD
 	return ""
 }
 
-func (s *AcrAPIService) parseManifestToTagDetail(tag, registry, namespace, repo, token string, body []byte, contentDigest string) (*TagDetail, error) {
+func parseHTTPTime(value string) string {
+	if value == "" {
+		return ""
+	}
+
+	layouts := []string{
+		time.RFC1123,
+		time.RFC1123Z,
+		time.RFC3339,
+		time.RFC3339Nano,
+	}
+	for _, layout := range layouts {
+		if t, err := time.Parse(layout, value); err == nil {
+			return t.Format(time.RFC3339)
+		}
+	}
+
+	return value
+}
+
+func (s *AcrAPIService) fetchResourceLastModified(url, token string) string {
+	resp, err := s.client.R().
+		SetAuthToken(token).
+		Head(url)
+	if err != nil || resp.StatusCode() != 200 {
+		return ""
+	}
+
+	if lastModified := parseHTTPTime(resp.Header().Get("Last-Modified")); lastModified != "" {
+		return lastModified
+	}
+
+	return parseHTTPTime(resp.Header().Get("Date"))
+}
+
+func (s *AcrAPIService) fetchManifestLastModified(registry, token, namespace, repo, reference string) string {
+	if reference == "" {
+		return ""
+	}
+
+	url := fmt.Sprintf("https://%s/v2/%s/%s/manifests/%s", registry, namespace, repo, reference)
+	return s.fetchResourceLastModified(url, token)
+}
+
+func (s *AcrAPIService) fetchBlobLastModified(registry, token, namespace, repo, digest string) string {
+	if digest == "" {
+		return ""
+	}
+
+	url := fmt.Sprintf("https://%s/v2/%s/%s/blobs/%s", registry, namespace, repo, digest)
+	return s.fetchResourceLastModified(url, token)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func (s *AcrAPIService) parseManifestToTagDetail(tag, registry, namespace, repo, token string, body []byte, contentDigest, manifestLastModified string) (*TagDetail, error) {
 	var manifest ACRManifest
 	if err := json.Unmarshal(body, &manifest); err != nil {
 		return nil, fmt.Errorf("解析Manifest失败: %w", err)
@@ -320,6 +392,11 @@ func (s *AcrAPIService) parseManifestToTagDetail(tag, registry, namespace, repo,
 				detail.Architectures = append(detail.Architectures, arch)
 				detail.Digests[arch] = m.Digest
 				detail.Sizes[arch] = m.Size
+				detail.PushedAt[arch] = firstNonEmpty(
+					manifestLastModified,
+					s.fetchManifestLastModified(registry, token, namespace, repo, m.Digest),
+					s.fetchBlobLastModified(registry, token, namespace, repo, m.Digest),
+				)
 			}
 		}
 		detail.Architectures = sortArchitectures(detail.Architectures)
@@ -345,10 +422,21 @@ func (s *AcrAPIService) parseManifestToTagDetail(tag, registry, namespace, repo,
 		detail.Sizes[arch] = totalSize
 	}
 
+	digestForPushTime := contentDigest
+	if manifest.Config.Digest != "" {
+		digestForPushTime = manifest.Config.Digest
+	}
+	detail.PushedAt[arch] = firstNonEmpty(
+		manifestLastModified,
+		s.fetchManifestLastModified(registry, token, namespace, repo, tag),
+		s.fetchManifestLastModified(registry, token, namespace, repo, contentDigest),
+		s.fetchBlobLastModified(registry, token, namespace, repo, digestForPushTime),
+	)
+
 	return detail, nil
 }
 
-func (s *AcrAPIService) fetchManifest(registry, token, namespace, repo, tag string) ([]byte, string, int, error) {
+func (s *AcrAPIService) fetchManifest(registry, token, namespace, repo, tag string) ([]byte, string, string, int, error) {
 	return s.fetchManifestWithRetry(registry, namespace, repo, tag, func(forceRefresh bool) (string, error) {
 		if forceRefresh {
 			return "", fmt.Errorf("token refresh not supported")
@@ -357,7 +445,7 @@ func (s *AcrAPIService) fetchManifest(registry, token, namespace, repo, tag stri
 	})
 }
 
-func (s *AcrAPIService) fetchManifestWithRetry(registry, namespace, repo, tag string, getToken func(forceRefresh bool) (string, error)) ([]byte, string, int, error) {
+func (s *AcrAPIService) fetchManifestWithRetry(registry, namespace, repo, tag string, getToken func(forceRefresh bool) (string, error)) ([]byte, string, string, int, error) {
 	acceptHeader := "application/vnd.oci.image.index.v1+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json,application/vnd.docker.distribution.manifest.list.v2+json"
 
 	var lastStatus int
@@ -366,7 +454,7 @@ func (s *AcrAPIService) fetchManifestWithRetry(registry, namespace, repo, tag st
 	for attempt := 0; attempt <= tagDetailMaxRetries; attempt++ {
 		token, err := getToken(false)
 		if err != nil {
-			return nil, "", 0, err
+			return nil, "", "", 0, err
 		}
 
 		resp, err := s.client.R().
@@ -375,18 +463,22 @@ func (s *AcrAPIService) fetchManifestWithRetry(registry, namespace, repo, tag st
 			Get(fmt.Sprintf("https://%s/v2/%s/%s/manifests/%s", registry, namespace, repo, tag))
 
 		if err != nil {
-			return nil, "", 0, fmt.Errorf("获取Manifest失败: %w", err)
+			return nil, "", "", 0, fmt.Errorf("获取Manifest失败: %w", err)
 		}
 
 		lastStatus = resp.StatusCode()
 		if lastStatus == 200 {
-			return resp.Body(), resp.Header().Get("Docker-Content-Digest"), lastStatus, nil
+			lastModified := firstNonEmpty(
+				parseHTTPTime(resp.Header().Get("Last-Modified")),
+				parseHTTPTime(resp.Header().Get("Date")),
+			)
+			return resp.Body(), resp.Header().Get("Docker-Content-Digest"), lastModified, lastStatus, nil
 		}
 
 		if lastStatus == 401 && !tokenRefreshed {
 			tokenRefreshed = true
 			if _, err := getToken(true); err != nil {
-				return nil, "", lastStatus, fmt.Errorf("获取Manifest失败: HTTP %d", lastStatus)
+				return nil, "", "", lastStatus, fmt.Errorf("获取Manifest失败: HTTP %d", lastStatus)
 			}
 			continue
 		}
@@ -396,10 +488,10 @@ func (s *AcrAPIService) fetchManifestWithRetry(registry, namespace, repo, tag st
 			continue
 		}
 
-		return nil, "", lastStatus, fmt.Errorf("获取Manifest失败: HTTP %d", lastStatus)
+		return nil, "", "", lastStatus, fmt.Errorf("获取Manifest失败: HTTP %d", lastStatus)
 	}
 
-	return nil, "", lastStatus, fmt.Errorf("获取Manifest失败: HTTP %d", lastStatus)
+	return nil, "", "", lastStatus, fmt.Errorf("获取Manifest失败: HTTP %d", lastStatus)
 }
 
 // GetTagDetail 获取 Tag 详细信息
@@ -409,12 +501,12 @@ func (s *AcrAPIService) GetTagDetail(registry, username, password, namespace, re
 		return nil, err
 	}
 
-	body, contentDigest, _, err := s.fetchManifest(registry, token, namespace, repo, tag)
+	body, contentDigest, manifestLastModified, _, err := s.fetchManifest(registry, token, namespace, repo, tag)
 	if err != nil {
 		return nil, err
 	}
 
-	return s.parseManifestToTagDetail(tag, registry, namespace, repo, token, body, contentDigest)
+	return s.parseManifestToTagDetail(tag, registry, namespace, repo, token, body, contentDigest, manifestLastModified)
 }
 
 func emptyTagDetail(tag string) *TagDetail {
@@ -475,14 +567,14 @@ func (s *AcrAPIService) GetTagsDetailsBatch(registry, username, password, namesp
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			body, contentDigest, _, err := s.fetchManifestWithRetry(registry, namespace, repo, tag, getToken)
+			body, contentDigest, manifestLastModified, _, err := s.fetchManifestWithRetry(registry, namespace, repo, tag, getToken)
 			if err != nil {
 				details[index] = emptyTagDetail(tag)
 				return
 			}
 
 			token, _ := getToken(false)
-			detail, err := s.parseManifestToTagDetail(tag, registry, namespace, repo, token, body, contentDigest)
+			detail, err := s.parseManifestToTagDetail(tag, registry, namespace, repo, token, body, contentDigest, manifestLastModified)
 			if err != nil {
 				details[index] = emptyTagDetail(tag)
 				return

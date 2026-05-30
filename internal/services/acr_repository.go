@@ -24,6 +24,17 @@ type SyncFromRecordsResult struct {
 	AlreadyExistNames []string `json:"already_exist_names"`
 }
 
+// BatchCreateResult 批量添加镜像的结果
+type BatchCreateResult struct {
+	Created           int      `json:"created"`
+	AlreadyExist      int      `json:"already_exist"`
+	CreatedNames      []string `json:"created_names"`
+	MissingInACR      []string `json:"missing_in_acr"`
+	CheckFailedNames  []string `json:"check_failed_names"`
+	AlreadyExistNames []string `json:"already_exist_names"`
+	DuplicateInInput  []string `json:"duplicate_in_input"`
+}
+
 // AcrRepositoryService ACR镜像仓库服务
 type AcrRepositoryService struct {
 	db            *gorm.DB
@@ -86,36 +97,94 @@ func (s *AcrRepositoryService) Create(req *models.AcrRepositoryRequest) (*models
 	return repo, nil
 }
 
-// BatchCreate 批量创建镜像
-func (s *AcrRepositoryService) BatchCreate(req *models.AcrRepositoryBatchRequest) (int, error) {
-	created := 0
-	for _, name := range req.RepositoryNames {
-		name = strings.TrimSpace(name)
+// BatchCreate 批量创建镜像，校验本地重复与 ACR 是否存在
+func (s *AcrRepositoryService) BatchCreate(req *models.AcrRepositoryBatchRequest) (*BatchCreateResult, error) {
+	var acr models.AcrRegistry
+	if err := s.db.First(&acr, req.AcrRegistryID).Error; err != nil {
+		return nil, fmt.Errorf("ACR配置不存在: %w", err)
+	}
+
+	password, err := s.encryptionSvc.Decrypt(acr.Password)
+	if err != nil {
+		return nil, fmt.Errorf("解密ACR密码失败: %w", err)
+	}
+
+	result := &BatchCreateResult{
+		CreatedNames:      []string{},
+		MissingInACR:      []string{},
+		CheckFailedNames:  []string{},
+		AlreadyExistNames: []string{},
+		DuplicateInInput:  []string{},
+	}
+
+	seen := make(map[string]struct{})
+	names := make([]string, 0, len(req.RepositoryNames))
+	for _, rawName := range req.RepositoryNames {
+		name := strings.TrimSpace(rawName)
 		if name == "" {
 			continue
 		}
+		if _, ok := seen[name]; ok {
+			result.DuplicateInInput = append(result.DuplicateInInput, name)
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	sort.Strings(result.DuplicateInInput)
 
-		// 检查是否已存在
+	for _, repoName := range names {
 		var count int64
 		s.db.Model(&models.AcrRepository{}).
-			Where("acr_registry_id = ? AND repository_name = ?", req.AcrRegistryID, name).
+			Where("acr_registry_id = ? AND repository_name = ?", req.AcrRegistryID, repoName).
 			Count(&count)
 		if count > 0 {
+			result.AlreadyExist++
+			result.AlreadyExistNames = append(result.AlreadyExistNames, repoName)
+			continue
+		}
+
+		exists, err := s.acrAPIService.RepositoryExists(
+			acr.RegistryURL, acr.Username, password, acr.Namespace, repoName,
+			acr.AuthServer, acr.DockerService,
+		)
+		if err != nil {
+			if s.acrAPIService.IsRepositoryNotFound(err) {
+				logger.Logger.Info("ACR中不存在该仓库，跳过添加",
+					zap.String("repository", repoName))
+				result.MissingInACR = append(result.MissingInACR, repoName)
+				continue
+			}
+			logger.Logger.Warn("检查ACR仓库是否存在失败，跳过添加",
+				zap.String("repository", repoName),
+				zap.Error(err))
+			result.CheckFailedNames = append(result.CheckFailedNames, repoName)
+			continue
+		}
+		if !exists {
+			logger.Logger.Info("ACR中不存在该仓库，跳过添加",
+				zap.String("repository", repoName))
+			result.MissingInACR = append(result.MissingInACR, repoName)
 			continue
 		}
 
 		repo := &models.AcrRepository{
 			AcrRegistryID:  req.AcrRegistryID,
-			RepositoryName: name,
+			RepositoryName: repoName,
 		}
-
 		if err := s.db.Create(repo).Error; err != nil {
+			logger.Logger.Warn("创建镜像记录失败，跳过",
+				zap.String("repository", repoName),
+				zap.Error(err))
+			result.CheckFailedNames = append(result.CheckFailedNames, repoName)
 			continue
 		}
-		created++
+
+		result.Created++
+		result.CreatedNames = append(result.CreatedNames, repoName)
 	}
 
-	return created, nil
+	return result, nil
 }
 
 // Delete 删除镜像

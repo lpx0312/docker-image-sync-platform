@@ -101,6 +101,23 @@
           </div>
         </template>
       </el-table-column>
+      <el-table-column label="推送时间" width="180">
+        <template #default="{ row }">
+          <div v-if="isDetailLoading(row.tag)" class="detail-loading">
+            <el-skeleton :rows="1" animated />
+          </div>
+          <div v-else class="stacked-cell">
+            <div
+              v-for="arch in getOrderedArchs(row.architectures)"
+              :key="arch"
+              class="stacked-row"
+            >
+              <span>{{ formatTime(row.pushed_at?.[arch]) }}</span>
+            </div>
+            <span v-if="!row.architectures?.length">-</span>
+          </div>
+        </template>
+      </el-table-column>
       <el-table-column label="操作" width="80" fixed="right">
         <template #default="{ row }">
           <el-button type="primary" link size="small" @click="handleCopy(row)">
@@ -130,6 +147,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { acrTagAPI } from '@/api'
 import { copyToClipboard } from '@/utils/clipboard'
+import { formatTime } from '@/utils/format'
 
 const DETAILS_BATCH_SIZE = 50
 const SEARCH_DEBOUNCE_MS = 400

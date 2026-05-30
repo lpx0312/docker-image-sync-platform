@@ -34,7 +34,7 @@
 
 <script setup>
 import { ref, reactive, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { acrRepositoryAPI } from '@/api'
 
 const props = defineProps({
@@ -54,6 +54,54 @@ const form = reactive({
 
 const rules = {
   repository_names: [{ required: true, message: '请输入镜像列表', trigger: 'blur' }],
+}
+
+const formatNameList = (names) => (names && names.length ? names.join('、') : '无')
+
+const showBatchAddResult = (response) => {
+  const data = response?.data ?? {}
+  const sections = []
+
+  if (data.created_names?.length) {
+    sections.push(`成功添加 ${data.created_names.length} 个：\n${formatNameList(data.created_names)}`)
+  }
+  if (data.duplicate_in_input?.length) {
+    sections.push(`输入列表中重复，已忽略 ${data.duplicate_in_input.length} 个：\n${formatNameList(data.duplicate_in_input)}`)
+  }
+  if (data.already_exist_names?.length) {
+    sections.push(`本地已存在，未重复添加 ${data.already_exist_names.length} 个：\n${formatNameList(data.already_exist_names)}`)
+  }
+  if (data.missing_in_acr?.length) {
+    sections.push(`ACR 中不存在，已跳过 ${data.missing_in_acr.length} 个：\n${formatNameList(data.missing_in_acr)}`)
+  }
+  if (data.check_failed_names?.length) {
+    sections.push(`检查失败，已跳过 ${data.check_failed_names.length} 个：\n${formatNameList(data.check_failed_names)}`)
+  }
+
+  const hasIssue = !!(data.duplicate_in_input?.length
+    || data.already_exist_names?.length
+    || data.missing_in_acr?.length
+    || data.check_failed_names?.length)
+
+  if (sections.length > 0) {
+    ElMessageBox.alert(sections.join('\n\n'), '批量添加结果', {
+      type: hasIssue ? 'warning' : 'success',
+      confirmButtonText: '知道了',
+    })
+    return
+  }
+
+  if (response?.message) {
+    ElMessageBox.alert(response.message, '批量添加结果', {
+      type: hasIssue || /不存在|失败|重复|已存在/.test(response.message)
+        ? 'warning'
+        : (data.created > 0 ? 'success' : 'info'),
+      confirmButtonText: '知道了',
+    })
+    return
+  }
+
+  ElMessage.info('没有可添加的新镜像')
 }
 
 watch(() => props.modelValue, (val) => {
@@ -87,13 +135,15 @@ const handleSubmit = async () => {
       return
     }
 
-    const result = await acrRepositoryAPI.batchCreate({
+    const response = await acrRepositoryAPI.batchCreate({
       acr_registry_id: props.acrRegistryId,
       repository_names: names,
     })
 
-    ElMessage.success(result.data?.message || '添加成功')
-    emit('success')
+    showBatchAddResult(response)
+    if (response.data?.created > 0) {
+      emit('success')
+    }
     handleClose()
   } catch (error) {
     if (error !== false) {
