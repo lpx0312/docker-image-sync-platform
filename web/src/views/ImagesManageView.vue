@@ -64,8 +64,19 @@
         <el-button type="success" size="small" @click="showBatchAddDialog">
           批量添加
         </el-button>
+        <el-button
+          type="danger"
+          size="small"
+          :disabled="selectedRows.length === 0"
+          @click="handleBatchDelete"
+        >
+          批量删除{{ selectedRows.length ? ` (${selectedRows.length})` : '' }}
+        </el-button>
         <el-button type="warning" size="small" @click="handleSyncFromRecords" :loading="syncing">
           从同步记录导入
+        </el-button>
+        <el-button type="info" size="small" @click="handleCleanInvalid" :loading="cleaning">
+          清理无效镜像
         </el-button>
       </div>
 
@@ -83,11 +94,14 @@
 
       <!-- 镜像列表 -->
       <el-table
+        ref="tableRef"
         :data="paginatedRepositories"
         v-loading="loading"
         empty-text="暂无镜像数据"
         style="margin-top: 16px;"
+        @selection-change="handleSelectionChange"
       >
+        <el-table-column type="selection" width="48" />
         <el-table-column type="index" label="序号" width="60" />
         <el-table-column prop="repository_name" label="镜像名称" min-width="200">
           <template #default="{ row }">
@@ -160,6 +174,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Search } from '@element-plus/icons-vue'
 import { acrRegistryAPI, acrRepositoryAPI } from '@/api'
 import { formatTime } from '@/utils/format'
+import { buildCleanInvalidResultText } from '@/utils/repositoryResult'
+import { showMultilineAlert, showMultilineConfirm } from '@/utils/messageBox'
 import AddRepositoryDialog from '@/components/AddRepositoryDialog.vue'
 import BatchAddRepositoryDialog from '@/components/BatchAddRepositoryDialog.vue'
 
@@ -171,8 +187,11 @@ const selectedAcrId = ref(null)
 const repositories = ref([])
 const loading = ref(false)
 const syncing = ref(false)
+const cleaning = ref(false)
 const quotaSummary = ref([])
 const quotaMap = ref({})
+const selectedRows = ref([])
+const tableRef = ref(null)
 
 const addDialogVisible = ref(false)
 const batchAddDialogVisible = ref(false)
@@ -210,6 +229,15 @@ const handlePageSizeChange = () => {
 
 const handlePageChange = () => {
   // 分页由 computed 自动处理
+}
+
+const handleSelectionChange = (rows) => {
+  selectedRows.value = rows
+}
+
+const clearSelection = () => {
+  selectedRows.value = []
+  tableRef.value?.clearSelection()
 }
 
 onMounted(() => {
@@ -321,6 +349,7 @@ const loadRepositories = async () => {
     if (response && response.status === 'success') {
       repositories.value = response.data || []
       currentPage.value = 1
+      clearSelection()
     }
   } catch (error) {
     console.error('加载镜像列表失败:', error)
@@ -418,6 +447,76 @@ const handleDelete = async (row) => {
     await Promise.all([loadRepositories(), loadQuotaSummary()])
   } catch (error) {
     ElMessage.error('删除失败')
+  }
+}
+
+const handleBatchDelete = async () => {
+  if (!selectedRows.value.length) {
+    ElMessage.warning('请先选择要删除的镜像')
+    return
+  }
+
+  const names = selectedRows.value.map(row => row.repository_name).join('\n')
+  try {
+    await showMultilineConfirm(
+      `确定要删除以下 ${selectedRows.value.length} 个镜像吗？\n\n${names}`,
+      '批量删除确认',
+      {
+        type: 'warning',
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
+      }
+    )
+
+    const ids = selectedRows.value.map(row => row.id)
+    const response = await acrRepositoryAPI.batchDelete(ids)
+    if (response?.status === 'success') {
+      ElMessage.success(response.message || '批量删除成功')
+      await Promise.all([loadRepositories(), loadQuotaSummary()])
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('批量删除失败')
+    }
+  }
+}
+
+const handleCleanInvalid = async () => {
+  if (!selectedAcrId.value) {
+    ElMessage.warning('请先选择 ACR')
+    return
+  }
+
+  const acrLabel = acrList.value.find(item => item.id === selectedAcrId.value)?.namespace || '当前 ACR'
+
+  try {
+    await ElMessageBox.confirm(
+      `将检查 ${acrLabel} 下的本地镜像列表，并清理在 ACR 中不存在的无效记录。此操作不会删除 ACR 中的实际镜像。`,
+      '清理无效镜像',
+      {
+        type: 'warning',
+        confirmButtonText: '开始清理',
+        cancelButtonText: '取消',
+      }
+    )
+
+    cleaning.value = true
+    const response = await acrRepositoryAPI.cleanInvalid(selectedAcrId.value)
+    if (response?.status === 'success') {
+      const text = buildCleanInvalidResultText(response.data || {})
+      showMultilineAlert(text, '清理结果', {
+        type: response.data?.check_failed_names?.length ? 'warning' : 'success',
+        confirmButtonText: '知道了',
+      })
+      await Promise.all([loadRepositories(), loadQuotaSummary()])
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('清理无效镜像失败:', error)
+      ElMessage.error('清理无效镜像失败')
+    }
+  } finally {
+    cleaning.value = false
   }
 }
 </script>

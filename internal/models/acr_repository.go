@@ -34,3 +34,13 @@ type AcrRepositoryBatchRequest struct {
 type AcrRepositorySyncRequest struct {
 	AcrRegistryID uint `json:"acr_registry_id" binding:"required"`
 }
+
+// AcrRepositoryBatchDeleteRequest 批量删除镜像请求
+type AcrRepositoryBatchDeleteRequest struct {
+	IDs []uint `json:"ids" binding:"required,min=1"`
+}
+
+// AcrRepositoryCleanInvalidRequest 清理无效镜像请求
+type AcrRepositoryCleanInvalidRequest struct {
+	AcrRegistryID uint `json:"acr_registry_id" binding:"required"`
+}

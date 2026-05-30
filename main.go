@@ -388,6 +388,8 @@ func main() {
 				acrRepositories.GET("/duplicates", acrRepositoryHandler.GetDuplicates)
 				acrRepositories.POST("", acrRepositoryHandler.Create)
 				acrRepositories.POST("/batch", acrRepositoryHandler.BatchCreate)
+				acrRepositories.POST("/batch-delete", acrRepositoryHandler.BatchDelete)
+				acrRepositories.POST("/clean-invalid", acrRepositoryHandler.CleanInvalid)
 				acrRepositories.DELETE("/:id", acrRepositoryHandler.Delete)
 				acrRepositories.POST("/sync-from-records", acrRepositoryHandler.SyncFromRecords)
 			}

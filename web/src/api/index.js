@@ -606,6 +606,16 @@ export const acrRepositoryAPI = {
     return api.post('/acr-repositories/batch', data)
   },
 
+  // 批量删除镜像
+  batchDelete: (ids) => {
+    return api.post('/acr-repositories/batch-delete', { ids })
+  },
+
+  // 清理无效镜像（本地存在但 ACR 中不存在）
+  cleanInvalid: (acrRegistryId) => {
+    return api.post('/acr-repositories/clean-invalid', { acr_registry_id: acrRegistryId })
+  },
+
   // 删除镜像
   delete: (id) => {
     return api.delete(`/acr-repositories/${id}`)

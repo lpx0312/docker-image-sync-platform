@@ -195,6 +195,93 @@ func (s *AcrRepositoryService) Delete(id uint) error {
 	return nil
 }
 
+// BatchDelete 批量删除镜像
+func (s *AcrRepositoryService) BatchDelete(ids []uint) (int, error) {
+	if len(ids) == 0 {
+		return 0, fmt.Errorf("ID列表不能为空")
+	}
+	if len(ids) > 100 {
+		return 0, fmt.Errorf("一次最多删除100个镜像")
+	}
+
+	result := s.db.Delete(&models.AcrRepository{}, ids)
+	if result.Error != nil {
+		return 0, fmt.Errorf("批量删除镜像失败: %w", result.Error)
+	}
+	return int(result.RowsAffected), nil
+}
+
+// CleanInvalidResult 清理无效镜像的结果
+type CleanInvalidResult struct {
+	Cleaned          int      `json:"cleaned"`
+	CleanedNames     []string `json:"cleaned_names"`
+	CheckFailedNames []string `json:"check_failed_names"`
+}
+
+// CleanInvalid 清理本地存在但 ACR 中不存在的镜像记录
+func (s *AcrRepositoryService) CleanInvalid(acrRegistryID uint) (*CleanInvalidResult, error) {
+	var acr models.AcrRegistry
+	if err := s.db.First(&acr, acrRegistryID).Error; err != nil {
+		return nil, fmt.Errorf("ACR配置不存在: %w", err)
+	}
+
+	password, err := s.encryptionSvc.Decrypt(acr.Password)
+	if err != nil {
+		return nil, fmt.Errorf("解密ACR密码失败: %w", err)
+	}
+
+	repos, err := s.GetAll(acrRegistryID)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &CleanInvalidResult{
+		CleanedNames:     []string{},
+		CheckFailedNames: []string{},
+	}
+
+	for _, repo := range repos {
+		exists, err := s.acrAPIService.RepositoryExists(
+			acr.RegistryURL, acr.Username, password, acr.Namespace, repo.RepositoryName,
+			acr.AuthServer, acr.DockerService,
+		)
+		if err != nil {
+			if s.acrAPIService.IsRepositoryNotFound(err) {
+				if err := s.db.Delete(&models.AcrRepository{}, repo.ID).Error; err != nil {
+					logger.Logger.Warn("清理无效镜像失败",
+						zap.String("repository", repo.RepositoryName),
+						zap.Error(err))
+					result.CheckFailedNames = append(result.CheckFailedNames, repo.RepositoryName)
+					continue
+				}
+				result.Cleaned++
+				result.CleanedNames = append(result.CleanedNames, repo.RepositoryName)
+				continue
+			}
+			logger.Logger.Warn("检查ACR仓库是否存在失败，跳过清理",
+				zap.String("repository", repo.RepositoryName),
+				zap.Error(err))
+			result.CheckFailedNames = append(result.CheckFailedNames, repo.RepositoryName)
+			continue
+		}
+		if exists {
+			continue
+		}
+
+		if err := s.db.Delete(&models.AcrRepository{}, repo.ID).Error; err != nil {
+			logger.Logger.Warn("清理无效镜像失败",
+				zap.String("repository", repo.RepositoryName),
+				zap.Error(err))
+			result.CheckFailedNames = append(result.CheckFailedNames, repo.RepositoryName)
+			continue
+		}
+		result.Cleaned++
+		result.CleanedNames = append(result.CleanedNames, repo.RepositoryName)
+	}
+
+	return result, nil
+}
+
 // EnsureRepository 确保仓库台账中存在指定仓库（同步成功后自动登记）
 func (s *AcrRepositoryService) EnsureRepository(acrRegistryID uint, repositoryName string) error {
 	repositoryName = strings.TrimSpace(repositoryName)

@@ -103,6 +103,57 @@ func (h *AcrRepositoryHandler) BatchCreate(c *gin.Context) {
 	})
 }
 
+// BatchDelete 批量删除镜像
+func (h *AcrRepositoryHandler) BatchDelete(c *gin.Context) {
+	var req models.AcrRepositoryBatchDeleteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "请求参数错误: " + err.Error()})
+		return
+	}
+
+	deleted, err := h.service.BatchDelete(req.IDs)
+	if err != nil {
+		logger.Logger.Error("批量删除镜像失败", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": fmt.Sprintf("成功删除 %d 个镜像", deleted),
+		"data": gin.H{
+			"deleted": deleted,
+		},
+	})
+}
+
+// CleanInvalid 清理本地存在但 ACR 中不存在的镜像
+func (h *AcrRepositoryHandler) CleanInvalid(c *gin.Context) {
+	var req models.AcrRepositoryCleanInvalidRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "请求参数错误: " + err.Error()})
+		return
+	}
+
+	result, err := h.service.CleanInvalid(req.AcrRegistryID)
+	if err != nil {
+		logger.Logger.Error("清理无效镜像失败", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		return
+	}
+
+	message := fmt.Sprintf("清理 %d 个无效镜像", result.Cleaned)
+	if len(result.CheckFailedNames) > 0 {
+		message += fmt.Sprintf("，%d 个检查失败未清理", len(result.CheckFailedNames))
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": message,
+		"data":    result,
+	})
+}
+
 // Delete 删除镜像
 func (h *AcrRepositoryHandler) Delete(c *gin.Context) {
 	idStr := c.Param("id")
