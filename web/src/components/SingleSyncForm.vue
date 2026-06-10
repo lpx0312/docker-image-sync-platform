@@ -33,6 +33,10 @@
         </el-select>
       </el-form-item>
 
+      <div v-if="affinityHint" class="affinity-hint">
+        {{ affinityHint }}
+      </div>
+
       <div v-if="forceOverrideWarning" class="force-override-warning">
         {{ forceOverrideWarning }}
       </div>
@@ -120,14 +124,24 @@ const getAcrNamespace = (acrId) => {
 }
 
 const forceOverrideWarning = computed(() => {
-  if (!currentAffinity.value?.has_affinity || !userChangedAcr.value) {
+  if (!currentAffinity.value?.has_affinity) {
     return ''
   }
   if (selectedAcrId.value === currentAffinity.value.acr_registry_id) {
     return ''
   }
   const forcedNamespace = getAcrNamespace(selectedAcrId.value)
-  return `仓库「${currentAffinity.value.repository_name}」已归属 ACR「${currentAffinity.value.acr_namespace}」，但强制选择了 ACR[${forcedNamespace}]`
+  return `仓库「${currentAffinity.value.repository_name}」已归属 ACR「${currentAffinity.value.acr_namespace}」，但当前选择了 ACR「${forcedNamespace}」`
+})
+
+const affinityHint = computed(() => {
+  if (!currentAffinity.value?.has_affinity) {
+    return ''
+  }
+  if (selectedAcrId.value === currentAffinity.value.acr_registry_id) {
+    return `仓库「${currentAffinity.value.repository_name}」已归属 ACR「${currentAffinity.value.acr_namespace}」，已自动选择对应 ACR`
+  }
+  return ''
 })
 
 const getAcrLabel = (item) => {
@@ -169,6 +183,10 @@ const loadAcrData = async () => {
         map[item.acr_registry_id] = item
       }
       quotaMap.value = map
+    }
+
+    if (syncForm.sourceImage.trim()) {
+      await suggestAcrForInput()
     }
   } catch (error) {
     console.error('加载 ACR 列表失败:', error)
@@ -220,6 +238,40 @@ const handleAcrChange = () => {
   userChangedAcr.value = true
 }
 
+const checkAcrConflicts = async () => {
+  if (!selectedAcrId.value) {
+    return false
+  }
+  try {
+    const response = await syncAPI.checkAcr({
+      images: [syncForm.sourceImage.trim()],
+      acr_registry_id: selectedAcrId.value,
+    })
+    if (response?.status !== 'success') {
+      return true
+    }
+    const conflicts = response.data?.conflicts || []
+    if (conflicts.length === 0) {
+      return true
+    }
+    const lines = conflicts.map(
+      (c) => c.message || `「${c.image || c.repository_name}」与所选 ACR 存在归属冲突`
+    )
+    await ElMessageBox.confirm(
+      lines.join('\n') + '\n\n是否仍要继续同步？',
+      'ACR 归属冲突',
+      { confirmButtonText: '继续同步', cancelButtonText: '取消', type: 'warning' }
+    )
+    return true
+  } catch (e) {
+    if (e === 'cancel' || e?.message === 'cancel') {
+      return false
+    }
+    console.error('check-acr 失败:', e)
+    return true
+  }
+}
+
 onMounted(() => {
   loadAcrData()
 })
@@ -233,6 +285,15 @@ onUnmounted(() => {
 const submitSync = async () => {
   try {
     await syncFormRef.value.validate()
+
+    if (!selectedAcrId.value) {
+      ElMessage.warning('请选择目标 ACR')
+      return
+    }
+
+    if (!(await checkAcrConflicts())) {
+      return
+    }
 
     if (forceOverrideWarning.value) {
       await ElMessageBox.confirm(
@@ -294,6 +355,13 @@ const resetForm = () => {
 .force-override-warning {
   margin: -8px 0 16px 120px;
   color: #f56c6c;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.affinity-hint {
+  margin: -8px 0 16px 120px;
+  color: #67c23a;
   font-size: 13px;
   line-height: 1.5;
 }

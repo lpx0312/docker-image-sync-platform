@@ -92,30 +92,6 @@ type GitConfig struct {
 	// LocalPath string `json:"local_path"` // 本地路径 - API模式下不再需要
 }
 
-// AliyunConfig 阿里云服务配置结构
-//
-// 定义阿里云容器镜像服务(ACR)的配置信息。
-// 包含认证信息、镜像仓库地址、命名空间等。
-//
-// 字段说明：
-//   - Registry: 镜像仓库地址，不同地域有不同地址
-//   - Namespace: 命名空间，用于组织镜像
-//   - Username: 阿里云用户名
-//   - Password: 阿里云密码，自动加密存储
-//   - Region: 地域信息，如cn-hangzhou
-//
-// 安全注意：
-//   - Password字段会自动加密存储
-//   - 建议使用RAM用户而非主账号
-//   - 遵循最小权限原则
-type AliyunConfig struct {
-	Registry  string `json:"registry"`  // 镜像仓库地址
-	Namespace string `json:"namespace"` // 命名空间
-	Username  string `json:"username"`  // 用户名
-	Password  string `json:"password"`  // 密码（加密存储）
-	Region    string `json:"region"`    // 地域
-}
-
 // NewConfigService 创建新的配置服务实例
 //
 // 初始化配置服务，设置数据库连接、加密服务和日志记录器。
@@ -507,89 +483,6 @@ func (cs *ConfigService) GetGitConfig(platform string) (GitConfig, error) {
 		config.Password = password
 		config.Token = token
 	}
-
-	return config, nil
-}
-
-// SetAliyunConfig 设置阿里云配置
-//
-// 设置阿里云容器镜像服务的完整配置信息。
-// 自动处理敏感信息的加密存储。
-//
-// 参数：
-//   - config: 阿里云配置结构体
-//
-// 返回：
-//   - error: 操作错误
-//
-// 配置键格式：
-//   - aliyun.registry
-//   - aliyun.namespace
-//   - aliyun.username
-//   - aliyun.password（自动加密）
-//   - aliyun.region
-func (cs *ConfigService) SetAliyunConfig(config AliyunConfig) error {
-	// 开始事务
-	tx := cs.db.Begin()
-	defer func() {
-		if r := recover(); r != nil {
-			tx.Rollback()
-		}
-	}()
-
-	// 设置各个配置项（统一使用aliyun_*格式，与GitHub/Gitee保持一致）
-	configs := map[string]string{
-		"aliyun_registry":  config.Registry,
-		"aliyun_namespace": config.Namespace,
-		"aliyun_username":  config.Username,
-		"aliyun_password":  config.Password,
-		"aliyun_region":    config.Region,
-	}
-
-	order := 1
-	for key, value := range configs {
-		if value != "" {
-			if err := cs.setConfigWithTx(tx, key, value, "阿里云配置", "aliyun", order); err != nil {
-				tx.Rollback()
-				return fmt.Errorf("failed to set %s: %w", key, err)
-			}
-			order++
-		}
-	}
-
-	// 提交事务
-	if err := tx.Commit().Error; err != nil {
-		cs.logger.WithError(err).Error("Failed to commit aliyun config transaction")
-		return fmt.Errorf("failed to commit aliyun config: %w", err)
-	}
-
-	cs.logger.Info("Successfully set aliyun config")
-	return nil
-}
-
-// GetAliyunConfig 获取阿里云配置
-//
-// 获取完整的阿里云配置信息。
-// 自动解密敏感信息。
-//
-// 返回：
-//   - AliyunConfig: 阿里云配置结构体
-//   - error: 操作错误
-func (cs *ConfigService) GetAliyunConfig() (AliyunConfig, error) {
-	var config AliyunConfig
-	
-	// 读取各个配置项（统一使用aliyun_*格式）
-	registry, _ := cs.GetConfig("aliyun_registry")
-	namespace, _ := cs.GetConfig("aliyun_namespace")
-	username, _ := cs.GetConfig("aliyun_username")
-	password, _ := cs.GetConfig("aliyun_password")
-	region, _ := cs.GetConfig("aliyun_region")
-
-	config.Registry = registry
-	config.Namespace = namespace
-	config.Username = username
-	config.Password = password
-	config.Region = region
 
 	return config, nil
 }

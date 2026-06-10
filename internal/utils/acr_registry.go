@@ -11,37 +11,37 @@ import (
 	"time"
 
 	"docker-image-sync-platform/internal/database"
-	"docker-image-sync-platform/internal/logger"
 	"docker-image-sync-platform/internal/models"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"go.uber.org/zap"
 )
 
-func systemConfigValue(key string) string {
-	var c models.SystemConfig
-	if err := database.DB.Where("config_key = ?", key).First(&c).Error; err != nil {
-		return ""
+func defaultAcrCredentials() (user, pass string) {
+	var acr models.AcrRegistry
+	if err := database.DB.Where("is_default = ?", true).First(&acr).Error; err != nil {
+		if err := database.DB.Order("id ASC").First(&acr).Error; err != nil {
+			return "", ""
+		}
 	}
-	return c.ConfigValue
+	user = acr.Username
+	raw := acr.Password
+	if raw == "" {
+		return user, ""
+	}
+	dec, err := DecryptSystemConfigValue(raw)
+	if err != nil {
+		return user, raw
+	}
+	return user, dec
 }
 
-// getACRAuth returns an authenticator for the configured ACR instance, or anonymous if unset.
+// getACRAuth returns an authenticator for the default ACR instance, or anonymous if unset.
 func getACRAuth() authn.Authenticator {
-	user := systemConfigValue("aliyun_username")
-	rawPass := systemConfigValue("aliyun_password")
-	if user == "" {
-		return authn.Anonymous
-	}
-	pass, err := DecryptSystemConfigValue(rawPass)
-	if err != nil {
-		logger.Logger.Warn("解密阿里云密码失败，将尝试匿名访问", zap.Error(err))
-		pass = rawPass
-	}
-	if pass == "" {
+	user, pass := defaultAcrCredentials()
+	if user == "" || pass == "" {
 		return authn.Anonymous
 	}
 	return &authn.Basic{Username: user, Password: pass}
@@ -146,16 +146,8 @@ func detectArchitecturesHTTPFallback(ctx context.Context, ref name.Reference) ([
 		return nil, err
 	}
 	req.Header.Set("Accept", manifestAcceptFallback)
-	user := systemConfigValue("aliyun_username")
-	rawPass := systemConfigValue("aliyun_password")
-	if user != "" {
-		pass, derr := DecryptSystemConfigValue(rawPass)
-		if derr != nil {
-			pass = rawPass
-		}
-		if pass != "" {
-			req.SetBasicAuth(user, pass)
-		}
+	if user, pass := defaultAcrCredentials(); user != "" && pass != "" {
+		req.SetBasicAuth(user, pass)
 	}
 	client := &http.Client{Timeout: 45 * time.Second}
 	resp, err := client.Do(req)

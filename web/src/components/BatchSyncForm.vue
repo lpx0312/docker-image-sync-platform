@@ -191,14 +191,14 @@ const getAcrNamespace = (acrId) => {
 }
 
 const forceOverrideWarning = computed(() => {
-  if (!isSingleImage.value || !currentAffinity.value?.has_affinity || !userChangedAcr.value) {
+  if (!isSingleImage.value || !currentAffinity.value?.has_affinity) {
     return ''
   }
   if (selectedAcrId.value === currentAffinity.value.acr_registry_id) {
     return ''
   }
   const forcedNamespace = getAcrNamespace(selectedAcrId.value)
-  return `仓库「${currentAffinity.value.repository_name}」已归属 ACR「${currentAffinity.value.acr_namespace}」，但强制选择了 ACR[${forcedNamespace}]`
+  return `仓库「${currentAffinity.value.repository_name}」已归属 ACR「${currentAffinity.value.acr_namespace}」，但当前选择了 ACR「${forcedNamespace}」`
 })
 
 const getAcrLabel = (item) => {
@@ -456,10 +456,45 @@ const buildBatchImageItems = () =>
       source_image: imageName,
       target_tag: tag || 'latest',
       architecture: '',
-      priority: 1,
       description: batchForm.description
     }
   })
+
+const checkAcrConflicts = async () => {
+  const acrId = isMultiImage.value ? 0 : selectedAcrId.value
+  if (!acrId && !isMultiImage.value) {
+    ElMessage.warning('请选择目标 ACR')
+    return false
+  }
+  try {
+    const response = await syncAPI.checkAcr({
+      images: parsedImages.value,
+      acr_registry_id: acrId
+    })
+    if (response?.status !== 'success') {
+      return true
+    }
+    const conflicts = response.data?.conflicts || []
+    if (conflicts.length === 0) {
+      return true
+    }
+    const lines = conflicts.map(
+      (c) => c.message || `「${c.image || c.repository_name}」与所选 ACR 存在归属冲突`
+    )
+    await ElMessageBox.confirm(
+      lines.join('\n') + '\n\n是否仍要继续同步？',
+      'ACR 归属冲突',
+      { confirmButtonText: '继续同步', cancelButtonText: '取消', type: 'warning' }
+    )
+    return true
+  } catch (e) {
+    if (e === 'cancel' || e?.message === 'cancel') {
+      return false
+    }
+    console.error('check-acr 失败:', e)
+    return true
+  }
+}
 
 const confirmRiskIfNeeded = async () => {
   if (!isSingleImage.value || !forceOverrideWarning.value) {
@@ -487,14 +522,14 @@ const submitBatchSync = async () => {
     }
 
     await confirmRiskIfNeeded()
+    if (!(await checkAcrConflicts())) {
+      return
+    }
 
     loading.value = true
 
     const batchData = {
       images: buildBatchImageItems(),
-      max_concurrent: 0,
-      auto_retry: true,
-      retry_count: 0,
       acr_registry_id: isMultiImage.value ? 0 : selectedAcrId.value
     }
 
@@ -527,14 +562,14 @@ const submitMockBatchSync = async () => {
     }
 
     await confirmRiskIfNeeded()
+    if (!(await checkAcrConflicts())) {
+      return
+    }
 
     mockLoading.value = true
 
     const batchData = {
       images: buildBatchImageItems(),
-      max_concurrent: 0,
-      auto_retry: true,
-      retry_count: 0,
       acr_registry_id: isMultiImage.value ? 0 : selectedAcrId.value
     }
 

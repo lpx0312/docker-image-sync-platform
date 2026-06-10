@@ -105,48 +105,6 @@ export const useSyncStore = defineStore('sync', () => {
   }
 
   /**
-   * 获取批量同步任务状态
-   * 
-   * @param {string} taskId - 批量任务ID
-   * @returns {Promise<Object>} 批量任务状态和子任务列表
-   * @throws {Error} 网络请求失败或任务不存在
-   */
-  const getBatchSyncStatus = async (taskId) => {
-    try {
-      const response = await syncAPI.getBatchSyncStatus(taskId)
-      // 如果是当前任务，更新本地状态
-      if (currentTask.value && currentTask.value.task_id === taskId) {
-        currentTask.value = { ...currentTask.value, ...response }
-      }
-      return response
-    } catch (error) {
-      console.error('获取批量同步状态失败:', error)
-      throw error
-    }
-  }
-
-  /**
-   * 加载同步历史记录
-   * 
-   * @param {Object} params - 查询参数
-   * @param {number} [params.page] - 页码
-   * @param {number} [params.page_size] - 每页数量
-   * @param {string} [params.status] - 状态筛选
-   * @returns {Promise<Object>} 历史记录响应数据
-   * @throws {Error} 网络请求失败
-   */
-  const loadSyncHistory = async (params = {}) => {
-    loading.value = true
-    try {
-      const response = await syncAPI.getSyncHistory(params)
-      syncHistory.value = response.data || []
-      return response
-    } finally {
-      loading.value = false
-    }
-  }
-
-  /**
    * 清除当前任务状态
    * 
    * 用于任务完成后清理状态，避免界面显示过期信息
@@ -196,8 +154,6 @@ export const useSyncStore = defineStore('sync', () => {
     // 动作
     submitSync,
     getSyncStatus,
-    getBatchSyncStatus,
-    loadSyncHistory,
     clearCurrentTask,
     updateTaskStatus
   }

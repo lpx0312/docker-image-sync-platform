@@ -32,6 +32,7 @@ import (
 	"docker-image-sync-platform/internal/database"
 	"docker-image-sync-platform/internal/logger"
 	"docker-image-sync-platform/internal/models"
+	"docker-image-sync-platform/internal/services"
 	"docker-image-sync-platform/internal/utils"
 
 	"github.com/gin-gonic/gin"
@@ -40,6 +41,22 @@ import (
 )
 
 // applyArchitectureFilter 按「记录中的 architecture」或「ACR 实测架构 JSON」筛选。
+func buildTargetImageFromRecord(image models.SyncRecord) string {
+	if image.AcrRegistryID == 0 {
+		return ""
+	}
+	var acr models.AcrRegistry
+	if err := database.DB.First(&acr, image.AcrRegistryID).Error; err != nil {
+		return ""
+	}
+	tag := image.Tag
+	if tag == "" {
+		tag = "latest"
+	}
+	repo := services.ExtractRepoName(image.OriginalImage)
+	return fmt.Sprintf("%s/%s/%s:%s", acr.RegistryURL, acr.Namespace, repo, tag)
+}
+
 func applyArchitectureFilter(db *gorm.DB, architecture string) *gorm.DB {
 	if architecture == "" {
 		return db
@@ -61,14 +78,13 @@ func applyArchitectureFilter(db *gorm.DB, architecture string) *gorm.DB {
 //   - 镜像详情获取
 //   - 镜像状态统计
 //   - 镜像仓库验证
-type ImageHandler struct{}
+type ImageHandler struct {
+	processSync services.ProcessSyncFunc
+}
 
 // NewImageHandler 创建镜像处理器实例
-//
-// 返回:
-//   - *ImageHandler: 镜像处理器实例
-func NewImageHandler() *ImageHandler {
-	return &ImageHandler{}
+func NewImageHandler(processSync services.ProcessSyncFunc) *ImageHandler {
+	return &ImageHandler{processSync: processSync}
 }
 
 // GetImages 获取镜像同步记录列表
@@ -154,7 +170,7 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 	// ====================================================================
 
 	// 创建基础查询对象
-	query := database.DB.Model(&models.ImageSyncRecord{})
+	query := database.DB.Model(&models.SyncRecord{})
 
 	// ====================================================================
 	// 应用过滤条件
@@ -163,7 +179,7 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 	// 同步状态过滤
 	// 支持的状态: pending, syncing, success, failed
 	if status != "" {
-		query = query.Where("sync_status = ?", status)
+		query = query.Where("status = ?", status)
 	}
 
 	if architecture != "" {
@@ -173,7 +189,7 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 	// 搜索关键词过滤
 	// 支持在原始镜像名、ACR镜像名、标签和描述中进行模糊搜索
 	if search != "" {
-		query = query.Where("original_image LIKE ? OR acr_image LIKE ? OR tag LIKE ? OR description LIKE ? OR task_id LIKE ?",
+		query = query.Where("original_image LIKE ? OR acr_image LIKE ? OR tag LIKE ? OR description LIKE ? OR batch_id LIKE ?",
 			"%"+search+"%", "%"+search+"%", "%"+search+"%", "%"+search+"%", "%"+search+"%")
 	}
 
@@ -181,7 +197,7 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 	// 初始化查询结果变量
 	// ====================================================================
 
-	var images []models.ImageSyncRecord // 镜像记录列表
+	var images []models.SyncRecord // 镜像记录列表
 	var total int64                     // 总记录数
 
 	// ====================================================================
@@ -203,9 +219,9 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 
 		// 第一步：获取去重后的记录ID
 		// 使用GROUP BY和MAX函数获取每个组合的最新记录ID
-		subQuery := database.DB.Model(&models.ImageSyncRecord{}).
+		subQuery := database.DB.Model(&models.SyncRecord{}).
 			Select("MAX(id) as max_id").
-			Group("original_image, tag, acr_image, architecture, sync_status")
+			Group("original_image, tag, acr_image, architecture, status")
 
 		// 第二步：执行去重查询，获取所有最大ID
 		var maxIds []struct {
@@ -226,21 +242,21 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 		// 处理空结果情况
 		if len(deduplicatedIds) == 0 {
 			// 没有找到任何记录
-			images = []models.ImageSyncRecord{}
+			images = []models.SyncRecord{}
 			total = 0
 		} else {
 			// 第四步：在去重后的记录上应用用户的过滤条件
-			filteredQuery := database.DB.Model(&models.ImageSyncRecord{}).Where("id IN ?", deduplicatedIds)
+			filteredQuery := database.DB.Model(&models.SyncRecord{}).Where("id IN ?", deduplicatedIds)
 
 			// 重新应用所有过滤条件（在去重结果基础上）
 			if status != "" {
-				filteredQuery = filteredQuery.Where("sync_status = ?", status)
+				filteredQuery = filteredQuery.Where("status = ?", status)
 			}
 			if architecture != "" {
 				filteredQuery = applyArchitectureFilter(filteredQuery, architecture)
 			}
 			if search != "" {
-				filteredQuery = filteredQuery.Where("original_image LIKE ? OR acr_image LIKE ? OR tag LIKE ? OR description LIKE ? OR task_id LIKE ?",
+				filteredQuery = filteredQuery.Where("original_image LIKE ? OR acr_image LIKE ? OR tag LIKE ? OR description LIKE ? OR batch_id LIKE ?",
 					"%"+search+"%", "%"+search+"%", "%"+search+"%", "%"+search+"%", "%"+search+"%")
 			}
 
@@ -258,7 +274,7 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 				// 定义允许的排序字段，防止SQL注入
 				validSortFields := map[string]bool{
 					"original_image": true, // 原始镜像名
-					"sync_status":    true, // 同步状态
+					"status":    true, // 同步状态
 					"architecture":   true, // 架构
 					"created_at":     true, // 创建时间
 					"updated_at":     true, // 更新时间
@@ -298,7 +314,7 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 		// 这种模式下可能会显示重复的镜像记录，但查询性能更好
 
 		// 重新构建查询对象以确保所有筛选条件都被正确应用
-		filteredQuery := database.DB.Model(&models.ImageSyncRecord{})
+		filteredQuery := database.DB.Model(&models.SyncRecord{})
 
 		// ============================================================
 		// 应用所有过滤条件
@@ -306,7 +322,7 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 
 		// 同步状态过滤
 		if status != "" {
-			filteredQuery = filteredQuery.Where("sync_status = ?", status)
+			filteredQuery = filteredQuery.Where("status = ?", status)
 		}
 
 		if architecture != "" {
@@ -315,7 +331,7 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 
 		// 搜索关键词过滤
 		if search != "" {
-			filteredQuery = filteredQuery.Where("original_image LIKE ? OR acr_image LIKE ? OR tag LIKE ? OR description LIKE ? OR task_id LIKE ?",
+			filteredQuery = filteredQuery.Where("original_image LIKE ? OR acr_image LIKE ? OR tag LIKE ? OR description LIKE ? OR batch_id LIKE ?",
 				"%"+search+"%", "%"+search+"%", "%"+search+"%", "%"+search+"%", "%"+search+"%")
 		}
 
@@ -333,7 +349,7 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 			// 定义允许的排序字段，防止SQL注入
 			validSortFields := map[string]bool{
 				"original_image": true, // 原始镜像名
-				"sync_status":    true, // 同步状态
+				"status":    true, // 同步状态
 				"architecture":   true, // 架构
 				"created_at":     true, // 创建时间
 				"updated_at":     true, // 更新时间
@@ -371,12 +387,14 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 	// 遍历所有查询到的镜像记录，确保ACR地址包含完整的标签信息
 	// 这是为了解决历史数据中可能存在的ACR地址不完整的问题
 	for i := range images {
-		if images[i].SyncStatus == models.SyncStatusSuccess {
+		if images[i].Status == models.SyncStatusSuccess {
 			// 只处理同步成功的镜像记录
 
-			if images[i].ACRImage == "" {
-				// 情况1：ACR地址为空，需要重新生成完整的ACR地址
-				images[i].ACRImage = utils.GenerateACRImage(images[i].OriginalImage, images[i].Tag)
+			if images[i].ACRImage == "" && images[i].AcrRegistryID > 0 {
+				var acr models.AcrRegistry
+				if database.DB.First(&acr, images[i].AcrRegistryID).Error == nil {
+					images[i].ACRImage = fmt.Sprintf("%s/%s/%s:%s", acr.RegistryURL, acr.Namespace, services.ExtractRepoName(images[i].OriginalImage), images[i].Tag)
+				}
 			} else if !strings.Contains(images[i].ACRImage, ":") {
 				// 情况2：ACR地址存在但缺少标签，需要补充标签
 				tag := images[i].Tag
@@ -394,6 +412,7 @@ func (h *ImageHandler) GetImages(c *gin.Context) {
 	// ====================================================================
 
 	// 返回标准的分页响应格式
+	services.EnrichRecordsWithWorkflowRuns(images)
 	c.JSON(http.StatusOK, gin.H{
 		"total":     total,    // 总记录数
 		"data":      images,   // 镜像记录数组
@@ -442,7 +461,7 @@ func (h *ImageHandler) GetImage(c *gin.Context) {
 	// 查询镜像记录
 	// ====================================================================
 
-	var image models.ImageSyncRecord
+	var image models.SyncRecord
 	if err := database.DB.First(&image, uint(id)).Error; err != nil {
 		logger.Logger.Error("查询镜像详情失败", zap.Error(err), zap.Uint64("id", id))
 		c.JSON(http.StatusNotFound, gin.H{"error": "镜像不存在"})
@@ -454,10 +473,9 @@ func (h *ImageHandler) GetImage(c *gin.Context) {
 	// ====================================================================
 
 	// 对于同步成功的镜像，确保ACR地址包含完整标签
-	if image.SyncStatus == models.SyncStatusSuccess {
+	if image.Status == models.SyncStatusSuccess {
 		if image.ACRImage == "" {
-			// 情况1：ACR地址为空，重新生成完整的ACR地址
-			image.ACRImage = utils.GenerateACRImage(image.OriginalImage, image.Tag)
+			image.ACRImage = buildTargetImageFromRecord(image)
 		} else if !strings.Contains(image.ACRImage, ":") {
 			// 情况2：ACR地址存在但缺少标签，补充标签
 			tag := image.Tag
@@ -516,7 +534,7 @@ func (h *ImageHandler) DeleteImage(c *gin.Context) {
 	// ====================================================================
 
 	// 查询镜像记录以确认其存在性
-	var image models.ImageSyncRecord
+	var image models.SyncRecord
 	if err := database.DB.First(&image, uint(id)).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "镜像不存在"})
 		return
@@ -585,26 +603,26 @@ func (h *ImageHandler) GetImageStats(c *gin.Context) {
 	// ====================================================================
 
 	// 查询总镜像数量
-	database.DB.Model(&models.ImageSyncRecord{}).Count(&stats.Total)
+	database.DB.Model(&models.SyncRecord{}).Count(&stats.Total)
 
 	// 查询待同步状态的镜像数量
-	database.DB.Model(&models.ImageSyncRecord{}).
-		Where("sync_status = ?", models.SyncStatusPending).
+	database.DB.Model(&models.SyncRecord{}).
+		Where("status = ?", models.SyncStatusPending).
 		Count(&stats.Pending)
 
 	// 查询同步中状态的镜像数量
-	database.DB.Model(&models.ImageSyncRecord{}).
-		Where("sync_status = ?", models.SyncStatusSyncing).
+	database.DB.Model(&models.SyncRecord{}).
+		Where("status = ?", models.SyncStatusSyncing).
 		Count(&stats.Syncing)
 
 	// 查询同步成功状态的镜像数量
-	database.DB.Model(&models.ImageSyncRecord{}).
-		Where("sync_status = ?", models.SyncStatusSuccess).
+	database.DB.Model(&models.SyncRecord{}).
+		Where("status = ?", models.SyncStatusSuccess).
 		Count(&stats.Success)
 
 	// 查询同步失败状态的镜像数量
-	database.DB.Model(&models.ImageSyncRecord{}).
-		Where("sync_status = ?", models.SyncStatusFailed).
+	database.DB.Model(&models.SyncRecord{}).
+		Where("status = ?", models.SyncStatusFailed).
 		Count(&stats.Failed)
 
 	// ====================================================================
@@ -641,52 +659,20 @@ func (h *ImageHandler) GetImageStats(c *gin.Context) {
 //   - 重试操作会创建新的同步任务
 //   - 重试不会影响其他镜像的同步状态
 func (h *ImageHandler) RetrySync(c *gin.Context) {
-	// ====================================================================
-	// 解析和验证路径参数
-	// ====================================================================
-
-	// 获取镜像ID参数
 	idStr := c.Param("id")
-
-	// 将字符串ID转换为数字ID
 	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的镜像ID"})
 		return
 	}
-
-	// 检查镜像是否存在
-	var image models.ImageSyncRecord
-	if err := database.DB.First(&image, uint(id)).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "镜像不存在"})
+	svc := services.NewSyncBatchService(database.DB, h.processSync)
+	batchID, err := svc.CreateRetryBatch(uint(id))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	// 业务逻辑验证：只有失败的镜像才能重试
-	// 确保重试操作的合理性，避免对正在进行或已成功的任务进行重试
-	if image.SyncStatus != models.SyncStatusFailed {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "只有失败的镜像才能重试"})
-		return
-	}
-
-	// 状态重置：将镜像状态重置为待同步状态
-	// 清空错误信息和ACR镜像地址，为重新同步做准备
-	if err := database.DB.Model(&image).Updates(map[string]interface{}{
-		"sync_status":   models.SyncStatusPending, // 重置为待同步状态
-		"error_message": "",                       // 清空错误信息
-		"acr_image":     "",                       // 清空ACR镜像地址
-	}).Error; err != nil {
-		logger.Logger.Error("重置镜像状态失败", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "重置镜像状态失败"})
-		return
-	}
-
-	// 操作日志记录
-	logger.Logger.Info("镜像重试同步",
-		zap.Uint64("id", id),
-		zap.String("image", image.OriginalImage))
-
-	c.JSON(http.StatusOK, gin.H{"message": "镜像已重置为待同步状态"})
+	svc.StartProcessing(batchID)
+	c.JSON(http.StatusOK, gin.H{"message": "重试任务已提交", "task_id": batchID})
 }
 
 // CheckImageExists 检测镜像是否存在
@@ -713,24 +699,17 @@ func (h *ImageHandler) CheckImageExists(c *gin.Context) {
 		return
 	}
 
-	var image models.ImageSyncRecord
+	var image models.SyncRecord
 	if err := database.DB.First(&image, uint(id)).Error; err != nil {
 		logger.Logger.Error("查询镜像失败", zap.Error(err), zap.Uint64("id", id))
 		c.JSON(http.StatusNotFound, gin.H{"error": "镜像不存在"})
 		return
 	}
 
-	// 根据镜像关联的 ACR 配置生成目标地址
-	var targetImage string
-	if image.AcrRegistryID > 0 {
-		var acrRegistry models.AcrRegistry
-		if err := database.DB.First(&acrRegistry, image.AcrRegistryID).Error; err == nil {
-			targetImage = fmt.Sprintf("%s/%s/%s:%s", acrRegistry.RegistryURL, acrRegistry.Namespace, image.OriginalImage, image.Tag)
-		} else {
-			targetImage = utils.GenerateACRImage(image.OriginalImage, image.Tag)
-		}
-	} else {
-		targetImage = utils.GenerateACRImage(image.OriginalImage, image.Tag)
+	targetImage := buildTargetImageFromRecord(image)
+	if targetImage == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "记录缺少 ACR 配置，无法检测"})
+		return
 	}
 
 	// 检测镜像是否存在
@@ -757,9 +736,9 @@ func (h *ImageHandler) CheckImageExists(c *gin.Context) {
 	// 根据检测结果和当前状态决定是否更新状态
 	if exists {
 		// 只有当前状态为失败时，检测成功才更新为成功
-		if image.SyncStatus == models.SyncStatusFailed {
+		if image.Status == models.SyncStatusFailed {
 			if err := database.DB.Model(&image).Updates(map[string]interface{}{
-				"sync_status":         models.SyncStatusSuccess,
+				"status":         models.SyncStatusSuccess,
 				"acr_image":           targetImage,
 				"acr_architectures":   archJSON,
 				"error_message":       "",
@@ -786,7 +765,7 @@ func (h *ImageHandler) CheckImageExists(c *gin.Context) {
 	} else {
 		// 镜像不存在时，更新状态为失败
 		if err := database.DB.Model(&image).Updates(map[string]interface{}{
-			"sync_status":       models.SyncStatusFailed,
+			"status":       models.SyncStatusFailed,
 			"error_message":     "镜像不存在",
 			"acr_architectures": archJSON,
 		}).Error; err != nil {
@@ -871,7 +850,7 @@ func (h *ImageHandler) BatchCheckImages(c *gin.Context) {
 	// ====================================================================
 
 	// 根据ID列表查询镜像记录
-	var images []models.ImageSyncRecord
+	var images []models.SyncRecord
 	if err := database.DB.Where("id IN ?", request.IDs).Find(&images).Error; err != nil {
 		logger.Logger.Error("查询镜像列表失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询镜像列表失败"})
@@ -892,17 +871,13 @@ func (h *ImageHandler) BatchCheckImages(c *gin.Context) {
 	// ====================================================================
 
 	for _, image := range images {
-		// 根据镜像关联的 ACR 配置生成目标地址
-		var targetImage string
-		if image.AcrRegistryID > 0 {
-			var acrRegistry models.AcrRegistry
-			if err := database.DB.First(&acrRegistry, image.AcrRegistryID).Error; err == nil {
-				targetImage = fmt.Sprintf("%s/%s/%s:%s", acrRegistry.RegistryURL, acrRegistry.Namespace, image.OriginalImage, image.Tag)
-			} else {
-				targetImage = utils.GenerateACRImage(image.OriginalImage, image.Tag)
-			}
-		} else {
-			targetImage = utils.GenerateACRImage(image.OriginalImage, image.Tag)
+		targetImage := buildTargetImageFromRecord(image)
+		if targetImage == "" {
+			results = append(results, map[string]interface{}{
+				"id": image.ID, "exists": false, "error": "缺少 ACR 配置",
+			})
+			failedCount++
+			continue
 		}
 
 		// 检测镜像在注册表中的存在性
@@ -916,7 +891,7 @@ func (h *ImageHandler) BatchCheckImages(c *gin.Context) {
 
 			// 检测失败时，更新镜像状态为失败
 			if updateErr := database.DB.Model(&image).Updates(map[string]interface{}{
-				"sync_status":   models.SyncStatusFailed,
+				"status":   models.SyncStatusFailed,
 				"error_message": fmt.Sprintf("检测失败: %v", err),
 			}).Error; updateErr != nil {
 				logger.Logger.Error("更新镜像状态失败", zap.Error(updateErr), zap.Uint("id", image.ID))
@@ -947,9 +922,9 @@ func (h *ImageHandler) BatchCheckImages(c *gin.Context) {
 		archJSON := utils.ArchitecturesToJSON(arches)
 
 		if exists {
-			if image.SyncStatus == models.SyncStatusFailed {
+			if image.Status == models.SyncStatusFailed {
 				if err := database.DB.Model(&image).Updates(map[string]interface{}{
-					"sync_status":         models.SyncStatusSuccess,
+					"status":         models.SyncStatusSuccess,
 					"acr_image":           targetImage,
 					"acr_architectures":   archJSON,
 					"error_message":       "",
@@ -965,7 +940,7 @@ func (h *ImageHandler) BatchCheckImages(c *gin.Context) {
 			successCount++
 		} else {
 			if err := database.DB.Model(&image).Updates(map[string]interface{}{
-				"sync_status":       models.SyncStatusFailed,
+				"status":       models.SyncStatusFailed,
 				"error_message":     "镜像不存在",
 				"acr_architectures": archJSON,
 			}).Error; err != nil {

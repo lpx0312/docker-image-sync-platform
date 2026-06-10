@@ -118,8 +118,8 @@ func (s *AcrAffinityService) FindAffinity(repositoryName string) (*AcrAffinityRe
 		return nil, fmt.Errorf("查询仓库归属失败: %w", err)
 	}
 
-	var records []models.ImageSyncRecord
-	if err := s.db.Where("sync_status = ? AND acr_registry_id > 0", models.SyncStatusSuccess).
+	var records []models.SyncRecord
+	if err := s.db.Where("status = ? AND acr_registry_id > 0", models.SyncStatusSuccess).
 		Order("COALESCE(completed_at, updated_at) DESC").
 		Find(&records).Error; err != nil {
 		return nil, fmt.Errorf("查询同步记录失败: %w", err)
@@ -176,8 +176,8 @@ func (s *AcrAffinityService) countRepositories(acrRegistryID uint) (int, error) 
 }
 
 func (s *AcrAffinityService) countSuccessTags(acrRegistryID uint, repositoryName string) (int, error) {
-	var records []models.ImageSyncRecord
-	if err := s.db.Where("acr_registry_id = ? AND sync_status = ?", acrRegistryID, models.SyncStatusSuccess).
+	var records []models.SyncRecord
+	if err := s.db.Where("acr_registry_id = ? AND status = ?", acrRegistryID, models.SyncStatusSuccess).
 		Find(&records).Error; err != nil {
 		return 0, fmt.Errorf("统计 Tag 数量失败: %w", err)
 	}

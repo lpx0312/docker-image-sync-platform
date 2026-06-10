@@ -92,24 +92,8 @@ func normalizeBatchSyncRequest(req *models.BatchSyncRequest) {
 	syncCfg := config.AppConfig.Sync
 	if req.MaxConcurrent < 1 || req.MaxConcurrent > 10 {
 		mc := syncCfg.MaxConcurrentJobs
-		if mc < 1 || mc > 10 {
-			mc = 3
-		}
+		if mc < 1 || mc > 10 { mc = 3 }
 		req.MaxConcurrent = mc
-	}
-	if !req.AutoRetry {
-		req.RetryCount = 0
-		return
-	}
-	if req.RetryCount < 1 || req.RetryCount > 5 {
-		rc := syncCfg.MaxRetryCount
-		if rc < 1 {
-			rc = 3
-		}
-		if rc > 5 {
-			rc = 5
-		}
-		req.RetryCount = rc
 	}
 }
 
@@ -171,32 +155,13 @@ func (h *SyncHandler) SubmitBatchSync(c *gin.Context) {
 
 	// 创建批量同步任务主记录
 	// 包含任务的基本信息和配置参数
-	task := &models.SyncTask{
-		TaskID:        taskID,                   // 唯一任务标识
-		Status:        models.TaskStatusPending, // 初始状态：等待处理
-		MaxConcurrent: req.MaxConcurrent,        // 最大并发数
-		TotalImages:   len(req.Images),          // 镜像总数
-		AutoRetry:     req.AutoRetry,            // 自动重试开关
-		RetryCount:    req.RetryCount,           // 重试次数限制
-		AcrRegistryID: req.AcrRegistryID,        // ACR配置ID
+	batch := &models.SyncBatch{
+		ID: taskID,
 	}
-
-	// 构建镜像信息的JSON字符串，用于任务记录
-	// 格式：每行一个镜像，包含源镜像和目标标签
-	var imageStrings []string
-	for _, img := range req.Images {
-		imageStr := img.SourceImage
-		// 如果指定了目标标签，则添加到镜像字符串中
-		if img.TargetTag != "" {
-			imageStr = imageStr + ":" + img.TargetTag
-		}
-		imageStrings = append(imageStrings, imageStr)
-	}
-	task.ImagesJSON = strings.Join(imageStrings, "\n")
 
 	// 使用事务保护批量创建操作，确保任务和所有镜像记录的原子性
 	if err := database.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(task).Error; err != nil {
+		if err := tx.Create(batch).Error; err != nil {
 			return fmt.Errorf("创建批量同步任务失败: %w", err)
 		}
 
@@ -233,15 +198,13 @@ func (h *SyncHandler) SubmitBatchSync(c *gin.Context) {
 				acrRegistryID = resolved.SuggestedAcrID
 			}
 
-			record := &models.ImageSyncRecord{
-				TaskID:        taskID,
+			record := &models.SyncRecord{
+				BatchID:       taskID,
 				OriginalImage: originalImage,
 				Tag:           tag,
 				Architecture:  architecture,
-				SyncStatus:    models.SyncStatusPending,
+				Status:        models.SyncStatusPending,
 				InputOrder:    i + 1,
-				Priority:      img.Priority,
-				MaxRetries:    req.RetryCount,
 				Description:   img.Description,
 				OriginalInput: originalInput,
 				AcrRegistryID: acrRegistryID,
@@ -324,6 +287,8 @@ func (h *SyncHandler) SubmitSync(c *gin.Context) {
 		return
 	}
 
+	affinitySvc := services.NewAcrAffinityService(database.DB)
+
 	// ====================================================================
 	// 任务创建和初始化
 	// ====================================================================
@@ -333,26 +298,10 @@ func (h *SyncHandler) SubmitSync(c *gin.Context) {
 
 	// 创建单个同步任务记录
 	// 与批量同步不同，这里MaxConcurrent固定为1，按顺序处理
-	task := &models.SyncTask{
-		TaskID:        taskID,                   // 唯一任务标识
-		Status:        models.TaskStatusPending, // 初始状态：等待处理
-		MaxConcurrent: 1,                        // 单个同步，顺序处理
-		TotalImages:   len(req.Images),          // 镜像总数
-		Description:   req.Description,          // 任务描述
-		AcrRegistryID: req.AcrRegistryID,        // ACR配置ID
-	}
+	batch := &models.SyncBatch{ID: taskID, Description: req.Description}
 
-	// 构建镜像信息的JSON字符串
-	// 格式：每行一个镜像名称
-	var imageStrings []string
-	for _, img := range req.Images {
-		imageStrings = append(imageStrings, img)
-	}
-	task.ImagesJSON = strings.Join(imageStrings, "\n")
-
-	// 使用事务保护创建操作，确保任务和所有镜像记录的原子性
 	if err := database.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(task).Error; err != nil {
+		if err := tx.Create(batch).Error; err != nil {
 			return fmt.Errorf("创建同步任务失败: %w", err)
 		}
 
@@ -361,16 +310,25 @@ func (h *SyncHandler) SubmitSync(c *gin.Context) {
 
 			originalInput := imageStr
 
-			record := &models.ImageSyncRecord{
-				TaskID:        taskID,
+			acrRegistryID := req.AcrRegistryID
+			if acrRegistryID == 0 {
+				resolved, resolveErr := affinitySvc.ResolveTargetAcr(imageStr)
+				if resolveErr != nil {
+					return fmt.Errorf("解析镜像目标 ACR 失败: %w", resolveErr)
+				}
+				acrRegistryID = resolved.SuggestedAcrID
+			}
+
+			record := &models.SyncRecord{
+				BatchID:       taskID,
 				OriginalImage: originalImage,
 				Tag:           tag,
 				Architecture:  req.Architecture,
-				SyncStatus:    models.SyncStatusPending,
+				Status:        models.SyncStatusPending,
 				InputOrder:    i + 1,
 				OriginalInput: originalInput,
 				Description:   req.Description,
-				AcrRegistryID: req.AcrRegistryID,
+				AcrRegistryID: acrRegistryID,
 			}
 
 			if err := tx.Create(record).Error; err != nil {
@@ -429,133 +387,44 @@ func (h *SyncHandler) SubmitSync(c *gin.Context) {
 //   - 镜像状态统计和详细记录
 //   - 时间戳信息（创建、开始、完成时间）
 func (h *SyncHandler) GetSyncStatus(c *gin.Context) {
-	// ====================================================================
-	// 参数验证
-	// ====================================================================
-
-	// 从URL路径中获取任务ID
 	taskID := c.Param("taskId")
 	if taskID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "任务ID不能为空"})
 		return
 	}
-
-	// ====================================================================
-	// 查询任务基本信息
-	// ====================================================================
-
-	// 查询同步任务的基本信息
-	// 包含任务状态、进度、GitHub Actions信息等
-	var task models.SyncTask
-	if err := database.DB.Where("task_id = ?", taskID).First(&task).Error; err != nil {
-		logger.Logger.Error("查询同步任务失败", zap.Error(err))
+	var batch models.SyncBatch
+	if err := database.DB.Where("id = ?", taskID).First(&batch).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
 		return
 	}
-
-	// ====================================================================
-	// 查询镜像同步记录
-	// ====================================================================
-
-	// 查询任务下所有镜像的同步记录
-	// 按输入顺序排序，保持与提交时的顺序一致
-	var records []models.ImageSyncRecord
-	if err := database.DB.Where("task_id = ?", taskID).
-		Order("input_order ASC").
-		Find(&records).Error; err != nil {
-		logger.Logger.Error("查询镜像记录失败", zap.Error(err))
+	var records []models.SyncRecord
+	if err := database.DB.Where("batch_id = ?", taskID).Order("input_order ASC").Find(&records).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询镜像记录失败"})
 		return
 	}
-
-	// ====================================================================
-	// 统计各状态的镜像数量
-	// ====================================================================
-
-	// 统计不同状态的镜像数量，用于前端展示进度
-	var pendingCount, syncingCount, successCount, failedCount int
-	for _, record := range records {
-		switch record.SyncStatus {
-		case models.SyncStatusPending:
-			pendingCount++ // 等待同步
-		case models.SyncStatusSyncing:
-			syncingCount++ // 正在同步
-		case models.SyncStatusSuccess:
-			successCount++ // 同步成功
-		case models.SyncStatusFailed:
-			failedCount++ // 同步失败
-		}
+	agg := models.ComputeBatchStatus(records)
+	var workflowRuns []models.SyncWorkflowRun
+	database.DB.Where("batch_id = ?", taskID).Find(&workflowRuns)
+	wfResp := make([]models.WorkflowRunResponse, 0, len(workflowRuns))
+	for _, w := range workflowRuns {
+		wfResp = append(wfResp, models.WorkflowRunResponse{
+			AcrRegistryID: w.AcrRegistryID, GitHubRunID: w.GitHubRunID,
+			GitHubActionURL: w.GitHubActionURL, CommitSHA: w.CommitSHA,
+		})
 	}
-
-	// ====================================================================
-	// 构建响应数据
-	// ====================================================================
-
-	// 构建完整的任务状态响应
-	// 包含任务信息、统计数据和详细记录
-	response := gin.H{
-		// 任务基本信息
-		"task_id":          task.TaskID,          // 任务唯一标识
-		"status":           task.Status,          // 任务状态（pending/running/completed/failed）
-		"total_images":     task.TotalImages,     // 总镜像数量
-		"completed_images": task.CompletedImages, // 已完成镜像数量
-		"failed_images":    task.FailedImages,    // 失败镜像数量
-		"progress":         task.Progress,        // 进度百分比
-
-		// GitHub Actions集成信息
-		"github_action_url": task.GitHubActionURL, // GitHub Actions工作流URL
-		"github_run_id":     task.GitHubRunID,     // GitHub Actions运行ID
-		"commit_sha":        task.CommitSHA,       // 提交SHA值
-
-		// 时间信息
-		"started_at":   task.StartedAt,   // 任务开始时间
-		"completed_at": task.CompletedAt, // 任务完成时间
-		"created_at":   task.CreatedAt,   // 任务创建时间
-		"updated_at":   task.UpdatedAt,   // 任务更新时间
-
-		// 错误和描述信息
-		"error_message": task.ErrorMessage, // 错误信息（如果有）
-		"description":   task.Description,  // 任务描述
-
-		// 镜像详细信息
+	c.JSON(http.StatusOK, gin.H{
+		"task_id": taskID, "status": agg.Status, "progress": agg.Progress,
+		"total_images": agg.TotalImages, "completed_images": agg.CompletedImages,
+		"failed_images": agg.FailedImages, "description": batch.Description,
+		"is_mock": batch.IsMock, "created_at": batch.CreatedAt, "updated_at": batch.UpdatedAt,
+		"workflow_runs": wfResp,
 		"images": gin.H{
-			"pending": pendingCount, // 等待同步的镜像数量
-			"syncing": syncingCount, // 正在同步的镜像数量
-			"success": successCount, // 同步成功的镜像数量
-			"failed":  failedCount,  // 同步失败的镜像数量
-			"records": records,      // 所有镜像的详细记录
+			"pending": agg.PendingCount, "syncing": agg.SyncingCount,
+			"success": agg.SuccessCount, "failed": agg.FailedCount, "records": records,
 		},
-	}
-
-	// 返回JSON响应
-	c.JSON(http.StatusOK, response)
-}
-
-// GetBatchSyncStatus 获取批量同步状态 - 已废弃的API
-//
-// 该接口已被废弃，不再提供批量同步功能。
-// 客户端调用此接口将收到410 Gone状态码，提示使用替代方案。
-//
-// HTTP方法: GET
-// 路径: /api/v1/sync/batch/status/:taskId
-//
-// 响应:
-//   - 410: 功能已废弃，返回错误信息和建议
-//
-// 废弃原因:
-//   - 批量同步功能已整合到单一同步接口中
-//   - 简化API设计，减少维护复杂度
-//   - 推荐使用模拟同步功能进行测试
-func (h *SyncHandler) GetBatchSyncStatus(c *gin.Context) {
-	// 记录废弃API的调用日志
-	logger.Logger.Warn("尝试调用已废弃的批量同步状态查询API")
-
-	// 返回410 Gone状态码，表示资源已永久移除
-	c.JSON(http.StatusGone, gin.H{
-		"error": "批量同步功能已废弃，请使用模拟同步功能进行测试",
-		"code":  "FEATURE_DEPRECATED",
 	})
 }
+
 
 // GetSyncHistory 获取同步任务历史记录
 //
@@ -614,11 +483,11 @@ func (h *SyncHandler) GetSyncHistory(c *gin.Context) {
 	// ====================================================================
 
 	// 构建基础查询，指定SyncTask模型
-	query := database.DB.Model(&models.SyncTask{})
+	query := database.DB.Model(&models.SyncBatch{})
 
 	// 如果指定了状态过滤，添加WHERE条件
 	if status != "" {
-		query = query.Where("status = ?", status)
+		query = query
 	}
 
 	// ====================================================================
@@ -638,7 +507,7 @@ func (h *SyncHandler) GetSyncHistory(c *gin.Context) {
 	// ====================================================================
 
 	// 查询指定页的任务数据
-	var tasks []models.SyncTask
+	var tasks []models.SyncBatch
 	offset := (page - 1) * pageSize // 计算偏移量
 
 	if err := query.Order("created_at DESC"). // 按创建时间倒序排列
@@ -682,6 +551,11 @@ func (h *SyncHandler) GetSyncHistory(c *gin.Context) {
 //  5. 启动GitHub Actions监控
 //
 // 注意: 该方法通过goroutine异步调用，不返回错误给调用方
+// ProcessSyncTask 异步处理同步批次（供 ImageHandler 重试等共用）
+func (h *SyncHandler) ProcessSyncTask(taskID string) {
+	h.processSyncTask(taskID)
+}
+
 func (h *SyncHandler) processSyncTask(taskID string) {
 	// 记录任务开始处理的日志
 	logger.Logger.Info("开始处理同步任务", zap.String("task_id", taskID))
@@ -694,8 +568,8 @@ func (h *SyncHandler) processSyncTask(taskID string) {
 	// ====================================================================
 
 	// 获取任务的详细信息，用于后续处理
-	var task models.SyncTask
-	if err := database.DB.Where("task_id = ?", taskID).First(&task).Error; err != nil {
+	var batch models.SyncBatch
+	if err := database.DB.Where("id = ?", taskID).First(&batch).Error; err != nil {
 		logger.Logger.Error("查询任务失败", zap.Error(err))
 		h.handleSyncError(taskID, fmt.Sprintf("查询任务失败: %v", err))
 		return
@@ -707,8 +581,8 @@ func (h *SyncHandler) processSyncTask(taskID string) {
 
 	// 获取所有状态为"待同步"的镜像记录
 	// 按输入顺序排序，确保处理顺序与提交顺序一致
-	var records []models.ImageSyncRecord
-	if err := database.DB.Where("task_id = ? AND sync_status = ?", taskID, models.SyncStatusPending).
+	var records []models.SyncRecord
+	if err := database.DB.Where("batch_id = ? AND status = ?", taskID, models.SyncStatusPending).
 		Order("input_order ASC").
 		Find(&records).Error; err != nil {
 		h.handleSyncError(taskID, fmt.Sprintf("查询镜像记录失败: %v", err))
@@ -736,27 +610,14 @@ func (h *SyncHandler) processSyncTask(taskID string) {
 		}
 	}()
 
-	// 步骤1: 更新任务状态为运行中
-	if err := tx.Model(&models.SyncTask{}).
-		Where("task_id = ?", taskID).
-		Updates(map[string]interface{}{
-			"status":     models.TaskStatusRunning, // 设置为运行中状态
-			"started_at": &now,                     // 记录开始时间
-		}).Error; err != nil {
-		tx.Rollback()
-		logger.Logger.Error("更新任务状态失败，事务已回滚", zap.String("task_id", taskID), zap.Error(err))
-		h.handleSyncError(taskID, fmt.Sprintf("更新任务状态失败: %v", err))
-		return
-	}
-
 	// 步骤2: 批量更新所有镜像记录的状态为"同步中"
 	// 使用事务确保原子性操作
 	var failedRecords []uint
 	for _, record := range records {
-		if err := tx.Model(&models.ImageSyncRecord{}).
+		if err := tx.Model(&models.SyncRecord{}).
 			Where("id = ?", record.ID).
 			Updates(map[string]interface{}{
-				"sync_status": models.SyncStatusSyncing, // 设置为同步中状态
+				"status": models.SyncStatusSyncing, // 设置为同步中状态
 				"started_at":  &now,                     // 记录开始时间
 			}).Error; err != nil {
 			logger.Logger.Error("更新镜像状态失败",
@@ -800,7 +661,7 @@ func (h *SyncHandler) processSyncTask(taskID string) {
 		workflowFile = "docker.yaml"
 	}
 
-	acrGroups := groupRecordsByAcrRegistry(records, task.AcrRegistryID)
+	acrGroups := groupRecordsByAcrRegistry(records, 0)
 	var lastRunID, lastRunURL string
 
 	for acrRegistryID, groupRecords := range acrGroups {
@@ -825,6 +686,9 @@ func (h *SyncHandler) processSyncTask(taskID string) {
 			h.handleSyncError(taskID, fmt.Sprintf("触发 GitHub Actions 失败: %v", err))
 			return
 		}
+		if err := services.UpsertWorkflowRun(taskID, acrRegistryID, runID, runURL, ""); err != nil {
+			logger.Logger.Error("保存 workflow run 失败", zap.Error(err))
+		}
 		lastRunID, lastRunURL = runID, runURL
 	}
 
@@ -834,16 +698,7 @@ func (h *SyncHandler) processSyncTask(taskID string) {
 	// 更新任务的 GitHub 信息（单独事务）
 	// ====================================================================
 
-	if runID != "" {
-		if err := database.DB.Model(&models.SyncTask{}).
-			Where("task_id = ?", taskID).
-			Updates(map[string]interface{}{
-				"github_run_id":     runID,
-				"github_action_url": runURL,
-			}).Error; err != nil {
-			logger.Logger.Error("更新 GitHub 信息失败", zap.String("task_id", taskID), zap.Error(err))
-		}
-	}
+
 
 	// ====================================================================
 	// 启动GitHub Actions监控
@@ -879,7 +734,7 @@ func (h *SyncHandler) processSyncTask(taskID string) {
 //   - 基础格式: image_name:tag
 //   - 默认不写入 --platform，统一交由 GitHub Actions 决定多架构处理
 //   - 按输入顺序保持镜像列表顺序
-func (h *SyncHandler) updateImagesFile(records []models.ImageSyncRecord) (string, error) {
+func (h *SyncHandler) updateImagesFile(records []models.SyncRecord) (string, error) {
 	// ====================================================================
 	// 初始化镜像列表
 	// ====================================================================
@@ -891,9 +746,9 @@ func (h *SyncHandler) updateImagesFile(records []models.ImageSyncRecord) (string
 	// ====================================================================
 
 	// 获取任务基本信息，为后续功能扩展预留
-	var task models.SyncTask
+	var task models.SyncBatch
 	if len(records) > 0 {
-		if err := database.DB.Where("task_id = ?", records[0].TaskID).First(&task).Error; err != nil {
+		if err := database.DB.Where("batch_id = ?", records[0].BatchID).First(&task).Error; err != nil {
 			logger.Logger.Error("查询任务信息失败", zap.Error(err))
 			return "", err
 		}
@@ -1076,6 +931,44 @@ func (h *SyncHandler) updateImagesFileWithAPI(content, commitMessage string) (st
 //   - 最大等待时间: 30分钟
 //   - 检查间隔: 30秒
 //   - 启动等待时间: 30秒
+
+func (h *SyncHandler) monitorSingleWorkflowRun(taskID, runID string) {
+	if runID == "" {
+		return
+	}
+	maxWaitTime := 30 * time.Minute
+	checkInterval := 30 * time.Second
+	startTime := time.Now()
+	for time.Since(startTime) < maxWaitTime {
+		select {
+		case <-h.ctx.Done():
+			return
+		default:
+		}
+		githubAPIService := h.gitServiceFactory.GetGitHubAPIService()
+		status, err := githubAPIService.GetWorkflowRunStatus(runID)
+		if err != nil {
+			time.Sleep(checkInterval)
+			continue
+		}
+		if status == "completed" {
+			conclusion, _ := githubAPIService.GetWorkflowRunConclusion(runID)
+			if conclusion == "success" {
+				h.handleSyncSuccess(taskID)
+			} else {
+				h.handlePartialSyncFailure(taskID, fmt.Sprintf("GitHub Actions 结论: %s", conclusion))
+			}
+			return
+		}
+		if status == "cancelled" || status == "failure" {
+			h.handlePartialSyncFailure(taskID, fmt.Sprintf("GitHub Actions 状态: %s", status))
+			return
+		}
+		time.Sleep(checkInterval)
+	}
+	h.handlePartialSyncFailure(taskID, "GitHub Actions执行超时")
+}
+
 func (h *SyncHandler) monitorGitHubActions(taskID, commitSHA string) {
 	// 记录监控开始的日志
 	logger.Logger.Info("开始监控GitHub Actions", zap.String("task_id", taskID), zap.String("commit_sha", commitSHA))
@@ -1100,21 +993,15 @@ func (h *SyncHandler) monitorGitHubActions(taskID, commitSHA string) {
 
 	// 如果 commitSHA 为空，直接从数据库读取 github_run_id（workflow_dispatch 模式）
 	if commitSHA == "" {
-		var task models.SyncTask
-		if err := database.DB.Where("task_id = ?", taskID).First(&task).Error; err != nil {
-			logger.Logger.Error("查询任务失败", zap.String("task_id", taskID), zap.Error(err))
-			h.handlePartialSyncFailure(taskID, fmt.Sprintf("查询任务失败: %v", err))
+		var runs []models.SyncWorkflowRun
+		if err := database.DB.Where("batch_id = ?", taskID).Find(&runs).Error; err != nil || len(runs) == 0 {
+			h.handlePartialSyncFailure(taskID, "未找到 GitHub Actions 运行记录")
 			return
 		}
-		runID = task.GitHubRunID
-		if runID == "" {
-			logger.Logger.Error("任务没有 github_run_id", zap.String("task_id", taskID))
-			h.handlePartialSyncFailure(taskID, "未找到 GitHub Actions 运行 ID")
-			return
+		for _, wr := range runs {
+			h.monitorSingleWorkflowRun(taskID, wr.GitHubRunID)
 		}
-		logger.Logger.Info("使用数据库中的 github_run_id",
-			zap.String("task_id", taskID),
-			zap.String("run_id", runID))
+		return
 	} else {
 		// 根据提交SHA查找对应的工作流运行（代码提交触发模式）
 		githubAPIService := h.gitServiceFactory.GetGitHubAPIService()
@@ -1127,14 +1014,13 @@ func (h *SyncHandler) monitorGitHubActions(taskID, commitSHA string) {
 		}
 		runID = foundRunID
 
-		// 更新任务的GitHub集成信息
-		if err := database.DB.Model(&models.SyncTask{}).
-			Where("task_id = ?", taskID).
-			Updates(map[string]interface{}{
-				"github_run_id":     runID,
-				"github_action_url": runURL,
-			}).Error; err != nil {
-			logger.Logger.Error("更新GitHub信息失败", zap.Error(err))
+		var acrRegistryID uint
+		var rec models.SyncRecord
+		if err := database.DB.Where("batch_id = ?", taskID).First(&rec).Error; err == nil {
+			acrRegistryID = rec.AcrRegistryID
+		}
+		if err := services.UpsertWorkflowRun(taskID, acrRegistryID, runID, runURL, commitSHA); err != nil {
+			logger.Logger.Error("保存 workflow run 失败", zap.Error(err))
 		}
 	}
 
@@ -1249,8 +1135,8 @@ func (h *SyncHandler) handleSyncSuccess(taskID string) {
 	// ====================================================================
 
 	// 获取任务下所有的镜像同步记录
-	var records []models.ImageSyncRecord
-	if err := database.DB.Where("task_id = ?", taskID).Find(&records).Error; err != nil {
+	var records []models.SyncRecord
+	if err := database.DB.Where("batch_id = ?", taskID).Find(&records).Error; err != nil {
 		logger.Logger.Error("查询镜像记录失败", zap.Error(err))
 		return
 	}
@@ -1259,8 +1145,8 @@ func (h *SyncHandler) handleSyncSuccess(taskID string) {
 	// 查询任务信息（获取 ACR 配置 ID）
 	// ====================================================================
 
-	var task models.SyncTask
-	if err := database.DB.Where("task_id = ?", taskID).First(&task).Error; err != nil {
+	var task models.SyncBatch
+	if err := database.DB.Where("batch_id = ?", taskID).First(&task).Error; err != nil {
 		logger.Logger.Error("查询任务失败", zap.Error(err))
 		return
 	}
@@ -1303,10 +1189,10 @@ func (h *SyncHandler) handleSyncSuccess(taskID string) {
 
 		if exists {
 			// 镜像存在，标记为成功
-			if err := database.DB.Model(&models.ImageSyncRecord{}).
+			if err := database.DB.Model(&models.SyncRecord{}).
 				Where("id = ?", record.ID).
 				Updates(map[string]interface{}{
-					"sync_status":        models.SyncStatusSuccess,
+					"status":        models.SyncStatusSuccess,
 					"completed_at":       &completedTime,
 					"duration":           duration,
 					"acr_image":          acrImage,
@@ -1320,10 +1206,10 @@ func (h *SyncHandler) handleSyncSuccess(taskID string) {
 		} else {
 			// 镜像不存在，标记为失败
 			errorMessage := "镜像未成功同步到ACR"
-			if err := database.DB.Model(&models.ImageSyncRecord{}).
+			if err := database.DB.Model(&models.SyncRecord{}).
 				Where("id = ?", record.ID).
 				Updates(map[string]interface{}{
-					"sync_status":       models.SyncStatusFailed,
+					"status":       models.SyncStatusFailed,
 					"completed_at":      &completedTime,
 					"duration":          duration,
 					"acr_image":         acrImage,
@@ -1335,27 +1221,12 @@ func (h *SyncHandler) handleSyncSuccess(taskID string) {
 		}
 	}
 
-	// 更新任务状态
-	completedTime := time.Now()
 	taskStatus := models.TaskStatusCompleted
 	if successCount == 0 {
 		taskStatus = models.TaskStatusFailed
 	} else if successCount < len(records) {
 		taskStatus = models.TaskStatusPartialSuccess
 	}
-
-	if err := database.DB.Model(&models.SyncTask{}).
-		Where("task_id = ?", taskID).
-		Updates(map[string]interface{}{
-			"status":           taskStatus,
-			"completed_at":     &completedTime,
-			"completed_images": successCount,
-			"failed_images":    len(records) - successCount,
-			"progress":         100.0,
-		}).Error; err != nil {
-		logger.Logger.Error("更新任务完成状态失败", zap.Error(err))
-	}
-
 	logger.Logger.Info("同步任务处理完成",
 		zap.String("task_id", taskID),
 		zap.String("status", taskStatus),
@@ -1384,29 +1255,14 @@ func (h *SyncHandler) handleSyncError(taskID, errorMessage string) {
 	// 记录错误时间
 	now := time.Now()
 
-	// 步骤1: 更新任务状态为失败
-	if err := tx.Model(&models.SyncTask{}).
-		Where("task_id = ?", taskID).
-		Updates(map[string]interface{}{
-			"status":        models.TaskStatusFailed,
-			"completed_at":  &now,
-			"error_message": errorMessage,
-		}).Error; err != nil {
-		tx.Rollback()
-		logger.Logger.Error("更新任务失败状态失败，事务已回滚",
-			zap.String("task_id", taskID),
-			zap.Error(err))
-		return
-	}
-
-	// 步骤2: 更新所有相关镜像记录为失败
-	if err := tx.Model(&models.ImageSyncRecord{}).
-		Where("task_id = ? AND sync_status IN (?)", taskID, []string{
+	// 更新所有相关镜像记录为失败
+	if err := tx.Model(&models.SyncRecord{}).
+		Where("batch_id = ? AND status IN (?)", taskID, []string{
 			models.SyncStatusPending,
 			models.SyncStatusSyncing,
 		}).
 		Updates(map[string]interface{}{
-			"sync_status":   models.SyncStatusFailed,
+			"status":   models.SyncStatusFailed,
 			"completed_at":  &now,
 			"error_message": errorMessage,
 		}).Error; err != nil {
@@ -1454,8 +1310,8 @@ func (h *SyncHandler) handlePartialSyncFailure(taskID, workflowErrorMessage stri
 	// ====================================================================
 
 	// 获取任务下所有的镜像同步记录
-	var records []models.ImageSyncRecord
-	if err := database.DB.Where("task_id = ?", taskID).Find(&records).Error; err != nil {
+	var records []models.SyncRecord
+	if err := database.DB.Where("batch_id = ?", taskID).Find(&records).Error; err != nil {
 		logger.Logger.Error("查询镜像记录失败", zap.Error(err))
 		return
 	}
@@ -1469,8 +1325,8 @@ func (h *SyncHandler) handlePartialSyncFailure(taskID, workflowErrorMessage stri
 	// 查询任务信息（获取 ACR 配置 ID）
 	// ====================================================================
 
-	var task models.SyncTask
-	if err := database.DB.Where("task_id = ?", taskID).First(&task).Error; err != nil {
+	var task models.SyncBatch
+	if err := database.DB.Where("batch_id = ?", taskID).First(&task).Error; err != nil {
 		logger.Logger.Error("查询任务失败", zap.Error(err))
 		return
 	}
@@ -1514,10 +1370,10 @@ func (h *SyncHandler) handlePartialSyncFailure(taskID, workflowErrorMessage stri
 
 		if exists {
 			// 镜像存在，标记为成功
-			if err := database.DB.Model(&models.ImageSyncRecord{}).
+			if err := database.DB.Model(&models.SyncRecord{}).
 				Where("id = ?", record.ID).
 				Updates(map[string]interface{}{
-					"sync_status":       models.SyncStatusSuccess,
+					"status":       models.SyncStatusSuccess,
 					"completed_at":      &now,
 					"duration":          duration,
 					"acr_image":         acrImage,
@@ -1535,10 +1391,10 @@ func (h *SyncHandler) handlePartialSyncFailure(taskID, workflowErrorMessage stri
 		} else {
 			// 镜像不存在，标记为失败
 			individualErrorMessage := fmt.Sprintf("GitHub Actions工作流失败: %s; 镜像未成功同步到ACR", workflowErrorMessage)
-			if err := database.DB.Model(&models.ImageSyncRecord{}).
+			if err := database.DB.Model(&models.SyncRecord{}).
 				Where("id = ?", record.ID).
 				Updates(map[string]interface{}{
-					"sync_status":       models.SyncStatusFailed,
+					"status":       models.SyncStatusFailed,
 					"completed_at":      &now,
 					"duration":          duration,
 					"acr_image":         acrImage,
@@ -1560,37 +1416,13 @@ func (h *SyncHandler) handlePartialSyncFailure(taskID, workflowErrorMessage stri
 	// 更新任务状态
 	// ====================================================================
 
-	// 根据成功/失败数量确定任务状态
 	var taskStatus string
-	var finalErrorMessage string
-
 	if successCount == 0 {
-		// 全部失败
 		taskStatus = models.TaskStatusFailed
-		finalErrorMessage = workflowErrorMessage
 	} else if failedCount == 0 {
-		// 全部成功（GitHub Actions报错但实际都成功了）
 		taskStatus = models.TaskStatusCompleted
-		finalErrorMessage = ""
 	} else {
-		// 部分成功部分失败
 		taskStatus = models.TaskStatusPartialSuccess
-		finalErrorMessage = fmt.Sprintf("GitHub Actions工作流失败，但%d个镜像成功同步，%d个镜像失败。工作流错误: %s",
-			successCount, failedCount, workflowErrorMessage)
-	}
-
-	// 更新任务状态
-	if err := database.DB.Model(&models.SyncTask{}).
-		Where("task_id = ?", taskID).
-		Updates(map[string]interface{}{
-			"status":           taskStatus,
-			"completed_at":     &now,
-			"completed_images": successCount,
-			"failed_images":    failedCount,
-			"progress":         100.0,
-			"error_message":    finalErrorMessage,
-		}).Error; err != nil {
-		logger.Logger.Error("更新任务状态失败", zap.Error(err))
 	}
 
 	logger.Logger.Info("部分同步失败处理完成",
@@ -1663,28 +1495,9 @@ func (h *SyncHandler) SubmitMockBatchSync(c *gin.Context) {
 	taskID := uuid.New().String()
 
 	// 创建批量同步任务记录
-	task := &models.SyncTask{
-		TaskID:        taskID,
-		Status:        models.TaskStatusPending,
-		MaxConcurrent: req.MaxConcurrent,
-		TotalImages:   len(req.Images),
-		AutoRetry:     req.AutoRetry,
-		RetryCount:    req.RetryCount,
-		AcrRegistryID: req.AcrRegistryID,
-	}
+	batch := &models.SyncBatch{ID: taskID, IsMock: true}
 
-	// 构建镜像JSON字符串
-	var imageStrings []string
-	for _, img := range req.Images {
-		imageStr := img.SourceImage
-		if img.TargetTag != "" {
-			imageStr = imageStr + ":" + img.TargetTag
-		}
-		imageStrings = append(imageStrings, imageStr)
-	}
-	task.ImagesJSON = strings.Join(imageStrings, "\n")
-
-	if err := database.DB.Create(task).Error; err != nil {
+	if err := database.DB.Create(batch).Error; err != nil {
 		logger.Logger.Error("创建模拟批量同步任务失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建同步任务失败"})
 		return
@@ -1726,16 +1539,14 @@ func (h *SyncHandler) SubmitMockBatchSync(c *gin.Context) {
 			acrRegistryID = resolved.SuggestedAcrID
 		}
 
-		record := &models.ImageSyncRecord{
+		record := &models.SyncRecord{
 			OriginalImage: originalImage,
 			Tag:           tag,
 			Architecture:  architecture,
 			OriginalInput: originalInput,
 			InputOrder:    i, // 保存输入顺序
-			SyncStatus:    models.SyncStatusPending,
-			TaskID:        taskID,
-			Priority:      img.Priority,
-			MaxRetries:    req.RetryCount,
+			Status:        models.SyncStatusPending,
+			BatchID:       taskID,
 			Description:   img.Description, // 添加描述字段
 			AcrRegistryID: acrRegistryID,
 		}
@@ -1773,42 +1584,26 @@ func (h *SyncHandler) SubmitMockBatchSync(c *gin.Context) {
 func (h *SyncHandler) processMockBatchSyncTask(taskID string) {
 	logger.Logger.Info("开始处理模拟批量同步任务", zap.String("task_id", taskID))
 
-	// 更新任务状态为运行中
-	now := time.Now()
-	if err := database.DB.Model(&models.SyncTask{}).
-		Where("task_id = ?", taskID).
-		Updates(map[string]interface{}{
-			"status":     models.TaskStatusRunning,
-			"started_at": &now,
-		}).Error; err != nil {
-		logger.Logger.Error("更新模拟批量任务状态失败", zap.Error(err))
-		return
+	maxConcurrent := config.AppConfig.Sync.MaxConcurrentJobs
+	if maxConcurrent < 1 {
+		maxConcurrent = 3
 	}
 
-	// 获取任务信息
-	var task models.SyncTask
-	if err := database.DB.Where("task_id = ?", taskID).First(&task).Error; err != nil {
-		logger.Logger.Error("查询模拟批量任务失败", zap.Error(err))
-		return
-	}
-
-	// 获取所有待同步的镜像记录，按输入顺序排序
-	var records []models.ImageSyncRecord
-	if err := database.DB.Where("task_id = ? AND sync_status = ?", taskID, models.SyncStatusPending).
+	var records []models.SyncRecord
+	if err := database.DB.Where("batch_id = ? AND status = ?", taskID, models.SyncStatusPending).
 		Order("input_order ASC").
 		Find(&records).Error; err != nil {
 		h.handleBatchSyncError(taskID, fmt.Sprintf("查询镜像记录失败: %v", err))
 		return
 	}
 
-	// 使用信号量控制并发数
-	semaphore := make(chan struct{}, task.MaxConcurrent)
+	semaphore := make(chan struct{}, maxConcurrent)
 	var wg sync.WaitGroup
 
 	// 处理每个镜像
 	for _, record := range records {
 		wg.Add(1)
-		go func(r models.ImageSyncRecord) {
+		go func(r models.SyncRecord) {
 			defer wg.Done()
 
 			// 获取信号量
@@ -1830,7 +1625,7 @@ func (h *SyncHandler) processMockBatchSyncTask(taskID string) {
 }
 
 // processSingleMockImage 处理单个镜像的模拟同步
-func (h *SyncHandler) processSingleMockImage(taskID string, record models.ImageSyncRecord) {
+func (h *SyncHandler) processSingleMockImage(taskID string, record models.SyncRecord) {
 	logger.Logger.Info("开始模拟镜像同步",
 		zap.String("task_id", taskID),
 		zap.String("image", record.OriginalImage))
@@ -1838,10 +1633,10 @@ func (h *SyncHandler) processSingleMockImage(taskID string, record models.ImageS
 	startTime := time.Now()
 
 	// 更新镜像状态为同步中
-	if err := database.DB.Model(&models.ImageSyncRecord{}).
+	if err := database.DB.Model(&models.SyncRecord{}).
 		Where("id = ?", record.ID).
 		Updates(map[string]interface{}{
-			"sync_status": models.SyncStatusSyncing,
+			"status": models.SyncStatusSyncing,
 			"started_at":  &startTime,
 		}).Error; err != nil {
 		logger.Logger.Error("更新镜像状态失败", zap.Error(err))
@@ -1869,10 +1664,10 @@ func (h *SyncHandler) processSingleMockImage(taskID string, record models.ImageS
 
 	if exists {
 		// 目标镜像存在，设置为成功
-		if err := database.DB.Model(&models.ImageSyncRecord{}).
+		if err := database.DB.Model(&models.SyncRecord{}).
 			Where("id = ?", record.ID).
 			Updates(map[string]interface{}{
-				"sync_status":       models.SyncStatusSuccess,
+				"status":       models.SyncStatusSuccess,
 				"completed_at":      &completedTime,
 				"duration":          duration,
 				"acr_image":         acrImage,
@@ -1891,10 +1686,10 @@ func (h *SyncHandler) processSingleMockImage(taskID string, record models.ImageS
 	} else {
 		// 目标镜像不存在，设置为失败
 		errorMessage := "目标镜像不存在于注册表中"
-		if err := database.DB.Model(&models.ImageSyncRecord{}).
+		if err := database.DB.Model(&models.SyncRecord{}).
 			Where("id = ?", record.ID).
 			Updates(map[string]interface{}{
-				"sync_status":       models.SyncStatusFailed,
+				"status":       models.SyncStatusFailed,
 				"completed_at":      &completedTime,
 				"duration":          duration,
 				"acr_image":         acrImage,
@@ -1930,21 +1725,7 @@ func (h *SyncHandler) calculateEstimatedTime(imageCount, maxConcurrent int) int 
 
 // handleBatchSyncError 处理批量同步错误
 func (h *SyncHandler) handleBatchSyncError(taskID, errorMessage string) {
-	logger.Logger.Error("批量同步任务失败",
-		zap.String("task_id", taskID),
-		zap.String("error", errorMessage))
-
-	// 更新任务状态为失败
-	now := time.Now()
-	if err := database.DB.Model(&models.SyncTask{}).
-		Where("task_id = ?", taskID).
-		Updates(map[string]interface{}{
-			"status":        models.TaskStatusFailed,
-			"completed_at":  &now,
-			"error_message": errorMessage,
-		}).Error; err != nil {
-		logger.Logger.Error("更新任务失败状态失败", zap.Error(err))
-	}
+	h.handleSyncError(taskID, errorMessage)
 }
 
 // updateBatchTaskFinalStatus 更新批量任务最终状态
@@ -1957,122 +1738,47 @@ func (h *SyncHandler) updateBatchTaskFinalStatus(taskID string) {
 		Pending int64
 	}
 
-	database.DB.Model(&models.ImageSyncRecord{}).
-		Where("task_id = ?", taskID).
+	database.DB.Model(&models.SyncRecord{}).
+		Where("batch_id = ?", taskID).
 		Count(&stats.Total)
 
-	database.DB.Model(&models.ImageSyncRecord{}).
-		Where("task_id = ? AND sync_status = ?", taskID, models.SyncStatusSuccess).
+	database.DB.Model(&models.SyncRecord{}).
+		Where("batch_id = ? AND status = ?", taskID, models.SyncStatusSuccess).
 		Count(&stats.Success)
 
-	database.DB.Model(&models.ImageSyncRecord{}).
-		Where("task_id = ? AND sync_status = ?", taskID, models.SyncStatusFailed).
+	database.DB.Model(&models.SyncRecord{}).
+		Where("batch_id = ? AND status = ?", taskID, models.SyncStatusFailed).
 		Count(&stats.Failed)
 
-	database.DB.Model(&models.ImageSyncRecord{}).
-		Where("task_id = ? AND sync_status = ?", taskID, models.SyncStatusPending).
+	database.DB.Model(&models.SyncRecord{}).
+		Where("batch_id = ? AND status = ?", taskID, models.SyncStatusPending).
 		Count(&stats.Pending)
 
-	// 确定最终状态
 	var finalStatus string
-	var errorMessage string
-
 	if stats.Pending > 0 {
 		finalStatus = models.TaskStatusRunning
 	} else if stats.Failed > 0 {
 		if stats.Success > 0 {
 			finalStatus = models.TaskStatusPartialSuccess
-			errorMessage = fmt.Sprintf("部分成功: %d成功, %d失败", stats.Success, stats.Failed)
 		} else {
 			finalStatus = models.TaskStatusFailed
-			errorMessage = fmt.Sprintf("全部失败: %d失败", stats.Failed)
 		}
 	} else {
-		finalStatus = models.TaskStatusSuccess
-	}
-
-	// 更新任务状态
-	now := time.Now()
-	updates := map[string]interface{}{
-		"status":           finalStatus,
-		"completed_images": stats.Success,
-		"failed_images":    stats.Failed,
-		"progress":         float64(stats.Success+stats.Failed) / float64(stats.Total) * 100,
-	}
-
-	if finalStatus != models.TaskStatusRunning {
-		updates["completed_at"] = &now
-	}
-
-	if errorMessage != "" {
-		updates["error_message"] = errorMessage
-	}
-
-	if err := database.DB.Model(&models.SyncTask{}).
-		Where("task_id = ?", taskID).
-		Updates(updates).Error; err != nil {
-		logger.Logger.Error("更新任务最终状态失败", zap.Error(err))
+		finalStatus = models.TaskStatusCompleted
 	}
 
 	logger.Logger.Info("批量任务状态已更新",
 		zap.String("task_id", taskID),
-		zap.String("status", string(finalStatus)),
+		zap.String("status", finalStatus),
 		zap.Int64("success", stats.Success),
 		zap.Int64("failed", stats.Failed))
 }
 
-// updateBatchTaskProgress 更新批量任务进度
-func (h *SyncHandler) updateBatchTaskProgress(taskID string) {
-	// 统计完成的镜像数量
-	var completed, total int64
+// updateBatchTaskProgress 批次进度由 sync_records 聚合，不写 batch 表
+func (h *SyncHandler) updateBatchTaskProgress(taskID string) {}
 
-	database.DB.Model(&models.ImageSyncRecord{}).
-		Where("task_id = ?", taskID).
-		Count(&total)
-
-	database.DB.Model(&models.ImageSyncRecord{}).
-		Where("task_id = ? AND sync_status IN (?)", taskID, []string{
-			models.SyncStatusSuccess,
-			models.SyncStatusFailed,
-		}).Count(&completed)
-
-	// 计算进度百分比
-	var progress float64
-	if total > 0 {
-		progress = float64(completed) / float64(total) * 100
-	}
-
-	// 更新任务进度
-	if err := database.DB.Model(&models.SyncTask{}).
-		Where("task_id = ?", taskID).
-		Update("progress", progress).Error; err != nil {
-		logger.Logger.Error("更新任务进度失败", zap.Error(err))
-	}
-}
-
-// updateTaskStatus 更新任务状态
-func (h *SyncHandler) updateTaskStatus(taskID, status, errorMessage string) {
-	updates := map[string]interface{}{
-		"status": status,
-	}
-
-	if status == "completed" {
-		now := time.Now()
-		updates["completed_at"] = &now
-	} else if status == "failed" {
-		now := time.Now()
-		updates["completed_at"] = &now
-		if errorMessage != "" {
-			updates["error_message"] = errorMessage
-		}
-	}
-
-	if err := database.DB.Model(&models.SyncTask{}).
-		Where("task_id = ?", taskID).
-		Updates(updates).Error; err != nil {
-		logger.Logger.Error("更新任务状态失败", zap.Error(err))
-	}
-}
+// updateTaskStatus 已废弃：批次状态由 sync_records 聚合
+func (h *SyncHandler) updateTaskStatus(taskID, status, errorMessage string) {}
 
 // SuggestAcr 根据源镜像建议目标 ACR
 //
@@ -2137,7 +1843,7 @@ func (h *SyncHandler) CheckAcr(c *gin.Context) {
 	})
 }
 
-func (h *SyncHandler) registerRepositoryOnSyncSuccess(record *models.ImageSyncRecord) {
+func (h *SyncHandler) registerRepositoryOnSyncSuccess(record *models.SyncRecord) {
 	if record == nil || record.AcrRegistryID == 0 {
 		return
 	}
@@ -2156,7 +1862,7 @@ func (h *SyncHandler) registerRepositoryOnSyncSuccess(record *models.ImageSyncRe
 	}
 }
 
-func buildImageLineFromRecord(record models.ImageSyncRecord) string {
+func buildImageLineFromRecord(record models.SyncRecord) string {
 	imageLine := record.OriginalImage
 	if record.Tag != "" {
 		imageLine = imageLine + ":" + record.Tag
@@ -2164,8 +1870,8 @@ func buildImageLineFromRecord(record models.ImageSyncRecord) string {
 	return imageLine
 }
 
-func groupRecordsByAcrRegistry(records []models.ImageSyncRecord, fallbackAcrID uint) map[uint][]models.ImageSyncRecord {
-	groups := make(map[uint][]models.ImageSyncRecord)
+func groupRecordsByAcrRegistry(records []models.SyncRecord, fallbackAcrID uint) map[uint][]models.SyncRecord {
+	groups := make(map[uint][]models.SyncRecord)
 	for _, record := range records {
 		acrID := record.AcrRegistryID
 		if acrID == 0 {
@@ -2177,45 +1883,26 @@ func groupRecordsByAcrRegistry(records []models.ImageSyncRecord, fallbackAcrID u
 }
 
 func (h *SyncHandler) buildAcrWorkflowInputs(acrRegistryID uint) (map[string]string, error) {
-	if acrRegistryID > 0 {
-		encryptionSvc := h.gitServiceFactory.GetEncryptionService()
-		acrRegistryService := services.NewAcrRegistryService(database.DB, encryptionSvc)
-		acr, err := acrRegistryService.GetByID(acrRegistryID)
-		if err != nil {
-			return nil, err
-		}
-		password, err := encryptionSvc.Decrypt(acr.Password)
-		if err != nil {
-			return nil, fmt.Errorf("解密ACR密码失败: %w", err)
-		}
-		return map[string]string{
-			"aliyun_registry":          acr.RegistryURL,
-			"aliyun_namespace":         acr.Namespace,
-			"aliyun_registry_user":     acr.Username,
-			"aliyun_registry_password": password,
-		}, nil
+	if acrRegistryID == 0 {
+		return nil, fmt.Errorf("acr_registry_id 无效，请先在 ACR 配置中添加实例")
 	}
-
-	configService := h.gitServiceFactory.GetConfigService()
-	registry, _ := configService.GetConfig("aliyun_registry")
-	if registry == "" {
-		registry = "registry.cn-hangzhou.aliyuncs.com"
+	encryptionSvc := h.gitServiceFactory.GetEncryptionService()
+	acrRegistryService := services.NewAcrRegistryService(database.DB, encryptionSvc)
+	acr, err := acrRegistryService.GetByID(acrRegistryID)
+	if err != nil {
+		return nil, err
 	}
-	namespace, _ := configService.GetConfig("aliyun_namespace")
-	if namespace == "" {
-		namespace = "lpx03"
+	password, err := encryptionSvc.Decrypt(acr.Password)
+	if err != nil {
+		return nil, fmt.Errorf("解密ACR密码失败: %w", err)
 	}
-	username, _ := configService.GetConfig("aliyun_username")
-	password, _ := configService.GetConfig("aliyun_password")
 	return map[string]string{
-		"aliyun_registry":          registry,
-		"aliyun_namespace":         namespace,
-		"aliyun_registry_user":     username,
-		"aliyun_registry_password": password,
+		"aliyun_registry": acr.RegistryURL, "aliyun_namespace": acr.Namespace,
+		"aliyun_registry_user": acr.Username, "aliyun_registry_password": password,
 	}, nil
 }
 
-func (h *SyncHandler) buildACRImageForRecord(record models.ImageSyncRecord) string {
+func (h *SyncHandler) buildACRImageForRecord(record models.SyncRecord) string {
 	if record.AcrRegistryID > 0 {
 		var acr models.AcrRegistry
 		if err := database.DB.First(&acr, record.AcrRegistryID).Error; err == nil {
@@ -2227,5 +1914,5 @@ func (h *SyncHandler) buildACRImageForRecord(record models.ImageSyncRecord) stri
 			return fmt.Sprintf("%s/%s/%s:%s", acr.RegistryURL, acr.Namespace, imageName, tag)
 		}
 	}
-	return utils.GenerateACRImage(record.OriginalImage, record.Tag)
+	return ""
 }

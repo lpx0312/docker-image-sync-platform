@@ -587,11 +587,7 @@ const startStatusPolling = () => {
     if (syncStore.currentTask &&
         (syncStore.currentTask.status === 'pending' || syncStore.currentTask.status === 'running')) {
       try {
-        if (syncStore.currentTask.total_images > 1) {
-          await syncStore.getBatchSyncStatus(syncStore.currentTask.task_id)
-        } else {
-          await syncStore.getSyncStatus(syncStore.currentTask.task_id)
-        }
+        await syncStore.getSyncStatus(syncStore.currentTask.task_id)
       } catch { /* polling error ignored */ }
     }
 

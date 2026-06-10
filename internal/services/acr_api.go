@@ -2,6 +2,7 @@ package services
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -196,7 +197,8 @@ func (s *AcrAPIService) GetTags(registry, username, password, namespace, repo, a
 		}
 
 		if resp.StatusCode() == 404 {
-			return []string{}, nil
+			// 阿里云 ACR 对真实不存在的仓库返回 404
+			return nil, ErrRepositoryNotFound
 		}
 
 		if resp.StatusCode() != 200 {
@@ -209,11 +211,19 @@ func (s *AcrAPIService) GetTags(registry, username, password, namespace, repo, a
 	return nil, fmt.Errorf("获取Tag列表失败: HTTP 401")
 }
 
+// ErrRepositoryNotFound 表示 ACR 仓库不存在（tags/list 返回 404）
+var ErrRepositoryNotFound = errors.New("ACR 仓库不存在")
+
 // RepositoryExists 检查 ACR 中仓库是否存在（有至少一个 Tag）
-// 通过 tags/list 判断：404 或空 Tag 列表视为不存在
+// 真实不存在的仓库（404）视为不存在；
+// 其他错误（鉴权、网络、限流等）也视为不存在以避免误判
+// —— 但通过专门的错误返回以让调用方区分。
 func (s *AcrAPIService) RepositoryExists(registry, username, password, namespace, repo, authServer, dockerService string) (bool, error) {
 	tags, err := s.GetTags(registry, username, password, namespace, repo, authServer, dockerService)
 	if err != nil {
+		if errors.Is(err, ErrRepositoryNotFound) {
+			return false, nil
+		}
 		return false, err
 	}
 	return len(tags) > 0, nil
@@ -225,8 +235,7 @@ func (s *AcrAPIService) IsRepositoryNotFound(err error) bool {
 	if err == nil {
 		return false
 	}
-	msg := err.Error()
-	return strings.Contains(msg, "HTTP 404") || strings.Contains(msg, "HTTP 401")
+	return errors.Is(err, ErrRepositoryNotFound) || strings.Contains(err.Error(), "HTTP 404")
 }
 
 const (

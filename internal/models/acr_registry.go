@@ -40,3 +40,14 @@ type AcrRegistryUpdateRequest struct {
 	AuthServer    string `json:"auth_server"`
 	DockerService string `json:"docker_service"`
 }
+
+// AcrRegistryTestRequest ACR 连接测试请求（编辑时可不传密码，用 id 读取已存凭据）
+type AcrRegistryTestRequest struct {
+	ID            uint   `json:"id"`
+	RegistryURL   string `json:"registry_url" binding:"required"`
+	Namespace     string `json:"namespace" binding:"required"`
+	Username      string `json:"username" binding:"required"`
+	Password      string `json:"password"`
+	AuthServer    string `json:"auth_server"`
+	DockerService string `json:"docker_service"`
+}

@@ -88,7 +88,7 @@ func main() {
 
 	// 自动迁移数据库表结构
 	// 根据模型定义自动创建或更新数据库表
-	// 包括：images表、sync_tasks表等
+	// 包括：RBAC、ACR、system_configs 等 seed 表
 	if err := database.AutoMigrate(); err != nil {
 		logger.Logger.Fatal("数据库表迁移失败", zap.Error(err))
 	}
@@ -134,7 +134,7 @@ func main() {
 
 	// 初始化HTTP请求处理器
 	syncHandler := handlers.NewSyncHandler(gitServiceFactory)
-	imageHandler := handlers.NewImageHandler()
+	imageHandler := handlers.NewImageHandler(syncHandler.ProcessSyncTask)
 	configHandler := handlers.NewConfigHandler(gitServiceFactory, configService)
 	authHandler := handlers.NewAuthHandler(authService, userService)
 	roleHandler := handlers.NewRoleHandler(roleService)
@@ -262,7 +262,6 @@ func main() {
 				syncGroup.POST("/batch", middleware.SyncRateLimit(), syncHandler.SubmitBatchSync)
 				syncGroup.POST("/batch/mock", middleware.SyncRateLimit(), syncHandler.SubmitMockBatchSync)
 				syncGroup.GET("/status/:taskId", syncHandler.GetSyncStatus)
-				syncGroup.GET("/batch/status/:taskId", syncHandler.GetBatchSyncStatus)
 				syncGroup.GET("/history", syncHandler.GetSyncHistory)
 				syncGroup.GET("/suggest-acr", syncHandler.SuggestAcr)
 				syncGroup.POST("/check-acr", syncHandler.CheckAcr)
@@ -343,9 +342,6 @@ func main() {
 				configGroup.GET("/git-performance", configHandler.GetGitPerformanceMetrics)
 				configGroup.GET("/git-network-test", configHandler.TestGitNetworkQuality)
 				configGroup.POST("/git-test-operations", configHandler.TestGitOperations)
-				configGroup.GET("/aliyun-db", configHandler.GetAliyunConfig)
-				configGroup.PUT("/aliyun-db", configHandler.UpdateAliyunConfig)
-				configGroup.POST("/aliyun/test", configHandler.TestAliyunConnection)
 				configGroup.GET("/all", configHandler.GetAllConfigs)
 
 				// debug 路由仅在开发环境下注册
@@ -371,6 +367,7 @@ func main() {
 			acrRegistriesWrite.Use(middleware.PermissionRequired(roleService, models.PermConfig))
 			{
 				acrRegistriesWrite.POST("", acrRegistryHandler.Create)
+				acrRegistriesWrite.POST("/test", acrRegistryHandler.TestConnection)
 				acrRegistriesWrite.PUT("/:id", acrRegistryHandler.Update)
 				acrRegistriesWrite.DELETE("/:id", acrRegistryHandler.Delete)
 				acrRegistriesWrite.PUT("/:id/default", acrRegistryHandler.SetDefault)

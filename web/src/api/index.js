@@ -141,8 +141,6 @@ export const syncAPI = {
    * @param {string} taskId - 批量任务ID
    * @returns {Promise} 返回批量任务状态和子任务列表
    */
-  getBatchSyncStatus: (taskId) => api.get(`/sync/batch/status/${taskId}`),
-  
   /**
    * 获取同步历史记录
    * 
@@ -153,8 +151,6 @@ export const syncAPI = {
    * @param {string} [params.image] - 镜像名筛选
    * @returns {Promise} 返回分页的历史记录列表
    */
-  getSyncHistory: (params) => api.get('/sync/history', { params }),
-
   /**
    * 根据源镜像建议目标 ACR
    *
@@ -416,48 +412,6 @@ export const systemAPI = {
   },
 
   // ====================================================================
-  // 阿里云配置管理接口
-  // ====================================================================
-
-  /**
-   * 获取阿里云配置
-   * 
-   * 获取阿里云容器镜像服务配置
-   * 
-   * @returns {Promise} 返回阿里云配置数据
-   */
-  getAliyunConfig: () => api.get('/config/aliyun-db'),
-
-  /**
-   * 更新阿里云配置
-   * 
-   * 更新阿里云镜像仓库的配置信息
-   * 
-   * @param {Object} config - 阿里云配置数据
-   * @param {string} config.registry - 镜像仓库地址
-   * @param {string} config.namespace - 命名空间
-   * @param {string} config.username - 用户名
-   * @param {string} config.password - 密码
-   * @returns {Promise} 返回更新结果
-   */
-  updateAliyunConfig: (config) => api.put('/config/aliyun-db', config),
-
-  /**
-   * 测试阿里云连接
-   * 
-   * 测试阿里云镜像仓库的连接状态
-   * 
-   * @param {Object} config - 测试配置数据
-   * @param {string} config.registry_url - 镜像仓库地址
-   * @param {string} config.namespace - 命名空间
-   * @param {string} config.username - 用户名
-   * @param {string} config.password - 密码
-   * @param {string} config.region - 地域
-   * @returns {Promise} 返回连接测试结果
-   */
-  testAliyunConnection: (config) => api.post('/config/aliyun/test', config),
-
-  // ====================================================================
   // 通用配置管理接口
   // ====================================================================
 
@@ -551,6 +505,8 @@ export const acrRegistryAPI = {
    * @returns {Promise} 返回创建结果
    */
   create: (data) => api.post('/acr-registries', data),
+
+  testConnection: (data) => api.post('/acr-registries/test', data),
 
   /**
    * 更新 ACR 配置

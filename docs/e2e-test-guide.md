@@ -47,7 +47,7 @@ ss -tlnp | grep -E ':3000|:8080|:3306'
 | T4 | 镜像列表 | 搜索、状态/架构筛选、去重勾选、批量检测、复制、详情弹层 |
 | T5 | 系统配置 - Git | 字段完整性、仓库类型切换（Gitee ↔ GitHub） |
 | T6 | 系统配置 - 阿里云 | 字段完整性、密码填写后保存按钮激活 |
-| T7 | 系统配置 - 系统设置 | 同步间隔/最大并发 spinbutton 调整 |
+| T7 | 系统配置 - （已移除系统设置 Tab） | 同步间隔/最大并发 spinbutton 调整 |
 | T8 | GitHub Actions | 检查 API 限制、状态筛选、运行详情弹层 |
 | T9 | 用户管理 | 新建用户弹层校验、修改密码校验、登录日志筛选 |
 | T10 | 全局质量检查 | Console error/warn、4xx/5xx 网络请求汇总 |
@@ -334,10 +334,10 @@ chrome-devtools fill "<密码textboxUID>" "TestPass"
 
 ---
 
-### T7 — 系统配置系统设置
+### T7 — 系统配置（已移除系统设置 Tab）
 
 ```bash
-chrome-devtools click "<系统设置TabUID>"
+chrome-devtools click "<（已移除系统设置 Tab）TabUID>"
 chrome-devtools take_snapshot
 # 预期：存在「同步间隔」「最大并发数」两个 spinbutton
 ```

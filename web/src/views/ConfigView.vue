@@ -21,50 +21,7 @@
 
       <div class="tab-content">
         <GitConfigForm v-if="activeTab === 'git'" />
-        <AliyunConfigForm v-if="activeTab === 'aliyun'" />
-
-        <div v-if="activeTab === 'system'" class="system-section">
-          <div class="system-card">
-            <div class="system-card-header">
-              <el-icon class="system-card-icon"><Setting /></el-icon>
-              <span>系统设置</span>
-            </div>
-            <el-form label-width="120px" class="system-form">
-              <el-form-item label="日志级别">
-                <el-select v-model="systemConfig.logLevel" placeholder="选择日志级别">
-                  <el-option label="DEBUG" value="debug" />
-                  <el-option label="INFO" value="info" />
-                  <el-option label="WARN" value="warn" />
-                  <el-option label="ERROR" value="error" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="同步间隔">
-                <el-input-number
-                  v-model="systemConfig.syncInterval"
-                  :min="1"
-                  :max="1440"
-                  controls-position="right"
-                />
-                <span class="form-suffix">分钟</span>
-              </el-form-item>
-              <el-form-item label="最大并发数">
-                <el-input-number
-                  v-model="systemConfig.maxConcurrency"
-                  :min="1"
-                  :max="10"
-                  controls-position="right"
-                />
-              </el-form-item>
-              <el-form-item>
-                <el-text type="info" size="small" class="system-hint">
-                  批量同步的并发数与失败重试次数由服务端
-                  <code>config.yaml</code> 中 <code>sync.max_concurrent_jobs</code>、
-                  <code>sync.max_retry_count</code> 等字段决定；同步页不再单独配置。
-                </el-text>
-              </el-form-item>
-            </el-form>
-          </div>
-        </div>
+        <AcrRegistryConfigForm v-if="activeTab === 'acr'" />
       </div>
     </div>
   </div>
@@ -73,24 +30,17 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Setting, Connection, Cloudy } from '@element-plus/icons-vue'
+import { Connection, Cloudy } from '@element-plus/icons-vue'
 import GitConfigForm from '@/components/GitConfigForm.vue'
-import AliyunConfigForm from '@/components/AliyunConfigForm.vue'
+import AcrRegistryConfigForm from '@/components/AcrRegistryConfigForm.vue'
 import { systemAPI } from '@/api'
 
 const activeTab = ref('git')
 
 const tabs = [
   { key: 'git', label: 'Git 配置', icon: Connection },
-  { key: 'aliyun', label: '阿里云配置', icon: Cloudy },
-  { key: 'system', label: '系统设置', icon: Setting },
+  { key: 'acr', label: 'ACR 配置', icon: Cloudy },
 ]
-
-const systemConfig = ref({
-  logLevel: 'info',
-  syncInterval: 60,
-  maxConcurrency: 3
-})
 
 const loading = ref(false)
 const gitRepositoryType = ref('gitee')

@@ -147,7 +147,7 @@ docker-image-sync-platform/
 - `POST /sync/batch` — 批量同步（同步限流）
 - `POST /sync/batch/mock` — 模拟批量同步（测试用，同步限流）
 - `GET /sync/status/:taskId` — 查询单个任务状态
-- `GET /sync/batch/status/:taskId` — 查询批量任务状态（已废弃，返回 410 Gone）
+- `GET /sync/status/:taskId` — 查询任务状态（含 workflow_runs 聚合）
 - `GET /sync/history` — 同步历史
 
 ### 镜像管理 (Images) — 需登录
@@ -174,9 +174,9 @@ docker-image-sync-platform/
 - `PUT /config/git-optimization` — 更新 Git 优化配置
 - `GET /config/git-performance` — Git 性能指标
 - `GET /config/git-network-test` — Git 网络质量测试
-- `GET /config/aliyun-db` — 获取阿里云 ACR 配置
-- `PUT /config/aliyun-db` — 更新阿里云 ACR 配置
-- `POST /config/aliyun/test` — 测试阿里云 ACR 连接
+- `GET /acr-registries` — ACR 实例列表
+- `POST /acr-registries` — 创建 ACR
+- `POST /acr-registries/test` — 测试 ACR 连接
 
 ### GitHub — 需登录 + `github` 权限
 - `GET /github/runs` — 工作流运行列表
@@ -193,7 +193,7 @@ docker-image-sync-platform/
 - `server`：HTTP 服务
 - `database`：MySQL
 - `git`：Gitee/GitHub 仓库及优化参数（操作模式、稀疏检出、缓存等）
-- `aliyun`：阿里云镜像仓库
+- `aliyun`：可选，仅空库时 bootstrap 首条 `acr_registries`
 - `log`：日志
 - `sync`：同步任务（超时、并发、重试等）
 - `auth`：JWT 认证（密钥、Token 有效期、自动登出、默认管理员账号）
@@ -211,10 +211,12 @@ docker-image-sync-platform/
 
 ## 数据库模型
 
-### 核心表
-- `image_sync_records`：单条镜像同步记录
-- `sync_tasks`：批量任务
-- `system_configs`：加密配置
+### 核心表（schema 见 `scripts/init.sql`）
+- `sync_batches`：同步批次头表
+- `sync_records`：镜像同步明细
+- `sync_workflow_runs`：批次×ACR 的 GitHub Actions 记录
+- `acr_registries` / `acr_repositories`：ACR 配置与仓库台账
+- `system_configs`：Git 等加密配置
 - `users`：用户账号（用户名、密码哈希、邮箱、role_id、状态）
 - `roles`：角色定义（code、name、is_system）
 - `permissions`：权限注册表（code、name）
@@ -222,7 +224,7 @@ docker-image-sync-platform/
 - `login_logs`：登录日志审计（用户、IP、User-Agent、状态）
 
 ### 关键字段
-- 同步状态（pending、syncing、success、failed、retrying、skipped）
+- 同步状态（pending、syncing、success、failed）
 - 与 GitHub Actions 的关联
 - 多架构（amd64、arm64）
 - 重试与优先级
@@ -247,8 +249,8 @@ docker-image-sync-platform/
 ### 页面
 - `LoginView.vue` — 登录页面
 - `SyncView.vue` — 镜像同步
-- `ImagesView.vue` — 镜像管理与状态
-- `ConfigView.vue` — 系统配置
+- `ImagesManageView.vue` — 镜像台账管理
+- `ConfigView.vue` — Git 与 ACR 配置
 - `GitHubView.vue` — 工作流监控
 - `UserManageView.vue` — 用户管理（需 users 权限）
 - `RoleManageView.vue` — 角色管理（需 roles 权限）
@@ -258,7 +260,7 @@ docker-image-sync-platform/
 - `BatchSyncForm.vue` — 批量同步
 - `GitConfigForm.vue` — Git 配置与 GitHub 测试入口
 - `GitTestResultDialog.vue` — 测试结果展示
-- `AliyunConfigForm.vue` — ACR 配置
+- `AcrRegistryConfigForm.vue` — ACR 实例管理
 - `ChangePasswordDialog.vue` — 修改密码对话框
 
 ### 状态管理

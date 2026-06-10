@@ -54,7 +54,6 @@
 | POST | `/api/v1/sync/batch` | 提交批量镜像同步任务 |
 | POST | `/api/v1/sync/batch/mock` | 提交模拟批量同步任务（测试用） |
 | GET  | `/api/v1/sync/status/{taskId}` | 查询单个同步任务状态 |
-| GET  | `/api/v1/sync/batch/status/{taskId}` | 查询批量同步任务状态 |
 | GET  | `/api/v1/sync/history` | 获取同步历史记录 |
 
 ### 镜像管理 (Images)
@@ -92,9 +91,6 @@
 | PUT  | `/api/v1/config/git-optimization` | 更新Git优化配置 |
 | GET  | `/api/v1/config/git-performance` | 获取Git性能指标 |
 | GET  | `/api/v1/config/git-network-test` | 测试Git网络质量 |
-| GET  | `/api/v1/config/aliyun-db` | 获取阿里云ACR配置 |
-| PUT  | `/api/v1/config/aliyun-db` | 更新阿里云ACR配置 |
-| POST | `/api/v1/config/aliyun/test` | 测试阿里云ACR连接 |
 
 ### 健康检查 (Health)
 | 方法 | 路径 | 说明 |
@@ -176,3 +172,5 @@ api.StaticFile("/swagger.json", "./docs/swagger.json")
 **版本**: 1.0.0  
 **更新时间**: 2026-03-30  
 **维护团队**: Docker Image Sync Platform Team
+
+| POST | `/api/v1/acr-registries/test` | 测试 ACR 连接 |

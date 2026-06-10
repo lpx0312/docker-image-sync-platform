@@ -95,6 +95,9 @@
     <template #footer>
       <div class="dialog-footer">
         <el-button @click="handleClose">取消</el-button>
+        <el-button @click="handleTestConnection" :loading="testing">
+          测试连接
+        </el-button>
         <el-button type="primary" @click="handleSubmit" :loading="submitting">
           确定
         </el-button>
@@ -119,6 +122,7 @@ const emit = defineEmits(['update:modelValue', 'success'])
 const visible = ref(false)
 const formRef = ref(null)
 const submitting = ref(false)
+const testing = ref(false)
 
 const isEdit = ref(false)
 
@@ -170,6 +174,32 @@ watch(visible, (val) => {
 const handleClose = () => {
   visible.value = false
   formRef.value?.resetFields()
+}
+
+const handleTestConnection = async () => {
+  try {
+    await formRef.value?.validate()
+    testing.value = true
+    const payload = { ...form }
+    if (isEdit.value && props.editData?.id) {
+      payload.id = props.editData.id
+    }
+    if (payload.password === '***') {
+      payload.password = ''
+    }
+    const res = await acrRegistryAPI.testConnection(payload)
+    if (res?.status === 'success') {
+      ElMessage.success(res.message || '连接测试成功')
+    } else {
+      ElMessage.error(res?.message || '连接测试失败')
+    }
+  } catch (error) {
+    if (error !== false) {
+      ElMessage.error('连接测试失败: ' + (error.response?.data?.message || error.message || '未知错误'))
+    }
+  } finally {
+    testing.value = false
+  }
 }
 
 const handleSubmit = async () => {

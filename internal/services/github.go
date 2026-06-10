@@ -55,6 +55,7 @@ type GitHubService struct {
 	baseURL string        // GitHub API基础URL
 	owner   string        // 仓库所有者
 	repo    string        // 仓库名称
+	branch  string        // 触发 workflow 与拉取运行所依据的分支（如 main、docker-sync）
 }
 
 // WorkflowRun GitHub Actions工作流运行信息
@@ -139,20 +140,27 @@ func NewGitHubService(configService *ConfigService) *GitHubService {
 	// 从数据库获取GitHub配置
 	// ====================================================================
 
-	var repoURL, token string
-	
+	var repoURL, token, branch string
+
 	// 获取GitHub仓库URL
 	if url, err := configService.GetConfig("github_repo_url"); err == nil {
 		repoURL = url
 	} else {
 		logger.Logger.Warn("从数据库获取GitHub仓库URL失败", zap.Error(err))
 	}
-	
+
 	// 获取GitHub Token
 	if tkn, err := configService.GetConfig("github_token"); err == nil {
 		token = tkn
 	} else {
 		logger.Logger.Warn("从数据库获取GitHub Token失败", zap.Error(err))
+	}
+
+	// 获取GitHub 分支（用于 workflow_dispatch 与运行匹配），缺省 main
+	if br, err := configService.GetConfig("github_branch"); err == nil && br != "" {
+		branch = br
+	} else {
+		branch = "main"
 	}
 
 	// ====================================================================
@@ -176,6 +184,7 @@ func NewGitHubService(configService *ConfigService) *GitHubService {
 		baseURL: "https://api.github.com",
 		owner:   owner,
 		repo:    repo,
+		branch:  branch,
 	}
 }
 
@@ -496,6 +505,10 @@ func (s *GitHubService) ListWorkflowRuns(page, perPage int, status string) (*Wor
 	if status != "" {
 		req.SetQueryParam("status", status)
 	}
+	// 按配置分支过滤，避免与 workflow_dispatch 的 ref 不一致时取到其他分支的旧 run
+	if s.branch != "" {
+		req.SetQueryParam("branch", s.branch)
+	}
 
 	resp, err := req.Get(url)
 
@@ -625,15 +638,43 @@ func parseGitHubRepo(repoURL string) (owner, repo string) {
 func (s *GitHubService) TriggerWorkflow(workflowFile string, inputs map[string]string) (string, string, error) {
 	url := fmt.Sprintf("%s/repos/%s/%s/actions/workflows/%s/dispatches", s.baseURL, s.owner, s.repo, workflowFile)
 
+	// 使用配置中实际保存的分支（默认 main），避免与 images.txt 提交分支不一致
+	ref := s.branch
+	if ref == "" {
+		ref = "main"
+	}
+
+	// 过滤 inputs：只传 workflow_dispatch 声明了的 input 字段
+	filteredInputs := make(map[string]string)
+	if declaredInputs, err := s.GetWorkflowInputs(workflowFile); err == nil && len(declaredInputs) > 0 {
+		for k, v := range inputs {
+			if _, ok := declaredInputs[k]; ok {
+				filteredInputs[k] = v
+			}
+		}
+		logger.Logger.Info("已按 workflow 声明过滤 inputs",
+			zap.Int("total_provided", len(inputs)),
+			zap.Int("filtered_count", len(filteredInputs)))
+	} else if err != nil {
+		logger.Logger.Warn("无法获取 workflow 声明的 inputs，改用空 inputs", zap.Error(err))
+		filteredInputs = map[string]string{}
+	} else {
+		// workflow 没有声明任何 inputs，不传 inputs 字段
+		filteredInputs = nil
+	}
+
 	logger.Logger.Info("触发 GitHub Actions workflow_dispatch",
 		zap.String("url", url),
 		zap.String("workflow", workflowFile),
-		zap.Any("inputs", inputs))
+		zap.String("ref", ref),
+		zap.Any("inputs", filteredInputs))
 
 	// 构建请求体
 	payload := map[string]interface{}{
-		"ref":    "main",
-		"inputs": inputs,
+		"ref": ref,
+	}
+	if filteredInputs != nil {
+		payload["inputs"] = filteredInputs
 	}
 
 	// 发送请求
@@ -717,4 +758,47 @@ func (s *GitHubService) GetWorkflowIDByName(workflowFile string) (string, error)
 	}
 
 	return "", fmt.Errorf("未找到工作流: %s", workflowFile)
+}
+
+// GetWorkflowInputs 获取 workflow_dispatch 声明的 inputs 名称列表
+// 如果 workflow 没有声明 inputs 则返回空 map
+func (s *GitHubService) GetWorkflowInputs(workflowFile string) (map[string]struct{}, error) {
+	workflowID, err := s.GetWorkflowIDByName(workflowFile)
+	if err != nil {
+		return nil, err
+	}
+
+	url := fmt.Sprintf("%s/repos/%s/%s/actions/workflows/%s", s.baseURL, s.owner, s.repo, workflowID)
+	resp, err := s.client.R().Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("获取工作流详情失败: %w", err)
+	}
+	if resp.StatusCode() != http.StatusOK {
+		return nil, fmt.Errorf("获取工作流详情响应错误: %d", resp.StatusCode())
+	}
+
+	var detail struct {
+		Data struct {
+			On struct {
+				WorkflowDispatch struct {
+					Inputs map[string]struct {
+						Description string `json:"description"`
+						Default    string `json:"default"`
+						Required   bool   `json:"required"`
+					} `json:"inputs"`
+				} `json:"workflow_dispatch"`
+			} `json:"on"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(resp.Body(), &detail); err != nil {
+		return nil, fmt.Errorf("解析工作流详情失败: %w", err)
+	}
+
+	inputs := make(map[string]struct{})
+	if detail.Data.On.WorkflowDispatch.Inputs != nil {
+		for name := range detail.Data.On.WorkflowDispatch.Inputs {
+			inputs[name] = struct{}{}
+		}
+	}
+	return inputs, nil
 }

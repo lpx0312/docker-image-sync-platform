@@ -155,6 +155,18 @@ func (s *AcrRegistryService) Delete(id uint) error {
 	return nil
 }
 
+// GetDecryptedPassword 解密 ACR 密码
+func (s *AcrRegistryService) GetDecryptedPassword(registry *models.AcrRegistry) (string, error) {
+	if registry == nil {
+		return "", fmt.Errorf("ACR 配置不能为空")
+	}
+	password, err := s.encryptionSvc.Decrypt(registry.Password)
+	if err != nil {
+		return "", fmt.Errorf("解密密码失败: %w", err)
+	}
+	return password, nil
+}
+
 // SetDefault 设置默认ACR
 func (s *AcrRegistryService) SetDefault(id uint) error {
 	// 验证ACR存在

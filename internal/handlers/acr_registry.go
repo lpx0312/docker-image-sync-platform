@@ -8,6 +8,7 @@ import (
 	"docker-image-sync-platform/internal/logger"
 	"docker-image-sync-platform/internal/models"
 	"docker-image-sync-platform/internal/services"
+	"docker-image-sync-platform/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -152,4 +153,47 @@ func (h *AcrRegistryHandler) GetQuotaSummary(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": "success", "data": summary})
+}
+
+
+// TestConnection POST /acr-registries/test
+func (h *AcrRegistryHandler) TestConnection(c *gin.Context) {
+	var req models.AcrRegistryTestRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "请求参数错误: " + err.Error()})
+		return
+	}
+
+	password := req.Password
+	authServer := req.AuthServer
+	dockerService := req.DockerService
+
+	if password == "" || password == "***" {
+		if req.ID == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "请填写密码，或在编辑已有配置时传入 id 以使用已保存的密码"})
+			return
+		}
+		registry, err := h.service.GetByID(req.ID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": err.Error()})
+			return
+		}
+		password, err = h.service.GetDecryptedPassword(registry)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+			return
+		}
+		if authServer == "" {
+			authServer = registry.AuthServer
+		}
+		if dockerService == "" {
+			dockerService = registry.DockerService
+		}
+	}
+
+	if err := utils.TestAliyunRegistryConnection(req.RegistryURL, req.Namespace, req.Username, password, authServer, dockerService); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "success", "message": "ACR 连接测试成功"})
 }

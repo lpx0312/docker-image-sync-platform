@@ -53,6 +53,7 @@ git:
     email: "your-email@example.com"
     branch: "main"
 
+# 可选：仅当 acr_registries 表为空时，首次启动从下列字段 bootstrap 写入一条默认 ACR
 aliyun:
   registry: "registry.cn-hangzhou.aliyuncs.com"
   namespace: "your-namespace"

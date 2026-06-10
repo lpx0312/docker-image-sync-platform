@@ -117,8 +117,6 @@ func InitDatabase() error {
 
 	log.Println("数据库连接成功")
 
-	// 执行数据库迁移
-	RunMigrations()
 
 	return nil
 }
@@ -130,10 +128,7 @@ func InitDatabase() error {
 // 2. 确保数据库表结构与代码模型保持同步
 // 3. 初始化系统运行所需的默认配置
 //
-// 迁移的表：
-// - image_sync_records: 镜像同步记录表
-// - sync_tasks: 同步任务表
-// - system_configs: 系统配置表
+// 迁移的表：RBAC、ACR、system_configs（同步三表请使用 scripts/init.sql）
 //
 // 注意事项：
 // - GORM的AutoMigrate只会添加新字段和索引，不会删除现有字段
@@ -143,58 +138,59 @@ func InitDatabase() error {
 // 返回值：
 //   - error: 迁移失败时返回错误信息，成功时返回nil
 func AutoMigrate() error {
-	// ====================================================================
-	// 第一步：RBAC 表与数据（须在 users.role_id 外键之前完成）
-	// ====================================================================
-	if err := DB.AutoMigrate(&models.Permission{}, &models.Role{}); err != nil {
-		return fmt.Errorf("RBAC 表迁移失败: %w", err)
-	}
-
-	if err := initRolesAndPermissions(); err != nil {
-		return fmt.Errorf("初始化角色权限失败: %w", err)
-	}
-
-	if err := ensureUserRoleIDColumn(); err != nil {
-		return fmt.Errorf("准备用户角色字段失败: %w", err)
-	}
-
-	if err := migrateUserRoleIDs(); err != nil {
-		return fmt.Errorf("迁移用户角色数据失败: %w", err)
-	}
-
-	if err := dropLegacyUserRoleColumn(); err != nil {
-		return fmt.Errorf("清理旧用户角色字段失败: %w", err)
-	}
-
-	// ====================================================================
-	// 第二步：执行其余数据库表结构迁移
-	// ====================================================================
-	err := DB.AutoMigrate(
-		&models.ImageSyncRecord{},
-		&models.SyncTask{},
+	if err := DB.AutoMigrate(
+		&models.Permission{},
+		&models.Role{},
 		&models.SystemConfig{},
 		&models.User{},
 		&models.LoginLog{},
-	)
-
-	if err != nil {
+		&models.AcrRegistry{},
+		&models.AcrRepository{},
+	); err != nil {
 		return fmt.Errorf("数据库表迁移失败: %w", err)
 	}
-
-	log.Println("数据库表迁移完成")
-
+	if err := initRolesAndPermissions(); err != nil {
+		return fmt.Errorf("初始化角色权限失败: %w", err)
+	}
 	if err := initDefaultConfigs(); err != nil {
 		return fmt.Errorf("初始化默认配置失败: %w", err)
 	}
-
 	if err := initDefaultAdmin(); err != nil {
 		return fmt.Errorf("初始化默认管理员失败: %w", err)
 	}
-
+	if err := bootstrapAcrFromConfig(); err != nil {
+		return fmt.Errorf("bootstrap ACR 失败: %w", err)
+	}
+	log.Println("数据库 seed 完成（schema 请使用 scripts/init.sql）")
 	return nil
 }
 
 // initDefaultAdmin 初始化默认管理员账号
+
+func bootstrapAcrFromConfig() error {
+	var count int64
+	DB.Model(&models.AcrRegistry{}).Count(&count)
+	if count > 0 {
+		return nil
+	}
+	cfg := config.AppConfig.Aliyun
+	if cfg.Registry == "" || cfg.Namespace == "" || cfg.Username == "" || cfg.Password == "" {
+		return nil
+	}
+	reg := models.AcrRegistry{
+		RegistryURL: cfg.Registry,
+		Namespace:   cfg.Namespace,
+		Username:    cfg.Username,
+		Password:    cfg.Password,
+		IsDefault:   true,
+	}
+	if err := DB.Create(&reg).Error; err != nil {
+		return err
+	}
+	log.Println("已从 config.yaml 写入首条 acr_registries（仅空库）")
+	return nil
+}
+
 func initDefaultAdmin() error {
 	var count int64
 	DB.Model(&models.User{}).Count(&count)
@@ -292,73 +288,9 @@ func initRolesAndPermissions() error {
 	return nil
 }
 
-func ensureUserRoleIDColumn() error {
-	var count int64
-	DB.Raw(`
-		SELECT COUNT(*) FROM information_schema.COLUMNS
-		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'role_id'
-	`).Scan(&count)
-	if count > 0 {
-		return nil
-	}
 
-	var tableCount int64
-	DB.Raw(`
-		SELECT COUNT(*) FROM information_schema.tables
-		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND table_type = 'BASE TABLE'
-	`).Scan(&tableCount)
-	if tableCount == 0 {
-		return nil
-	}
 
-	if err := DB.Exec("ALTER TABLE users ADD COLUMN role_id bigint unsigned NULL").Error; err != nil {
-		return fmt.Errorf("添加 users.role_id 列失败: %w", err)
-	}
-	log.Println("已添加 users.role_id 列")
-	return nil
-}
 
-func migrateUserRoleIDs() error {
-	if hasUsersRoleColumn() {
-		if err := DB.Exec(`
-			UPDATE users u
-			INNER JOIN roles r ON u.role = r.code
-			SET u.role_id = r.id
-			WHERE u.role_id IS NULL OR u.role_id = 0
-		`).Error; err != nil {
-			return fmt.Errorf("从旧 role 字段迁移失败: %w", err)
-		}
-	}
-
-	defaultRoleID, err := getRoleIDByCode(models.RoleUser)
-	if err != nil {
-		return err
-	}
-	if err := DB.Exec("UPDATE users SET role_id = ? WHERE role_id IS NULL OR role_id = 0", defaultRoleID).Error; err != nil {
-		return fmt.Errorf("设置默认角色失败: %w", err)
-	}
-	return nil
-}
-
-func dropLegacyUserRoleColumn() error {
-	if !hasUsersRoleColumn() {
-		return nil
-	}
-	if err := DB.Exec("ALTER TABLE users DROP COLUMN role").Error; err != nil {
-		return fmt.Errorf("删除 users.role 列失败: %w", err)
-	}
-	log.Println("已移除 users 表旧 role 字段")
-	return nil
-}
-
-func hasUsersRoleColumn() bool {
-	var count int64
-	DB.Raw(`
-		SELECT COUNT(*) FROM information_schema.COLUMNS
-		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'role'
-	`).Scan(&count)
-	return count > 0
-}
 
 func getRoleIDByCode(code string) (uint, error) {
 	var role models.Role
@@ -424,7 +356,6 @@ func encryptSensitiveValue(plaintext string) (string, error) {
 //
 // 默认配置项：
 
-// - aliyun_namespace: 阿里云镜像仓库命名空间
 // - sync_check_interval: 同步状态检查间隔时间
 // - max_concurrent_syncs: 最大并发同步数量
 //
@@ -436,20 +367,6 @@ func initDefaultConfigs() error {
 	// ====================================================================
 	// 这些配置项从 config.yaml 文件中读取，避免硬编码
 	// 如果配置文件中没有相应配置，则使用合理的默认值
-
-	// 从配置文件中读取阿里云配置
-	aliyunRegistry := config.AppConfig.Aliyun.Registry
-	if aliyunRegistry == "" {
-		aliyunRegistry = "registry.cn-hangzhou.aliyuncs.com"
-	}
-	
-	aliyunNamespace := config.AppConfig.Aliyun.Namespace
-	if aliyunNamespace == "" {
-		aliyunNamespace = "your-namespace"
-	}
-	
-	aliyunUsername := config.AppConfig.Aliyun.Username
-	aliyunPassword := config.AppConfig.Aliyun.Password
 
 	// 从配置文件中读取Git仓库类型
 	gitRepositoryType := config.AppConfig.Git.RepositoryType
@@ -513,29 +430,6 @@ func initDefaultConfigs() error {
 	}
 
 	defaultConfigs := []models.SystemConfig{
-		// 阿里云配置
-		{
-			ConfigKey:   "aliyun_namespace",
-			ConfigValue: aliyunNamespace,
-			Description: "阿里云镜像仓库命名空间",
-		},
-		{
-			ConfigKey:   "aliyun_registry",
-			ConfigValue: aliyunRegistry,
-			Description: "阿里云镜像仓库地址",
-		},
-		{
-			ConfigKey:   "aliyun_username",
-			ConfigValue: aliyunUsername,
-			Description: "阿里云镜像仓库用户名",
-		},
-		{
-			ConfigKey:   "aliyun_password",
-			ConfigValue: aliyunPassword,
-			Description: "阿里云镜像仓库密码",
-			IsEncrypted: true,
-		},
-		
 		// Git仓库配置
 		{
 			ConfigKey:   "git_repository_type",

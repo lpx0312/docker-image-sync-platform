@@ -109,9 +109,14 @@ init:
 # @echo "✅ 项目初始化完成！"
 # @echo ""
 # @echo "下一步："
-	@echo "1. 编辑 .env 文件配置环境变量"
-	@echo "2. 运行 'make deps' 安装依赖"
-	@echo "3. 运行 'make dev' 启动开发环境"
+	@echo "1. 新库执行: mysql ... < scripts/init.sql"
+	@echo "2. 编辑 config.yaml / .env"
+	@echo "3. 运行 'make deps' 安装依赖"
+	@echo "4. 运行 'make dev' 启动开发环境"
+
+# 提示 greenfield 数据库初始化
+db-init:
+	@echo "请手动执行: mysql -u USER -p DATABASE < scripts/init.sql"
 
 # ============================================================================
 # 依赖管理

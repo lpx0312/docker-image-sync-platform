@@ -321,8 +321,8 @@ func (s *AcrRepositoryService) SyncFromRecords(acrRegistryID uint) (*SyncFromRec
 		return nil, fmt.Errorf("解密ACR密码失败: %w", err)
 	}
 
-	var records []models.ImageSyncRecord
-	if err := s.db.Where("acr_registry_id = ? AND sync_status = ?", acrRegistryID, models.SyncStatusSuccess).
+	var records []models.SyncRecord
+	if err := s.db.Where("acr_registry_id = ? AND status = ?", acrRegistryID, models.SyncStatusSuccess).
 		Find(&records).Error; err != nil {
 		return nil, fmt.Errorf("查询同步记录失败: %w", err)
 	}

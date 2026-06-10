@@ -1,10 +1,10 @@
 <template>
-  <div class="aliyun-config-container">
+  <div class="acr-registry-config-container">
     <el-card class="config-card" shadow="hover">
       <template #header>
         <div class="card-header">
           <el-icon class="header-icon"><Monitor /></el-icon>
-          <span class="header-title">阿里云镜像仓库配置</span>
+          <span class="header-title">ACR 镜像仓库配置</span>
           <div class="header-actions">
             <el-button type="primary" size="small" @click="showAddDialog">
               添加新 ACR
@@ -137,7 +137,7 @@ const handleDelete = async (row) => {
 </script>
 
 <style scoped>
-.aliyun-config-container {
+.acr-registry-config-container {
   display: flex;
   flex-direction: column;
   gap: 24px;

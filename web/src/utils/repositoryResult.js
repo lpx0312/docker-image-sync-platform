@@ -6,6 +6,14 @@ const buildSection = (label, names) => {
   return `${label} (${names.length}):\n${formatNameLines(names)}`
 }
 
+const buildOtherAcrHintSection = (hints = []) => {
+  if (!hints.length) return null
+  const lines = hints.map(
+    (item) => `「${item.repository_name}」在 ACR「${item.namespace}」中存在，请切换 ACR 后添加`
+  )
+  return `其他 ACR 提示 (${hints.length}):\n${lines.join('\n')}`
+}
+
 /** 批量添加镜像结果：成功 / 重复 / 失败 */
 export const buildBatchAddResultText = (data = {}) => {
   const sections = []
@@ -23,10 +31,12 @@ export const buildBatchAddResultText = (data = {}) => {
   const successSection = buildSection('成功', successNames)
   const duplicateSection = buildSection('重复', duplicateNames)
   const failedSection = buildSection('失败', failedNames)
+  const otherAcrSection = buildOtherAcrHintSection(data.found_in_other_acr || [])
 
   if (successSection) sections.push(successSection)
   if (duplicateSection) sections.push(duplicateSection)
   if (failedSection) sections.push(failedSection)
+  if (otherAcrSection) sections.push(otherAcrSection)
 
   return sections.join('\n\n')
 }
