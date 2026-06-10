@@ -15,6 +15,7 @@
 
 ### 🧪 测试文档
 - **[端到端测试指南](e2e-test-guide.md)** - E2E 测试操作手册与测试场景
+- **[系统优化审查报告](optimization-review.md)** - 代码复用、注释、单元/E2E 测试优化规划
 
 ### 🛠️ 运维指南
 - **[All-in-One 部署](../deploy/docker-all/README.md)** - 一体化 Docker 部署指南
@@ -33,6 +34,7 @@
 | [README.md](../README.md) | 项目主文档，包含概述、快速开始、使用指南 | 所有用户 |
 | [SWAGGER使用说明.md](SWAGGER使用说明.md) | Swagger API 文档使用方法 | 开发者 |
 | [e2e-test-guide.md](e2e-test-guide.md) | 端到端测试指南，包含测试场景和操作步骤 | 测试人员、开发者 |
+| [optimization-review.md](optimization-review.md) | 系统优化审查：代码复用、注释、测试与 CI 规划 | 开发者、架构师 |
 | [deploy/docker-all/README.md](../deploy/docker-all/README.md) | All-in-One 部署指南 | 运维人员 |
 | [scripts/README.md](../scripts/README.md) | 脚本工具集说明 | 运维人员、开发者 |
 | [CLAUDE.md](../CLAUDE.md) | AI 辅助开发完整指引 | 开发者 |
@@ -45,7 +47,8 @@ docs/
 ├── swagger.json           # OpenAPI 2.0 规范文件（API 定义）
 ├── swagger-ui.html        # Swagger UI 界面入口
 ├── SWAGGER使用说明.md      # Swagger 文档使用指南
-└── e2e-test-guide.md      # 端到端测试指南
+├── e2e-test-guide.md      # 端到端测试指南
+└── optimization-review.md # 系统优化审查报告（规划文档）
 ```
 
 ## 🎯 按角色查看文档
