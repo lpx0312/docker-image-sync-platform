@@ -32,10 +32,10 @@ FRONTEND_IMAGE_NAME_VERSION := $(PROJECT_NAME):frontend-$(VERSION)
 BACKEND_CONTAINER_NAME := docker-sync-backend
 FRONTEND_CONTAINER_NAME := docker-sync-frontend
 MYSQL_CONTAINER_NAME := docker-sync-mysql
-# 远程镜像仓库设置
+# 远程镜像仓库设置（凭据请通过环境变量传入，勿写入仓库）
 ALIYUN_REGISTRY := registry.cn-hangzhou.aliyuncs.com
-ALIYUN_USERNAME := lipanx
-ALIYUN_PASSWORD := Lipanxiang1102
+ALIYUN_USERNAME ?=
+ALIYUN_PASSWORD ?=
 ALIYUN_NAMESPACE := lpx03
 
 # Docker Compose 文件

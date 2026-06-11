@@ -14,10 +14,10 @@
 # ============================================================================
 
 # MySQL配置
-MYSQL_ROOT_PASSWORD=Ab123456
+MYSQL_ROOT_PASSWORD=your-mysql-root-password
 MYSQL_DATABASE=docker_sync
 MYSQL_USER=docker_sync
-MYSQL_PASSWORD=Ab123456
+MYSQL_PASSWORD=your-mysql-password
 
 # ----------------------------------------------------------------------------
 # Git仓库配置 (Gitee) - 用于存储镜像列表
@@ -28,12 +28,12 @@ GIT_REPOSITORY_TYPE=github
 GITEE_REPO_URL=https://gitee.com/lpx03/docker_image_pusher.git
 
 # Gitee认证信息 (必填)
-GITEE_USERNAME=13297049661
-GITEE_PASSWORD="Abc2020##"
+GITEE_USERNAME=your-gitee-username
+GITEE_PASSWORD="your-gitee-password"
 # Gitee访问令牌 (推荐使用，优先于密码认证)
 # 在 https://gitee.com/profile/personal_access_tokens 创建
-GITEE_TOKEN=63fde4aa0198d257ea4d8f25af2077a9
-GITEE_EMAIL=lpx_0312@163.com
+GITEE_TOKEN=your-gitee-token
+GITEE_EMAIL=your-email@example.com
 GITEE_BRANCH=main
 
 # ----------------------------------------------------------------------------
@@ -44,9 +44,9 @@ GIT_REPOSITORY_TYPE=github
 # GitHub仓库URL (可选)
 GITHUB_REPO_URL=https://github.com/lpx0312/docker-sync-platform.git
 # GitHub认证信息 (使用Personal Access Token)
-GITHUB_USERNAME=lpx0312
-GITHUB_EMAIL=lpx_0312@163.com
-GITHUB_TOKEN=REDACTED_GITHUB_TOKEN
+GITHUB_USERNAME=your-github-username
+GITHUB_EMAIL=your-email@example.com
+GITHUB_TOKEN=ghp_your-github-token
 GITHUB_BRANCH=docker-sync
 
 # ----------------------------------------------------------------------------
@@ -56,8 +56,8 @@ ALIYUN_REGISTRY=registry.cn-hangzhou.aliyuncs.com
 # 阿里云镜像命名空间 (在阿里云控制台创建)
 ALIYUN_NAMESPACE=lpx03
 # 阿里云容器镜像服务认证信息
-ALIYUN_USERNAME=lipanx
-ALIYUN_PASSWORD=Lipanxiang1102
+ALIYUN_USERNAME=your-aliyun-username
+ALIYUN_PASSWORD=your-aliyun-password
 
 # ----------------------------------------------------------------------------
 # 应用服务配置
@@ -79,7 +79,7 @@ APP_PORT=8080
 DB_HOST=mysql
 DB_PORT=3306
 DB_USERNAME=root
-DB_PASSWORD=Ab123456
+DB_PASSWORD=your-db-password
 DB_DATABASE=docker_sync
 DB_CHARSET=utf8mb4
 DB_PARSE_TIME=true

@@ -27,6 +27,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"docker-image-sync-platform/internal/logger"
@@ -607,6 +608,21 @@ func parseGitHubRepo(repoURL string) (owner, repo string) {
 	return utils.ParseGitHubRepoURLSimple(repoURL)
 }
 
+// sanitizeWorkflowInputs 返回脱敏后的 workflow 输入副本，用于日志记录。
+// 凡 key 中含 password/token/secret 的值一律以 *** 替代，避免凭据进入应用日志。
+func sanitizeWorkflowInputs(inputs map[string]string) map[string]string {
+	masked := make(map[string]string, len(inputs))
+	for k, v := range inputs {
+		lk := strings.ToLower(k)
+		if strings.Contains(lk, "password") || strings.Contains(lk, "token") || strings.Contains(lk, "secret") {
+			masked[k] = "***"
+		} else {
+			masked[k] = v
+		}
+	}
+	return masked
+}
+
 // TriggerWorkflow 触发 GitHub Actions workflow_dispatch
 //
 // 功能说明:
@@ -628,7 +644,7 @@ func (s *GitHubService) TriggerWorkflow(workflowFile string, inputs map[string]s
 	logger.Logger.Info("触发 GitHub Actions workflow_dispatch",
 		zap.String("url", url),
 		zap.String("workflow", workflowFile),
-		zap.Any("inputs", inputs))
+		zap.Any("inputs", sanitizeWorkflowInputs(inputs)))
 
 	// 构建请求体
 	payload := map[string]interface{}{

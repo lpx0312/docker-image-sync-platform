@@ -2,7 +2,7 @@
 
 > **版本**：v1.0  
 > **更新日期**：2026-04-03  
-> **测试账号**：`zwh / Abc2020##`（管理员角色）
+> **测试账号**：`<测试用户名> / <测试密码>`（管理员角色，请使用本地环境的测试账号，勿写入文档）
 
 ---
 
@@ -94,7 +94,7 @@ chrome-devtools click "<登录按钮UID>"
 **T1-b：错误密码**
 
 ```bash
-chrome-devtools fill "<用户名输入框UID>" "zwh"
+chrome-devtools fill "<用户名输入框UID>" "<测试用户名>"
 chrome-devtools fill "<密码输入框UID>" "wrongpass"
 chrome-devtools click "<登录按钮UID>"
 # 预期：Toast「用户名或密码错误」
@@ -103,10 +103,10 @@ chrome-devtools click "<登录按钮UID>"
 **T1-c：正确登录**
 
 ```bash
-chrome-devtools fill "<用户名输入框UID>" "zwh"
-chrome-devtools fill "<密码输入框UID>" "Abc2020##"
+chrome-devtools fill "<用户名输入框UID>" "<测试用户名>"
+chrome-devtools fill "<密码输入框UID>" "<测试密码>"
 chrome-devtools click "<登录按钮UID>"
-# 预期：跳转 /sync，Toast「登录成功」，导航栏显示「Z zwh」
+# 预期：跳转 /sync，Toast「登录成功」，导航栏显示「<测试用户名首字母> <测试用户名>」
 ```
 
 **通过标准**：三种场景结果均符合预期。
@@ -445,7 +445,7 @@ chrome-devtools click "<修改密码menuitemUID>"
 # 预期：弹出「修改密码」对话框，含原密码/新密码/确认密码
 
 # 两次密码不一致校验
-chrome-devtools fill "<原密码UID>" "Abc2020##"
+chrome-devtools fill "<原密码UID>" "<测试密码>"
 chrome-devtools fill "<新密码UID>" "NewPass123!"
 chrome-devtools fill "<确认密码UID>" "DifferentPass!"
 chrome-devtools click "<确认修改按钮UID>"
@@ -458,9 +458,9 @@ chrome-devtools click "<取消按钮UID>"
 
 ```bash
 chrome-devtools click "<登录日志TabUID>"
-chrome-devtools fill "<搜索用户名textboxUID>" "zwh"
+chrome-devtools fill "<搜索用户名textboxUID>" "<测试用户名>"
 chrome-devtools press_key "Enter"
-# 预期：结果条数减少（仅显示 zwh 的日志）
+# 预期：结果条数减少（仅显示该用户的日志）
 ```
 
 **通过标准**：新建弹层字段完整、角色选项齐全、校验提示正确，密码不一致报错，日志搜索生效。
