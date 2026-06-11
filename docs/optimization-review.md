@@ -1,7 +1,7 @@
 # 系统优化审查报告
 
-> 文档版本：2.0  
-> 审查日期：2026-06-10  
+> 文档版本：2.1  
+> 审查日期：2026-06-10（2026-06-11 逐条与代码核对修订）  
 > 状态：规划文档（具体代码修改待后续实施）
 
 本文档基于对当前代码库的全面梳理，从**代码复用率**、**数据结构/注释**、**单元测试**、**E2E 测试**、**安全**、**性能**、**前端/部署**、**数据库 Schema**、**可观测性**等维度给出优化建议与实施路线图。本文档仅作规划参考，不包含已实施的代码变更。
@@ -43,13 +43,14 @@
 
 #### P0-1：Handler 响应格式三套并存
 
-当前存在三种响应格式：
+当前存在三种以上响应格式：
 
-- **格式 A** — Auth/Role：`{"error": "..."}`
+- **格式 A** — Auth/Role/Sync/Image 错误：`{"error": "..."}`
 - **格式 B** — Config/ACR：`{"status": "error/success", "message": "...", "data": ...}`
-- **格式 C** — Config 部分接口：`{"success": true/false, "data": ..., "message": ...}`
+- **格式 C** — Config Git 优化接口（约 L1378+）：`{"success": true/false, "data": ..., "message": ...}`
+- **格式 D** — 限流 429 与 panic 恢复：`{"code","message"}`（`middleware/ratelimit.go`、`middleware/error.go` 的 `ErrorResponse`）
 
-限流 429  또한使用第四种形态：`{"code","message"}`（`middleware/ratelimit.go`）。
+此外 `role.go` 成功响应用裸 `{"data": ...}`，`sync.go` 用自定义字段（`task_id`、`total/page/data`），`image.go` 用 `{"message": "..."}`，实际变体更多。
 
 `middleware/error.go` 里已有完整错误体系，但 **handlers 中零引用** `HandleError` / `ValidationError`，每个 Handler 手写 `c.JSON + return`。panic 能被 `ErrorHandler` 捕获，但业务错误未统一。
 
@@ -62,12 +63,14 @@
 
 #### P0-2：ID 解析与校验重复
 
-相同模式在多个文件重复 10+ 次：
+`strconv.ParseUint(c.Param("id"), ...)` 相同模式实测共 **20 处**，分布于：
 
-- `internal/handlers/acr_registry.go`
-- `internal/handlers/acr_repository.go`
-- `internal/handlers/auth.go`
-- `internal/handlers/role.go`
+- `internal/handlers/acr_registry.go`（4 处）
+- `internal/handlers/acr_repository.go`（2 处）
+- `internal/handlers/acr_tag.go`（3 处）
+- `internal/handlers/auth.go`（4 处）
+- `internal/handlers/role.go`（3 处）
+- `internal/handlers/image.go`（4 处）
 
 **建议**：提取 `handlers/param.go`：
 
@@ -92,17 +95,17 @@ func MustParseID(c *gin.Context) (uint, bool) // 失败时已写响应
 
 #### P0-4：前端页面逻辑镜像
 
-`SyncView.vue` 与 `ImagesManageView.vue` 中重试、删除、检测、批量检测逻辑高度相似。
+> **v2.1 核对修正**：重试/删除/检测/批量检测的重复逻辑位于 **`SyncView.vue`（490–578 行）与死代码 `ImagesView.vue`（549–631 行）之间**，二者均调用 `imageStore.retrySync` / `deleteImage` / `checkImageExists` / `batchCheckImages`。`ImagesManageView.vue`（`/images`）实际是 **ACR 仓库管理页**（`acrRepositoryAPI` 删除/导入/清理无效镜像），与 SyncView 业务不同，v2.0 中「两页逻辑镜像」的对象描述有误。
 
-`SyncView.vue` 内联了状态映射，而 `ImagesManageView.vue` 已使用 `@/utils/status`，且 `status.js` 缺少 `retrying`、`skipped` 状态。
-
-> **补充（v2.0）**：`web/src/views/ImagesView.vue`（961 行）**未注册路由**，属于死代码；实际镜像管理页为 `ImagesManageView.vue`（`/images`）。应删除 `ImagesView.vue` 或合并有用逻辑后再挂路由。
+- `web/src/views/ImagesView.vue`（962 行）**未注册路由**，属于死代码，且内部引用了 `api/index.js` 中**不存在的 `configAPI`**（398、431 行），若误挂路由会直接报错——应直接删除。
+- `SyncView.vue` 内联了状态映射（473–480 行）；使用 `@/utils/status` 的恰是死代码 `ImagesView.vue`，`ImagesManageView.vue` 并未使用。
+- 后端模型已定义 `retrying`、`skipped` 同步状态（`models.go`），但 `status.js` 与 `SyncView` 内联映射**均未覆盖**，UI 会显示「未知」。
 
 **建议**：
 
-- 提取 `composables/useImageActions.js`
-- `SyncView` 统一使用 `@/utils/status`，补全状态表
-- 删除或合并 `ImagesView.vue` 死代码
+- 删除 `ImagesView.vue` 死代码（其与 SyncView 的重复随之消除）
+- `SyncView` 改用 `@/utils/status`，并补全 `retrying`、`skipped` 状态映射
+- 若后续仍有跨页共享需求，再提取 `composables/useImageActions.js`（当前不存在 `composables/` 目录）
 
 #### 其它可收敛点
 
@@ -118,10 +121,10 @@ func MustParseID(c *gin.Context) (uint, bool) // 失败时已写响应
 | ACR 结果 struct 重叠 | `services/acr_repository.go` | 基础 `RepositoryOperationResult` + embed |
 | AcrRegistry Request/Update 重复 | `models/acr_registry.go` | 单一 struct + 创建/更新 validator |
 | Aliyun 与 AcrRegistry 双轨 | `utils/acr.go`、`sync.go` | 统一走 `AcrRegistryService.GetDefault()` |
-| 加密逻辑双份 | `encryption.go`、`utils/secure_config.go` | 抽到 `internal/crypto` 或 utils re-export |
-| 可能未使用的 struct | `models.ImageRequest` | 确认后删除或标记 deprecated |
-| Git 工厂双实例 | `git_factory.go` | 简化为单 `*GitService` 实例 |
-| GitHub 路由 inline 在 main.go | `main.go`（286–328 行） | 迁入 `handlers/github.go`，统一错误处理 |
+| 解密辅助函数分散 | `encryption.go`、`utils/secure_config.go` | 完整实现在 `services/encryption.go`，`utils/secure_config.go` 仅是 `DecryptSystemConfigValue` 辅助（非完整双份），仍建议归口 |
+| 未使用的 struct（已确认） | `models.ImageRequest`（`models.go` 306–309 行） | 全仓库无引用，可直接删除 |
+| Git 工厂双实例 | `git_factory.go` | 启动建 gitee 实例、github 懒创建，内存可并存两个 `GitService`，简化为单实例 |
+| GitHub 路由 inline 在 main.go | `main.go`（283–328 行） | 迁入 `handlers/github.go`，统一错误处理 |
 | 后端/前端结果消息重复格式化 | `acr_repository.go` + `repositoryResult.js` | 只保留一处生成 message |
 
 ---
@@ -195,7 +198,7 @@ CI                  无 .github/workflows
 
 | 目录 | 源文件 | 测试文件 | 测试占比 |
 |------|--------|----------|----------|
-| `internal/` | 42 个 `.go` | 2 | ~4.8% |
+| `internal/` | 42 个 `.go`（非测试） | 2 | ~4.8% |
 | `web/src/` | 32 个 | 0 | 0% |
 
 **现有测试文件**：
@@ -349,7 +352,7 @@ docker-compose.test.yml
 | S3 | **JWT 角色变更不生效**：权限中间件用 JWT 中的 `roleID` 查权限；管理员修改用户 `role_id` 后，旧 Token 仍携带旧角色 | `internal/services/auth.go`（56–66 行）；`internal/middleware/auth.go`（54–61 行） |
 | S4 | **JWT 默认密钥 fallback**：配置为空时硬编码 `docker-sync-platform-jwt-secret-change-me` | `internal/services/auth.go`（32–35、78–82 行）；`config.yaml`（94 行） |
 | S5 | **调试接口泄露解密配置**：非 release 模式下 `GET /api/v1/config/debug/:key` 返回完整解密值；默认 `mode: debug` | `main.go`（352–354 行）；`handlers/config.go`（381–403 行） |
-| S6 | **config.yaml 含真实凭据**：GitHub PAT、Gitee Token、阿里云密码、JWT secret 等明文（虽在 `.gitignore`，仍有误提交/泄露风险） | `config.yaml` |
+| S6 | **config.yaml 含真实凭据且已被 git 跟踪**：GitHub PAT、Gitee Token、阿里云密码、JWT secret 等明文。虽在 `.gitignore`（第 50 行），但 `git ls-files config.yaml` 显示**仍被跟踪并已入库**，git 历史中含全部凭据，必须 `git rm --cached` 并轮换全部凭据 | `config.yaml` |
 | S7 | **ACR 凭据经 GitHub Actions inputs 传递**：解密密码后放入 `workflow_dispatch` inputs，会出现在 GitHub Actions UI/日志中 | `handlers/sync.go`（2179–2215 行）；`github.go`（625–637 行） |
 
 ### 5.2 P1 — 高优先级
@@ -374,9 +377,12 @@ docker-compose.test.yml
 | # | 发现 | 说明 |
 |---|------|------|
 | S20 | 默认 admin 密码过弱 | `admin123`（`config.yaml`、`database.go` seed） |
-| S21 | `ENCRYPTION_KEY` 未走 viper | 仅 `os.Getenv`；dev 模式用可预测默认密钥 |
-| S22 | 登录日志区分「用户不存在」与「密码错误」 | 管理员可见，可用于用户名枚举 |
+| S21 | `ENCRYPTION_KEY` 未走 viper | 仅 `os.Getenv`；dev 模式用可预测默认密钥 `docker-sync-platform-default-key-2024`。**v2.1 核对**：`GIN_MODE=release` 时未设置会直接报错（已有改进），但默认 debug 模式仍静默用默认密钥 |
+| S22 | 登录日志区分「用户不存在」与「密码错误」 | 对客户端 API 统一返回「用户名或密码错误」（无直接枚举）；但 `GET /auth/login-logs`（需 `PermUsers`）可见失败原因，存在面向管理员的枚举信息 |
 | S23 | SQL 注入 | GORM 参数化查询为主，**无明显 SQL 注入** |
+| S24 | `POST /config/git-test-operations` 可传任意 token 做 Git 操作测试 | 需 `PermConfig`，但请求体可注入外部 token，存在滥用面（v2.1 新增） |
+| S25 | workflow 错误响应体进入错误链 | `github.go` L655 `fmt.Errorf(..., string(resp.Body()))`，GitHub 响应体可能随 `err.Error()` 返回客户端（v2.1 新增） |
+| S26 | `docs/e2e-test-guide.md` 含明文测试账号 | 第 5 行 `zwh / Abc2020##`（v2.1 新增） |
 
 ### 5.4 安全修复建议
 
