@@ -11,6 +11,44 @@ import (
 	"docker-image-sync-platform/internal/models"
 )
 
+// ExtractRepoName 从镜像地址中提取仓库名称（不含 tag 和 registry/命名空间前缀）
+func ExtractRepoName(image string) string {
+	image = strings.TrimSpace(image)
+	if image == "" {
+		return ""
+	}
+
+	if idx := strings.LastIndex(image, ":"); idx != -1 {
+		afterColon := image[idx+1:]
+		if !strings.Contains(afterColon, "/") {
+			image = image[:idx]
+		}
+	}
+
+	if strings.Contains(image, "/") {
+		parts := strings.Split(image, "/")
+		return parts[len(parts)-1]
+	}
+
+	return image
+}
+
+// BuildACRImageRef 根据 ACR 配置生成完整镜像地址
+func BuildACRImageRef(acrRegistryID uint, originalImage, tag string) string {
+	if tag == "" {
+		tag = "latest"
+	}
+	imageName := ExtractRepoName(originalImage)
+
+	if acrRegistryID > 0 {
+		var acr models.AcrRegistry
+		if err := database.DB.First(&acr, acrRegistryID).Error; err == nil {
+			return fmt.Sprintf("%s/%s/%s:%s", acr.RegistryURL, acr.Namespace, imageName, tag)
+		}
+	}
+	return GenerateACRImage(originalImage, tag)
+}
+
 // GenerateACRImage 生成阿里云ACR镜像地址（简化版本，不含架构信息）
 func GenerateACRImage(originalImage, tag string) string {
 	return GenerateACRImageWithArchitecture(originalImage, tag, "")

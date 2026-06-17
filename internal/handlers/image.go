@@ -720,21 +720,10 @@ func (h *ImageHandler) CheckImageExists(c *gin.Context) {
 		return
 	}
 
-	// 根据镜像关联的 ACR 配置生成目标地址
-	var targetImage string
-	if image.AcrRegistryID > 0 {
-		var acrRegistry models.AcrRegistry
-		if err := database.DB.First(&acrRegistry, image.AcrRegistryID).Error; err == nil {
-			targetImage = fmt.Sprintf("%s/%s/%s:%s", acrRegistry.RegistryURL, acrRegistry.Namespace, image.OriginalImage, image.Tag)
-		} else {
-			targetImage = utils.GenerateACRImage(image.OriginalImage, image.Tag)
-		}
-	} else {
-		targetImage = utils.GenerateACRImage(image.OriginalImage, image.Tag)
-	}
+	targetImage := utils.BuildACRImageRef(image.AcrRegistryID, image.OriginalImage, image.Tag)
 
 	// 检测镜像是否存在
-	exists, err := utils.CheckImageExistsInRegistryWithErr(targetImage)
+	exists, err := utils.CheckImageExistsInRegistryWithErr(targetImage, image.AcrRegistryID)
 	if err != nil {
 		logger.Logger.Error("检测镜像存在性失败",
 			zap.Error(err),
@@ -748,7 +737,7 @@ func (h *ImageHandler) CheckImageExists(c *gin.Context) {
 
 	var arches []string
 	if exists {
-		if detected, derr := utils.DetectImageArchitecturesInRegistry(targetImage); derr == nil {
+		if detected, derr := utils.DetectImageArchitecturesInRegistry(targetImage, image.AcrRegistryID); derr == nil {
 			arches = detected
 		}
 	}
@@ -892,21 +881,10 @@ func (h *ImageHandler) BatchCheckImages(c *gin.Context) {
 	// ====================================================================
 
 	for _, image := range images {
-		// 根据镜像关联的 ACR 配置生成目标地址
-		var targetImage string
-		if image.AcrRegistryID > 0 {
-			var acrRegistry models.AcrRegistry
-			if err := database.DB.First(&acrRegistry, image.AcrRegistryID).Error; err == nil {
-				targetImage = fmt.Sprintf("%s/%s/%s:%s", acrRegistry.RegistryURL, acrRegistry.Namespace, image.OriginalImage, image.Tag)
-			} else {
-				targetImage = utils.GenerateACRImage(image.OriginalImage, image.Tag)
-			}
-		} else {
-			targetImage = utils.GenerateACRImage(image.OriginalImage, image.Tag)
-		}
+		targetImage := utils.BuildACRImageRef(image.AcrRegistryID, image.OriginalImage, image.Tag)
 
 		// 检测镜像在注册表中的存在性
-		exists, err := utils.CheckImageExistsInRegistryWithErr(targetImage)
+		exists, err := utils.CheckImageExistsInRegistryWithErr(targetImage, image.AcrRegistryID)
 		if err != nil {
 			// 检测过程中发生错误的处理
 			logger.Logger.Error("检测镜像存在性失败",
@@ -940,7 +918,7 @@ func (h *ImageHandler) BatchCheckImages(c *gin.Context) {
 
 		var arches []string
 		if exists {
-			if detected, derr := utils.DetectImageArchitecturesInRegistry(targetImage); derr == nil {
+			if detected, derr := utils.DetectImageArchitecturesInRegistry(targetImage, image.AcrRegistryID); derr == nil {
 				arches = detected
 			}
 		}

@@ -29,28 +29,48 @@ func systemConfigValue(key string) string {
 	return c.ConfigValue
 }
 
-// getACRAuth returns an authenticator for the configured ACR instance, or anonymous if unset.
-func getACRAuth() authn.Authenticator {
-	user := systemConfigValue("aliyun_username")
-	rawPass := systemConfigValue("aliyun_password")
-	if user == "" {
+func authFromCredentials(username, rawPassword string) authn.Authenticator {
+	if username == "" {
 		return authn.Anonymous
 	}
-	pass, err := DecryptSystemConfigValue(rawPass)
+	pass, err := DecryptSystemConfigValue(rawPassword)
 	if err != nil {
-		logger.Logger.Warn("解密阿里云密码失败，将尝试匿名访问", zap.Error(err))
-		pass = rawPass
+		logger.Logger.Warn("解密注册表密码失败，将尝试明文密码", zap.Error(err))
+		pass = rawPassword
 	}
 	if pass == "" {
 		return authn.Anonymous
 	}
-	return &authn.Basic{Username: user, Password: pass}
+	return &authn.Basic{Username: username, Password: pass}
 }
 
-func remoteOptions(ctx context.Context) []remote.Option {
+// getACRAuth returns an authenticator for the system default ACR config, or anonymous if unset.
+func getACRAuth() authn.Authenticator {
+	return authFromCredentials(
+		systemConfigValue("aliyun_username"),
+		systemConfigValue("aliyun_password"),
+	)
+}
+
+// getACRAuthByRegistryID returns credentials for the given ACR registry ID, falling back to system config.
+func getACRAuthByRegistryID(acrRegistryID uint) authn.Authenticator {
+	if acrRegistryID > 0 {
+		var acr models.AcrRegistry
+		if err := database.DB.First(&acr, acrRegistryID).Error; err != nil {
+			logger.Logger.Warn("获取ACR配置失败，回退到系统默认凭据",
+				zap.Uint("acr_registry_id", acrRegistryID),
+				zap.Error(err))
+		} else {
+			return authFromCredentials(acr.Username, acr.Password)
+		}
+	}
+	return getACRAuth()
+}
+
+func remoteOptionsForACR(ctx context.Context, acrRegistryID uint) []remote.Option {
 	return []remote.Option{
 		remote.WithContext(ctx),
-		remote.WithAuth(getACRAuth()),
+		remote.WithAuth(getACRAuthByRegistryID(acrRegistryID)),
 	}
 }
 
@@ -136,7 +156,7 @@ func parseArchitecturesFromManifestJSON(body []byte) ([]string, error) {
 	return out, nil
 }
 
-func detectArchitecturesHTTPFallback(ctx context.Context, ref name.Reference) ([]string, error) {
+func detectArchitecturesHTTPFallback(ctx context.Context, ref name.Reference, acrRegistryID uint) ([]string, error) {
 	reg := ref.Context().RegistryStr()
 	repo := ref.Context().RepositoryStr()
 	tag := ref.Identifier()
@@ -146,16 +166,8 @@ func detectArchitecturesHTTPFallback(ctx context.Context, ref name.Reference) ([
 		return nil, err
 	}
 	req.Header.Set("Accept", manifestAcceptFallback)
-	user := systemConfigValue("aliyun_username")
-	rawPass := systemConfigValue("aliyun_password")
-	if user != "" {
-		pass, derr := DecryptSystemConfigValue(rawPass)
-		if derr != nil {
-			pass = rawPass
-		}
-		if pass != "" {
-			req.SetBasicAuth(user, pass)
-		}
+	if auth, ok := getACRAuthByRegistryID(acrRegistryID).(*authn.Basic); ok && auth != nil && auth.Username != "" {
+		req.SetBasicAuth(auth.Username, auth.Password)
 	}
 	client := &http.Client{Timeout: 45 * time.Second}
 	resp, err := client.Do(req)
@@ -175,14 +187,15 @@ func detectArchitecturesHTTPFallback(ctx context.Context, ref name.Reference) ([
 
 // DetectImageArchitecturesInRegistry lists linux architectures present in the registry for the given tag
 // (manifest list / OCI index). Falls back to a single architecture from image config when the tag is a single-platform image.
-func DetectImageArchitecturesInRegistry(imageRef string) ([]string, error) {
+// acrRegistryID selects which ACR credentials to use; 0 falls back to system default config.
+func DetectImageArchitecturesInRegistry(imageRef string, acrRegistryID uint) ([]string, error) {
 	ref, err := name.ParseReference(imageRef)
 	if err != nil {
 		return nil, err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	opts := remoteOptions(ctx)
+	opts := remoteOptionsForACR(ctx, acrRegistryID)
 
 	if idx, err := remote.Index(ref, opts...); err == nil {
 		arches, perr := platformsFromIndex(idx)
@@ -204,7 +217,7 @@ func DetectImageArchitecturesInRegistry(imageRef string) ([]string, error) {
 		}
 	}
 
-	if arches, err := detectArchitecturesHTTPFallback(ctx, ref); err == nil && len(arches) > 0 {
+	if arches, err := detectArchitecturesHTTPFallback(ctx, ref, acrRegistryID); err == nil && len(arches) > 0 {
 		return arches, nil
 	}
 

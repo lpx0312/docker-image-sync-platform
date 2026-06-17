@@ -1278,9 +1278,9 @@ func (h *SyncHandler) handleSyncSuccess(taskID string) {
 		acrImage := h.buildACRImageForRecord(record)
 
 		// 检查镜像是否真正存在于ACR中
-		exists := utils.CheckImageExistsInRegistry(acrImage)
+		exists := utils.CheckImageExistsInRegistry(acrImage, record.AcrRegistryID)
 		var architectures []string
-		if detected, detectErr := utils.DetectImageArchitecturesInRegistry(acrImage); detectErr != nil {
+		if detected, detectErr := utils.DetectImageArchitecturesInRegistry(acrImage, record.AcrRegistryID); detectErr != nil {
 			logger.Logger.Warn("检测镜像架构失败",
 				zap.Error(detectErr),
 				zap.String("task_id", taskID),
@@ -1490,9 +1490,9 @@ func (h *SyncHandler) handlePartialSyncFailure(taskID, workflowErrorMessage stri
 		acrImage := h.buildACRImageForRecord(record)
 
 		// 检查镜像是否真正存在于ACR中
-		exists := utils.CheckImageExistsInRegistry(acrImage)
+		exists := utils.CheckImageExistsInRegistry(acrImage, record.AcrRegistryID)
 		var architectures []string
-		if detected, detectErr := utils.DetectImageArchitecturesInRegistry(acrImage); detectErr != nil {
+		if detected, detectErr := utils.DetectImageArchitecturesInRegistry(acrImage, record.AcrRegistryID); detectErr != nil {
 			logger.Logger.Warn("检测镜像架构失败",
 				zap.Error(detectErr),
 				zap.String("task_id", taskID),
@@ -1856,10 +1856,10 @@ func (h *SyncHandler) processSingleMockImage(taskID string, record models.ImageS
 	acrImage := h.buildACRImageForRecord(record)
 
 	// 检测目标镜像是否存在
-	exists := utils.CheckImageExistsInRegistry(acrImage)
+	exists := utils.CheckImageExistsInRegistry(acrImage, record.AcrRegistryID)
 
 	var architectures []string
-	if detected, detectErr := utils.DetectImageArchitecturesInRegistry(acrImage); detectErr == nil {
+	if detected, detectErr := utils.DetectImageArchitecturesInRegistry(acrImage, record.AcrRegistryID); detectErr == nil {
 		architectures = detected
 	}
 	archJSON := utils.ArchitecturesToJSON(architectures)
@@ -2216,16 +2216,5 @@ func (h *SyncHandler) buildAcrWorkflowInputs(acrRegistryID uint) (map[string]str
 }
 
 func (h *SyncHandler) buildACRImageForRecord(record models.ImageSyncRecord) string {
-	if record.AcrRegistryID > 0 {
-		var acr models.AcrRegistry
-		if err := database.DB.First(&acr, record.AcrRegistryID).Error; err == nil {
-			imageName := services.ExtractRepoName(record.OriginalImage)
-			tag := record.Tag
-			if tag == "" {
-				tag = "latest"
-			}
-			return fmt.Sprintf("%s/%s/%s:%s", acr.RegistryURL, acr.Namespace, imageName, tag)
-		}
-	}
-	return utils.GenerateACRImage(record.OriginalImage, record.Tag)
+	return utils.BuildACRImageRef(record.AcrRegistryID, record.OriginalImage, record.Tag)
 }
