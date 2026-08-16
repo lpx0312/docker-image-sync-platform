@@ -15,6 +15,10 @@ WORKDIR /app/web
 # npm 源（本地构建默认国内源，海外 CI 通过 --build-arg 传官方源）
 ARG NPM_REGISTRY=https://registry.npmmirror.com/
 
+# 强制 IPv4 解析优先：Node 17+ 默认 verbatim 会优先尝试 IPv6，
+# 部分 CI 容器环境 IPv6 不通导致 npm 请求长时间挂起后崩溃
+ENV NODE_OPTIONS=--dns-result-order=ipv4first
+
 # 配置 npm 镜像源
 RUN npm config set registry ${NPM_REGISTRY} && \
     npm config set cache /tmp/.npm
