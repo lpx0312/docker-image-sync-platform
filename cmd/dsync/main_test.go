@@ -103,12 +103,12 @@ func TestDecideDedup(t *testing.T) {
 			contains: "已归属",
 		},
 		{
-			name:  "同tag已存在拦截",
+			name:  "同tag已存在拦截且输出完整地址",
 			item:  item(true, 1, "ns-a"),
 			acrID: 1, acrNs: "ns-a", tag: "1.25",
 			tags: []string{"1.24", "1.25"}, known: true,
 			action:   "block",
-			contains: "无需重复同步",
+			contains: "registry.example.com/ns-a/nginx:1.25",
 		},
 		{
 			name:  "仓库存在但tag是新的放行",
@@ -129,7 +129,7 @@ func TestDecideDedup(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := decideDedup(tt.item, tt.acrID, tt.acrNs, tt.tag, tt.tags, tt.known)
+			got := decideDedup(tt.item, tt.acrID, "registry.example.com", tt.acrNs, tt.tag, tt.tags, tt.known)
 			if got.Action != tt.action {
 				t.Errorf("action = %q, 期望 %q（消息: %s）", got.Action, tt.action, got.Message)
 			}

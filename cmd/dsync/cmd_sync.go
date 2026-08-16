@@ -19,10 +19,10 @@ type dedupOutcome struct {
 
 // decideDedup 依据 check-acr 结果与目标 tag 是否已存在，判定能否提交同步。
 //   - 仓库已归属其他 ACR → block（避免跨 ACR 重复建仓）
-//   - 仓库已存在于目标 ACR 且同名 tag 已存在 → block（纯重复同步）
+//   - 仓库已存在于目标 ACR 且同名 tag 已存在 → block（纯重复同步，消息含完整可拉取地址）
 //   - 仓库已存在但 tag 是新的 → info（追加 tag，允许）
 //   - 全新仓库 → proceed
-func decideDedup(item checkAcrItem, effectiveAcrID uint, effectiveNs, targetTag string, existingTags []string, tagsKnown bool) dedupOutcome {
+func decideDedup(item checkAcrItem, effectiveAcrID uint, registryURL, effectiveNs, targetTag string, existingTags []string, tagsKnown bool) dedupOutcome {
 	if item.HasAffinity && item.SuggestedAcrID != effectiveAcrID {
 		return dedupOutcome{
 			Action: "block",
@@ -34,7 +34,8 @@ func decideDedup(item checkAcrItem, effectiveAcrID uint, effectiveNs, targetTag 
 		if tagsKnown {
 			for _, t := range existingTags {
 				if t == targetTag {
-					addr := fmt.Sprintf("%s/%s:%s", effectiveNs, item.RepositoryName, targetTag)
+					// 输出带 registry 域名的完整地址，用户可直接 docker pull
+					addr := fmt.Sprintf("%s/%s/%s:%s", registryURL, effectiveNs, item.RepositoryName, targetTag)
 					return dedupOutcome{
 						Action:  "block",
 						Message: fmt.Sprintf("镜像已存在于目标 ACR（%s），无需重复同步；确要重试请加 --force", addr),
@@ -197,7 +198,7 @@ func runDedupCheck(client *Client, image, targetTag string, effective *AcrRegist
 			existingTags, tagsKnown = tags, true
 		}
 	}
-	return decideDedup(item, effective.ID, effective.Namespace, finalTag, existingTags, tagsKnown), nil
+	return decideDedup(item, effective.ID, effective.RegistryURL, effective.Namespace, finalTag, existingTags, tagsKnown), nil
 }
 
 // isTerminalTaskStatus 任务级终态
