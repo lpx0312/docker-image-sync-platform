@@ -95,6 +95,10 @@ jobs:
             GOPROXY=https://proxy.golang.org,direct
             GOSUMDB=sum.golang.org
             APK_MIRROR=dl-cdn.alpinelinux.org
+          # 阿里云个人版 ACR 不支持 provenance/SBOM 附带的 OCI 空层
+          # （application/vnd.oci.empty.v1+json 会被拒绝：unknown manifest class）
+          provenance: false
+          sbom: false
           tags: |
             ${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAMESPACE }}/${{ env.IMAGE_NAME }}:all-latest
             ${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAMESPACE }}/${{ env.IMAGE_NAME }}:all-${{ steps.version.outputs.version }}
