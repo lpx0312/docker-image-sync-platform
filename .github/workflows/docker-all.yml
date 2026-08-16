@@ -42,19 +42,6 @@ env:
   IMAGE_NAME: docker-image-sync-platform
 
 jobs:
-  diagnose-npm:
-    name: 诊断容器内 npm 网络
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: 容器内跑 npm ci 观察 HTTP 请求
-        run: |
-          docker run --rm -v "$PWD/web:/src" -w /src \
-            registry.cn-hangzhou.aliyuncs.com/lpx03/node:18-alpine \
-            sh -c 'node --version; npm --version; npm config set registry https://registry.npmjs.org; npm ci --no-audit --no-fund --loglevel http 2>&1 | tail -100; echo "exit=$?"; ls node_modules/.bin 2>/dev/null | head -5'
-
   build-and-push:
     name: 构建并推送 All-in-One 镜像
     runs-on: ubuntu-latest
@@ -64,6 +51,14 @@ jobs:
         with:
           # git describe 需要完整历史与 tag
           fetch-depth: 0
+
+      - name: 重写 lock 中的内网源为官方源
+        run: |
+          # package-lock.json 生成于内网 Nexus 环境，resolved 指向 192.168.0.12，
+          # CI 无法访问内网；npm ci 按 resolved 拉包（registry 配置不生效），故重写之。
+          # integrity 哈希不变（同一 tarball），不影响校验；本地构建不受影响。
+          sed -i 's|http://192.168.0.12/repository/proxy-npm-taobao|https://registry.npmjs.org|g' web/package-lock.json
+          echo "剩余内网地址: $(grep -c '192.168.0.12' web/package-lock.json || true)"
 
       - name: 计算镜像版本号
         id: version
