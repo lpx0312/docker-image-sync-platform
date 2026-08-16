@@ -30,6 +30,7 @@ IMAGE_NAME_LATEST := $(PROJECT_NAME):all-latest
 CONTAINER_NAME := docker-sync-all
 MYSQL_CONTAINER_NAME := docker-sync-mysql
 # 远程镜像仓库设置（凭据请通过环境变量传入，勿写入仓库）
+# 用法示例：make build-push ALIYUN_USERNAME=xxx ALIYUN_PASSWORD=xxx
 ALIYUN_REGISTRY := registry.cn-hangzhou.aliyuncs.com
 ALIYUN_USERNAME ?=
 ALIYUN_PASSWORD ?=
