@@ -39,7 +39,7 @@ TEMP_DIR := temp
 # 声明所有伪目标
 .PHONY: help init deps build run dev test clean docker-build docker-run docker-stop \
         frontend backend build-frontend build-backend test-backend fmt lint \
-        docker-logs docker-clean docker-rebuild health-check
+        docker-logs docker-clean docker-rebuild health-check cli cli-install
 
 # ============================================================================
 # 帮助信息
@@ -65,6 +65,8 @@ help:
 	@echo "  build        - 构建完整应用（前端+后端）"
 	@echo "  build-frontend - 仅构建前端静态文件"
 	@echo "  build-backend  - 仅构建后端可执行文件"
+	@echo "  cli          - 构建 dsync 命令行客户端（bin/dsync）"
+	@echo "  cli-install  - 安装 dsync 到 /usr/local/bin（需要 sudo）"
 	@echo "  run          - 运行构建后的应用"
 	@echo ""
 	@echo "🧪 测试相关:"
@@ -208,6 +210,20 @@ build-backend:
 	@go build $(BUILD_FLAGS) -o $(BIN_DIR)/$(PROJECT_NAME) main.go
 	@echo "✅ 后端构建完成: $(BIN_DIR)/$(PROJECT_NAME)"
 	@echo "版本信息: $(VERSION)"
+
+# 构建 dsync 命令行客户端
+# 版本信息注入 cmd/dsync 包的 main.version/main.buildTime
+cli:
+	@echo "🛠️  构建 dsync CLI..."
+	@mkdir -p $(BIN_DIR)
+	@go build -ldflags "-X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME)" -trimpath -o $(BIN_DIR)/dsync ./cmd/dsync
+	@echo "✅ CLI 构建完成: $(BIN_DIR)/dsync"
+	@echo "使用帮助: $(BIN_DIR)/dsync --help（详见 docs/dsync-cli.md）"
+
+# 安装 dsync 到 /usr/local/bin（需要 sudo 执行 make cli-install）
+cli-install: cli
+	@install -m 0755 $(BIN_DIR)/dsync /usr/local/bin/dsync
+	@echo "✅ 已安装: /usr/local/bin/dsync"
 
 # 运行构建后的应用
 # 需要先执行 make build

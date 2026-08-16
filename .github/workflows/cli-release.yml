@@ -1,0 +1,145 @@
+# ============================================================================
+# Docker镜像同步平台 - dsync CLI 构建发布流水线
+# ============================================================================
+#
+# 交叉编译 dsync 命令行客户端（cmd/dsync，纯 Go 无 CGO），产出：
+#   - dsync-linux-amd64.tar.gz
+#   - dsync-linux-arm64.tar.gz
+#   - dsync-darwin-amd64.tar.gz   (macOS Intel)
+#   - dsync-darwin-arm64.tar.gz   (macOS Apple Silicon)
+# 以及每个文件的 sha256 校验值。
+#
+# 触发方式：
+#   - 手动触发（workflow_dispatch）：仅构建并上传 artifact，不创建 Release，
+#     用于测试构建流程；
+#   - 推送 cli-v* 标签（如 cli-v1.0.0）：构建并创建 GitHub Release，
+#     附件包含全部平台的 tar.gz 与 SHA256SUMS。
+#
+# 本地等价命令：
+#   CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
+#     go build -trimpath -o dsync-linux-arm64 ./cmd/dsync
+# ============================================================================
+
+name: cli-release
+
+on:
+  push:
+    tags: ['cli-v*']
+  workflow_dispatch:
+
+# 同一标签重复推送时取消旧构建
+concurrency:
+  group: cli-release-${{ github.ref }}
+  cancel-in-progress: true
+
+# 创建 Release 需要写权限
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: 构建 dsync (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: 计算版本号
+        id: version
+        run: |
+          VERSION=$(git describe --tags --always 2>/dev/null || echo dev)
+          BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "build_time=${BUILD_TIME}" >> "$GITHUB_OUTPUT"
+
+      - name: 交叉编译
+        env:
+          CGO_ENABLED: '0'
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          mkdir -p dist
+          go build \
+            -ldflags "-s -w -X main.version=${{ steps.version.outputs.version }} -X main.buildTime=${{ steps.version.outputs.build_time }}" \
+            -trimpath \
+            -o "dist/dsync-${GOOS}-${GOARCH}" \
+            ./cmd/dsync
+
+      - name: 打包并生成校验和
+        run: |
+          cd dist
+          tar -czf "dsync-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz" "dsync-${{ matrix.goos }}-${{ matrix.goarch }}"
+          sha256sum "dsync-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz" > "dsync-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz.sha256"
+          ls -lh
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsync-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*.tar.gz*
+          retention-days: 14
+          if-no-files-found: error
+
+  release:
+    name: 发布 Release
+    needs: build
+    # 仅标签推送时创建 Release；手动触发只保留 artifact
+    if: startsWith(github.ref, 'refs/tags/cli-v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: 下载全部构建产物
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: 生成汇总校验和
+        run: |
+          cd dist
+          cat *.sha256 > SHA256SUMS
+          ls -lh
+
+      - name: 创建 Release 并上传附件
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # Release 已存在（如重跑流水线）时改为覆盖上传附件
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/*.tar.gz dist/*.sha256 dist/SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" \
+              --title "dsync $TAG" \
+              --notes "dsync CLI 多平台构建产物。
+
+          ## 安装
+
+          \`\`\`bash
+          # Linux ARM64 示例
+          curl -LO https://github.com/${GITHUB_REPOSITORY}/releases/download/$TAG/dsync-linux-arm64.tar.gz
+          tar -xzf dsync-linux-arm64.tar.gz
+          sudo install -m 0755 dsync-linux-arm64 /usr/local/bin/dsync
+          dsync --help
+          \`\`\`
+
+          完整使用说明见仓库 \`docs/dsync-cli.md\`。" \
+              dist/*.tar.gz dist/*.sha256 dist/SHA256SUMS \
+              --repo "$GITHUB_REPOSITORY"
+          fi
