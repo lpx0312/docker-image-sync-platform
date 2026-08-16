@@ -47,7 +47,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           # git describe 需要完整历史与 tag
           fetch-depth: 0
@@ -81,6 +81,12 @@ jobs:
           file: deploy/docker-all/Dockerfile-all
           platforms: linux/amd64,linux/arm64
           push: true
+          # 海外 runner 使用官方源，避免访问国内镜像站不稳定导致构建失败
+          build-args: |
+            NPM_REGISTRY=https://registry.npmjs.org
+            GOPROXY=https://proxy.golang.org,direct
+            GOSUMDB=sum.golang.org
+            APK_MIRROR=dl-cdn.alpinelinux.org
           tags: |
             ${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAMESPACE }}/${{ env.IMAGE_NAME }}:all-latest
             ${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAMESPACE }}/${{ env.IMAGE_NAME }}:all-${{ steps.version.outputs.version }}

@@ -12,8 +12,11 @@ FROM --platform=$BUILDPLATFORM registry.cn-hangzhou.aliyuncs.com/lpx03/node:18-a
 # 设置工作目录
 WORKDIR /app/web
 
-# 配置国内 npm 镜像源
-RUN npm config set registry https://registry.npmmirror.com/ && \
+# npm 源（本地构建默认国内源，海外 CI 通过 --build-arg 传官方源）
+ARG NPM_REGISTRY=https://registry.npmmirror.com/
+
+# 配置 npm 镜像源
+RUN npm config set registry ${NPM_REGISTRY} && \
     npm config set cache /tmp/.npm
 
 # 复制前端项目文件
@@ -37,17 +40,21 @@ FROM --platform=$BUILDPLATFORM registry.cn-hangzhou.aliyuncs.com/lpx03/golang:1.
 # 目标架构由 buildx 自动注入（本地构建时为宿主架构）
 ARG TARGETARCH
 
+# 依赖源（本地构建默认国内源，海外 CI 通过 --build-arg 传官方源）
+ARG GOPROXY=https://goproxy.cn,direct
+ARG GOSUMDB=sum.golang.google.cn
+ARG APK_MIRROR=mirrors.aliyun.com
+
 # 设置工作目录
 WORKDIR /app
 
-# 配置国内 Go 模块代理
-ENV GOPROXY=https://goproxy.cn,direct
-ENV GOSUMDB=sum.golang.google.cn
+# 配置 Go 模块代理
+ENV GOPROXY=${GOPROXY}
+ENV GOSUMDB=${GOSUMDB}
 ENV GO111MODULE=on
 
-# 使用apk的国内镜像
-#RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apk/repositories
-RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
+# 使用apk镜像
+RUN sed -i "s/dl-cdn.alpinelinux.org/${APK_MIRROR}/g" /etc/apk/repositories
 
 # 安装必要的包
 RUN apk add --no-cache git ca-certificates tzdata
@@ -72,9 +79,9 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
 # ================================
 FROM registry.cn-hangzhou.aliyuncs.com/lpx03/nginx:1.25-alpine
 
-# 使用apk的国内镜像
-#RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apk/repositories 
-RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
+# apk 镜像（本地构建默认国内源，海外 CI 通过 --build-arg 传官方源）
+ARG APK_MIRROR=mirrors.aliyun.com
+RUN sed -i "s/dl-cdn.alpinelinux.org/${APK_MIRROR}/g" /etc/apk/repositories
 
 # 安装必要的包
 RUN apk add --no-cache \
