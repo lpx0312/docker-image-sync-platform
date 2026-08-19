@@ -374,6 +374,7 @@ func main() {
 				acrRegistriesWrite.PUT("/:id", acrRegistryHandler.Update)
 				acrRegistriesWrite.DELETE("/:id", acrRegistryHandler.Delete)
 				acrRegistriesWrite.PUT("/:id/default", acrRegistryHandler.SetDefault)
+				acrRegistriesWrite.POST("/:id/test", acrRegistryHandler.TestConnection)
 			}
 
 			// 镜像仓库台账管理（ACR / SWR 通用，客户端按仓库类型内部分发）

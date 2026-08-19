@@ -27,10 +27,14 @@ type AcrRegistry struct {
 	AuthServer    string         `json:"auth_server" gorm:"type:varchar(255)"`
 	DockerService string         `json:"docker_service" gorm:"type:varchar(255)"`
 	RegistryType  string         `json:"registry_type" gorm:"type:varchar(20);default:acr"`
-	IsDefault     bool           `json:"is_default" gorm:"default:false"`
-	CreatedAt     time.Time      `json:"created_at"`
-	UpdatedAt     time.Time      `json:"updated_at"`
-	DeletedAt     gorm.DeletedAt `json:"-" gorm:"index"`
+	// SWR 专用：管理面（获取镜像列表等）所需的 IAM AK/SK，与登录凭证（Username/Password）相互独立。
+	// AK 如用户名可回显，SK 如密码加密存储不回显
+	AccessKey string       `json:"access_key" gorm:"type:varchar(200)"`
+	SecretKey string       `json:"-" gorm:"type:varchar(500)"`
+	IsDefault bool         `json:"is_default" gorm:"default:false"`
+	CreatedAt time.Time    `json:"created_at"`
+	UpdatedAt time.Time    `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
 // AcrRegistryRequest ACR配置请求
@@ -42,6 +46,8 @@ type AcrRegistryRequest struct {
 	AuthServer    string `json:"auth_server"`
 	DockerService string `json:"docker_service"`
 	RegistryType  string `json:"registry_type"`
+	AccessKey     string `json:"access_key"`
+	SecretKey     string `json:"secret_key"`
 }
 
 // AcrRegistryUpdateRequest ACR配置更新请求
@@ -53,4 +59,6 @@ type AcrRegistryUpdateRequest struct {
 	AuthServer    string `json:"auth_server"`
 	DockerService string `json:"docker_service"`
 	RegistryType  string `json:"registry_type"`
+	AccessKey     string `json:"access_key"`
+	SecretKey     string `json:"secret_key"`
 }

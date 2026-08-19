@@ -51,10 +51,19 @@
               <el-tag v-if="row.is_default" type="success" size="small">默认</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="150">
+          <el-table-column label="操作" width="210">
             <template #default="{ row }">
               <el-button type="primary" link size="small" @click="showEditDialog(row)">
                 编辑
+              </el-button>
+              <el-button
+                type="success"
+                link
+                size="small"
+                :loading="testingId === row.id"
+                @click="handleTest(row)"
+              >
+                测试
               </el-button>
               <el-popconfirm
                 title="确定要删除这个镜像仓库配置吗？"
@@ -81,7 +90,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Monitor } from '@element-plus/icons-vue'
 import { acrRegistryAPI } from '@/api'
 import AcrRegistryDialog from './AcrRegistryDialog.vue'
@@ -96,6 +105,34 @@ onMounted(() => {
 })
 
 const typeLabel = (row) => (row.registry_type === 'swr' ? '华为 SWR' : '阿里 ACR')
+
+const testingId = ref(null)
+
+const handleTest = async (row) => {
+  testingId.value = row.id
+  try {
+    const response = await acrRegistryAPI.test(row.id)
+    const r = response?.data || {}
+    const lines = []
+    lines.push(r.login_ok ? `✓ 登录凭证：${r.login_message}` : `✗ 登录凭证：${r.login_message}`)
+    if (r.registry_type === 'swr') {
+      if (r.manage_skipped) {
+        lines.push(`– AK/SK：${r.manage_message}`)
+      } else {
+        lines.push(r.manage_ok ? `✓ AK/SK：${r.manage_message}` : `✗ AK/SK：${r.manage_message}`)
+      }
+    }
+    const ok = r.login_ok && (r.registry_type !== 'swr' || r.manage_ok || r.manage_skipped)
+    ElMessageBox.alert(lines.join('\n'), `连接测试 - ${row.namespace}`, {
+      type: ok ? 'success' : 'error',
+      confirmButtonText: '知道了',
+    })
+  } catch (error) {
+    ElMessage.error('测试失败: ' + (error.response?.data?.message || error.message || '未知错误'))
+  } finally {
+    testingId.value = null
+  }
+}
 
 const loadAcrList = async () => {
   try {

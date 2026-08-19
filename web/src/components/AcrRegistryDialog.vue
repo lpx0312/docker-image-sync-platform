@@ -48,19 +48,35 @@
         />
       </el-form-item>
 
-      <el-alert
-        v-if="isSwr"
-        type="info"
-        :closable="false"
-        show-icon
-        style="margin-bottom: 18px;"
-      >
-        <template #title>
-          SWR 使用 IAM 访问密钥登录：用户名为「区域@AK」，密码为 SK（即
-          <code>docker login -u cn-east-4@AK -p SK swr.cn-east-4.myhuaweicloud.com</code>）。
-          组织（namespace）需预先在华为云控制台创建。
-        </template>
-      </el-alert>
+      <template v-if="isSwr">
+        <el-divider content-position="left">管理面凭证（可选，用于获取镜像列表）</el-divider>
+        <el-form-item label="Access Key">
+          <el-input
+            v-model="form.access_key"
+            placeholder="IAM 访问密钥 AK（华为云控制台「我的凭证 → 访问密钥」）"
+          />
+        </el-form-item>
+        <el-form-item label="Secret Key">
+          <el-input
+            v-model="form.secret_key"
+            type="password"
+            placeholder="与 AK 配对的 SK；编辑时留空表示不修改"
+            show-password
+          />
+        </el-form-item>
+        <el-alert
+          type="info"
+          :closable="false"
+          show-icon
+          style="margin-bottom: 18px;"
+        >
+          <template #title>
+            上方「用户名/密码」即 docker login 凭证（区域@AK / 登录密码），用于推送、拉取与 Tag 查询；
+            AK/SK 仅在「从仓库导入」获取镜像列表时使用（SWR 管理面 API）。
+            组织（namespace）需预先在华为云控制台创建。
+          </template>
+        </el-alert>
+      </template>
 
       <template v-if="!isSwr">
         <el-form-item label="认证服务器">
@@ -153,6 +169,8 @@ const form = reactive({
   auth_server: '',
   docker_service: '',
   registry_type: 'acr',
+  access_key: '',
+  secret_key: '',
 })
 
 const isSwr = computed(() => form.registry_type === 'swr')
@@ -176,6 +194,8 @@ watch(() => props.modelValue, (val) => {
       auth_server: props.editData.auth_server || '',
       docker_service: props.editData.docker_service || '',
       registry_type: props.editData.registry_type || 'acr',
+      access_key: props.editData.access_key || '',
+      secret_key: '',
     })
   } else {
     isEdit.value = false
@@ -187,6 +207,8 @@ watch(() => props.modelValue, (val) => {
       auth_server: '',
       docker_service: '',
       registry_type: 'acr',
+      access_key: '',
+      secret_key: '',
     })
   }
 })

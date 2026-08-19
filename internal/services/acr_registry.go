@@ -90,6 +90,14 @@ func (s *AcrRegistryService) Create(req *models.AcrRegistryRequest) (*models.Acr
 		AuthServer:    req.AuthServer,
 		DockerService: req.DockerService,
 		RegistryType:  registryType,
+		AccessKey:     strings.TrimSpace(req.AccessKey),
+	}
+	if registry.AccessKey != "" && req.SecretKey != "" {
+		encryptedSecret, err := s.encryptionSvc.Encrypt(req.SecretKey)
+		if err != nil {
+			return nil, fmt.Errorf("加密SK失败: %w", err)
+		}
+		registry.SecretKey = encryptedSecret
 	}
 
 	// 如果是第一个ACR，自动设为默认
@@ -136,6 +144,18 @@ func (s *AcrRegistryService) Update(id uint, req *models.AcrRegistryUpdateReques
 			return nil, err
 		}
 		updates["registry_type"] = registryType
+	}
+	// SWR 管理面 AK/SK：AccessKey 明文可回显（空则保持不变），
+	// SecretKey 加密存储，前端占位 "***" 表示不变，非空则更新
+	if req.AccessKey != "" && req.AccessKey != "***" {
+		updates["access_key"] = strings.TrimSpace(req.AccessKey)
+	}
+	if req.SecretKey != "" && req.SecretKey != "***" {
+		encryptedSecret, err := s.encryptionSvc.Encrypt(req.SecretKey)
+		if err != nil {
+			return nil, fmt.Errorf("加密SK失败: %w", err)
+		}
+		updates["secret_key"] = encryptedSecret
 	}
 	// auth_server 和 docker_service 允许设置为空字符串（清除值）
 	if req.AuthServer != "" {
@@ -202,4 +222,31 @@ func (s *AcrRegistryService) SetDefault(id uint) error {
 
 		return nil
 	})
+}
+
+// TestConnection 测试指定仓库配置的连通性：
+// 登录凭证（数据面推送/拉取）必测；SWR 额外测试管理面 AK/SK（获取镜像列表用）
+func (s *AcrRegistryService) TestConnection(id uint) (*RegistryTestResult, error) {
+	acr, err := s.GetByID(id)
+	if err != nil {
+		return nil, err
+	}
+
+	password, err := s.encryptionSvc.Decrypt(acr.Password)
+	if err != nil {
+		return nil, fmt.Errorf("解密仓库密码失败: %w", err)
+	}
+
+	var secretKey string
+	if acr.SecretKey != "" {
+		if sk, err := s.encryptionSvc.Decrypt(acr.SecretKey); err == nil {
+			secretKey = sk
+		}
+	}
+
+	client := NewRegistryAPIService(acr.RegistryType, acr.RegistryURL)
+	return client.TestConnection(
+		acr.RegistryURL, acr.Username, password, acr.AccessKey, secretKey,
+		acr.Namespace, acr.AuthServer, acr.DockerService,
+	), nil
 }

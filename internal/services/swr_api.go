@@ -359,15 +359,23 @@ func (s *SwrAPIService) GetTagsWithDetails(registry, username, password, namespa
 // ListRepositories 通过 SWR 管理面 API（swr-api.{region}.myhuaweicloud.com）
 // 列出组织内全部镜像仓库，用于「从仓库导入」。SWR 数据面不支持 /v2/_catalog。
 //
-// 管理面要求永久 IAM AK/SK 签名（与登录指令同源的「区域@AK」/ SK）；
-// 若使用 SWR 控制台的「临时登录指令」（24 小时有效）会被签名校验拒绝。
-func (s *SwrAPIService) ListRepositories(registry, username, password, namespace, authServer, dockerService string) ([]string, error) {
+// 管理面凭证为 IAM AK/SK（与数据面登录凭证相互独立）：accessKey/secretKey
+// 来自镜像仓库配置中单独填写的 Access Key / Secret Key；accessKey 为空时
+// 兜底从登录用户名（区域@AK）中提取。
+func (s *SwrAPIService) ListRepositories(registry, username, password, accessKey, secretKey, namespace, authServer, dockerService string) ([]string, error) {
+	if secretKey == "" {
+		return nil, fmt.Errorf("未配置 SWR 管理面 Secret Key（AK/SK），无法获取镜像列表，请在镜像仓库配置中填写")
+	}
 	region := swrRegion(registry, username)
 	if region == "" {
 		return nil, fmt.Errorf("无法从仓库地址 %s 或用户名 %s 推断 SWR 区域", registry, username)
 	}
+	ak := accessKey
+	if ak == "" {
+		ak = swrAKFromUsername(username)
+	}
 	host := fmt.Sprintf("swr-api.%s.myhuaweicloud.com", region)
-	signer := swrSigner{AccessKey: swrAKFromUsername(username), SecretKey: password}
+	signer := swrSigner{AccessKey: ak, SecretKey: secretKey}
 
 	httpClient := &http.Client{Timeout: 30 * time.Second}
 	repos := make([]string, 0, 64)
@@ -398,7 +406,7 @@ func (s *SwrAPIService) ListRepositories(registry, username, password, namespace
 		resp.Body.Close()
 
 		if resp.StatusCode == http.StatusUnauthorized {
-			return nil, fmt.Errorf("SWR 管理面签名验证失败：当前配置的可能是「临时登录指令」（仅数据面可用且 24 小时过期），请改用永久 IAM AK/SK（华为云控制台「我的凭证 → 访问密钥」，平台中用户名仍填 区域@AK、密码填 SK）")
+			return nil, fmt.Errorf("SWR 管理面 AK/SK 签名验证失败，请检查镜像仓库配置中的 Access Key / Secret Key（华为云控制台「我的凭证 → 访问密钥」）")
 		}
 		if resp.StatusCode != http.StatusOK {
 			detail := string(body)
@@ -477,4 +485,78 @@ func swrRegion(registry, username string) string {
 		return username[:idx]
 	}
 	return ""
+}
+
+// TestConnection 测试 SWR 配置连通性：数据面登录凭证（推送/拉取）+ 管理面 AK/SK（获取镜像列表）
+func (s *SwrAPIService) TestConnection(registry, username, password, accessKey, secretKey, namespace, authServer, dockerService string) *RegistryTestResult {
+	result := &RegistryTestResult{RegistryType: "swr"}
+
+	// 数据面：用登录凭证换取 scoped token（与 docker login 等价），组织不存在/无权限会报错
+	if _, err := s.GetToken(registry, username, password, namespace, "connection-test"); err != nil {
+		result.LoginMessage = err.Error()
+	} else {
+		result.LoginOK = true
+		result.LoginMessage = "登录凭证可用（可推送/拉取镜像）"
+	}
+
+	// 管理面：AK/SK 签名查询组织内仓库（limit=1，仅验证连通与权限）
+	if secretKey == "" {
+		result.ManageSkipped = true
+		result.ManageMessage = "未配置 AK/SK（可选；不配置则「从仓库导入」不可用）"
+		return result
+	}
+	if err := s.testManageAccess(registry, username, accessKey, secretKey, namespace); err != nil {
+		result.ManageMessage = err.Error()
+	} else {
+		result.ManageOK = true
+		result.ManageMessage = "AK/SK 可用（可获取镜像列表）"
+	}
+	return result
+}
+
+// testManageAccess 用 AK/SK 签名调用管理面验证连通性（GET /v2/manage/repos?namespace=xx&limit=1）
+func (s *SwrAPIService) testManageAccess(registry, username, accessKey, secretKey, namespace string) error {
+	region := swrRegion(registry, username)
+	if region == "" {
+		return fmt.Errorf("无法从仓库地址 %s 或用户名 %s 推断 SWR 区域", registry, username)
+	}
+	host := fmt.Sprintf("swr-api.%s.myhuaweicloud.com", region)
+	ak := accessKey
+	if ak == "" {
+		ak = swrAKFromUsername(username)
+	}
+
+	u := &url.URL{
+		Scheme:   "https",
+		Host:     host,
+		Path:     "/v2/manage/repos",
+		RawQuery: url.Values{"namespace": []string{namespace}, "limit": []string{"1"}}.Encode(),
+	}
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		return err
+	}
+	swrSigner{AccessKey: ak, SecretKey: secretKey}.sign(req, time.Now())
+
+	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+	if err != nil {
+		return fmt.Errorf("请求 SWR 管理面失败: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+
+	switch resp.StatusCode {
+	case 200:
+		return nil
+	case 401:
+		return fmt.Errorf("AK/SK 签名验证失败（请检查 Access Key / Secret Key）")
+	case 404:
+		return fmt.Errorf("组织 %s 不存在", namespace)
+	default:
+		detail := string(body)
+		if len(detail) > 200 {
+			detail = detail[:200]
+		}
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, detail)
+	}
 }

@@ -141,6 +141,24 @@ func (h *AcrRegistryHandler) SetDefault(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "success", "message": "默认ACR已更新"})
 }
 
+// TestConnection 测试仓库配置连通性（登录凭证 + SWR 管理面 AK/SK）
+func (h *AcrRegistryHandler) TestConnection(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "无效的ID"})
+		return
+	}
+
+	result, err := h.service.TestConnection(uint(id))
+	if err != nil {
+		logger.Logger.Error("测试仓库连通性失败", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "success", "data": result})
+}
+
 // GetQuotaSummary 获取所有 ACR 的仓库配额用量
 func (h *AcrRegistryHandler) GetQuotaSummary(c *gin.Context) {
 	affinitySvc := services.NewAcrAffinityService(database.DB)

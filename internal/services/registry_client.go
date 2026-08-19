@@ -27,8 +27,22 @@ type RegistryAPIClient interface {
 	// IsRepositoryNotFound 错误是否表示仓库不存在
 	IsRepositoryNotFound(err error) bool
 	// ListRepositories 列出远程仓库中的全部镜像仓库名（"从仓库导入"用）；
-	// SWR 走管理面 API（需永久 IAM AK/SK），ACR 走 /v2/_catalog
-	ListRepositories(registry, username, password, namespace, authServer, dockerService string) ([]string, error)
+	// ACR 走 /v2/_catalog；SWR 走管理面 API（accessKey/secretKey 为 IAM AK/SK，
+	// 未配置时返回明确错误）
+	ListRepositories(registry, username, password, accessKey, secretKey, namespace, authServer, dockerService string) ([]string, error)
+	// TestConnection 测试仓库配置连通性：登录凭证（推送/拉取）必测；
+	// SWR 额外测试管理面 AK/SK（获取镜像列表用）
+	TestConnection(registry, username, password, accessKey, secretKey, namespace, authServer, dockerService string) *RegistryTestResult
+}
+
+// RegistryTestResult 仓库配置连通性测试结果
+type RegistryTestResult struct {
+	RegistryType  string `json:"registry_type"`            // acr | swr
+	LoginOK       bool   `json:"login_ok"`                 // 登录凭证（数据面）是否可用
+	LoginMessage  string `json:"login_message"`            // 数据面测试说明/错误信息
+	ManageOK      bool   `json:"manage_ok"`                // 管理面 AK/SK 是否可用（仅 SWR 有意义）
+	ManageMessage string `json:"manage_message"`           // 管理面测试说明/错误信息
+	ManageSkipped bool   `json:"manage_skipped"`           // 未配置 AK/SK 时跳过（仅 SWR）
 }
 
 var (

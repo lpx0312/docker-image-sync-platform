@@ -301,7 +301,7 @@ func (s *AcrAPIService) GetTagsWithDetails(registry, username, password, namespa
 }
 
 // ListRepositories 通过 /v2/_catalog 列出远程仓库中的全部镜像仓库名（从仓库导入用）
-func (s *AcrAPIService) ListRepositories(registry, username, password, namespace, authServer, dockerService string) ([]string, error) {
+func (s *AcrAPIService) ListRepositories(registry, username, password, accessKey, secretKey, namespace, authServer, dockerService string) ([]string, error) {
 	cacheKey := fmt.Sprintf("%s:_catalog", registry)
 	scope := "registry:catalog:*"
 
@@ -347,4 +347,19 @@ func (s *AcrAPIService) ListRepositories(registry, username, password, namespace
 	}
 
 	return repositories, nil
+}
+
+// TestConnection 测试 ACR 配置连通性（token 获取 + 命名空间读取）
+func (s *AcrAPIService) TestConnection(registry, username, password, accessKey, secretKey, namespace, authServer, dockerService string) *RegistryTestResult {
+	result := &RegistryTestResult{RegistryType: "acr"}
+
+	// 用登录凭证对探测仓库做 tags/list：凭证错误在换 token 阶段即报错，
+	// 仓库不存在返回空列表（正常），组织/命名空间无权限也会在此暴露
+	if _, err := s.GetTags(registry, username, password, namespace, "connection-test", authServer, dockerService); err != nil {
+		result.LoginMessage = err.Error()
+	} else {
+		result.LoginOK = true
+		result.LoginMessage = "凭证可用（可推送/拉取镜像，命名空间 " + namespace + " 读取正常）"
+	}
+	return result
 }

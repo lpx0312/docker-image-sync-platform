@@ -420,8 +420,16 @@ func (s *AcrRepositoryService) ImportFromRegistry(acrRegistryID uint) (*ImportFr
 		return nil, fmt.Errorf("解密仓库密码失败: %w", err)
 	}
 
+	// SWR 管理面 SK（可选，未配置时由客户端返回明确错误）
+	var secretKey string
+	if acr.SecretKey != "" {
+		if sk, err := s.encryptionSvc.Decrypt(acr.SecretKey); err == nil {
+			secretKey = sk
+		}
+	}
+
 	repoNames, err := s.apiClientFor(&acr).ListRepositories(
-		acr.RegistryURL, acr.Username, password, acr.Namespace,
+		acr.RegistryURL, acr.Username, password, acr.AccessKey, secretKey, acr.Namespace,
 		acr.AuthServer, acr.DockerService,
 	)
 	if err != nil {

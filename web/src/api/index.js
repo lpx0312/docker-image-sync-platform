@@ -587,6 +587,14 @@ export const acrRegistryAPI = {
    * @returns {Promise} 返回各 ACR 的仓库数与剩余配额
    */
   getQuotaSummary: () => api.get('/acr-registries/quota-summary'),
+
+  /**
+   * 测试仓库配置连通性（登录凭证 + SWR 管理面 AK/SK）
+   *
+   * @param {number} id - 镜像仓库配置 ID
+   * @returns {Promise} 返回 login_ok / manage_ok 等测试结果
+   */
+  test: (id) => api.post(`/acr-registries/${id}/test`),
 }
 
 // ACR 镜像管理 API

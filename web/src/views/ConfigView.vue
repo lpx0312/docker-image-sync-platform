@@ -82,7 +82,7 @@ const activeTab = ref('git')
 
 const tabs = [
   { key: 'git', label: 'Git 配置', icon: Connection },
-  { key: 'aliyun', label: '阿里云配置', icon: Cloudy },
+  { key: 'aliyun', label: '镜像仓库配置', icon: Cloudy },
   { key: 'system', label: '系统设置', icon: Setting },
 ]
 
