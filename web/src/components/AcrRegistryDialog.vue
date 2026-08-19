@@ -12,11 +12,13 @@
       label-width="100px"
     >
       <el-form-item label="仓库类型" prop="registry_type">
-        <el-radio-group v-model="form.registry_type">
-          <el-radio value="acr">阿里云 ACR</el-radio>
-          <el-radio value="swr">华为云 SWR</el-radio>
-          <el-radio value="ccr">腾讯云 CCR</el-radio>
-        </el-radio-group>
+        <el-select v-model="form.registry_type" style="width: 100%;">
+          <el-option label="阿里云 ACR" value="acr" />
+          <el-option label="华为云 SWR" value="swr" />
+          <el-option label="腾讯云 CCR" value="ccr" />
+          <el-option label="Harbor" value="harbor" />
+          <el-option label="通用 Registry（OCI/Docker v2）" value="generic" />
+        </el-select>
       </el-form-item>
 
       <el-form-item label="镜像仓库地址" prop="registry_url">
@@ -26,7 +28,7 @@
         />
       </el-form-item>
 
-      <el-form-item :label="isSwr ? '组织' : '命名空间'" prop="namespace">
+      <el-form-item :label="isHarbor ? '项目' : (isSwr ? '组织' : '命名空间')" prop="namespace">
         <el-input
           v-model="form.namespace"
           :placeholder="namespacePlaceholder"
@@ -86,7 +88,21 @@
         </el-alert>
       </template>
 
-      <template v-if="!isSwr && !isCcr">
+      <el-alert
+        v-if="isHarbor || isGeneric"
+        type="info"
+        :closable="false"
+        show-icon
+        style="margin-bottom: 18px;"
+      >
+        <template #title>
+          {{ isHarbor
+            ? 'Harbor 走标准 v2 协议：用户名/密码即 docker login 凭证；需公网有效 TLS 证书（自签名证书暂不支持同步推送）。「从仓库导入」依赖 _catalog，标准 Harbor 部署支持。'
+            : '通用 Registry 走标准 OCI/Docker v2 协议：用户名/密码即 docker login 凭证；认证方式自动适配（Basic 直连或 Bearer token）。「从仓库导入」依赖 _catalog，不支持时请使用批量添加。' }}
+        </template>
+      </el-alert>
+
+      <template v-if="isAcr">
         <el-form-item label="认证服务器">
           <div style="display: flex; align-items: center; gap: 8px; width: 100%;">
             <el-input
@@ -182,30 +198,41 @@ const form = reactive({
   secret_key: '',
 })
 
+const isAcr = computed(() => form.registry_type === 'acr')
 const isSwr = computed(() => form.registry_type === 'swr')
 const isCcr = computed(() => form.registry_type === 'ccr')
+const isHarbor = computed(() => form.registry_type === 'harbor')
+const isGeneric = computed(() => form.registry_type === 'generic')
 
 const registryPlaceholder = computed(() => {
   if (isSwr.value) return 'swr.cn-east-4.myhuaweicloud.com'
   if (isCcr.value) return 'ccr.ccs.tencentyun.com'
+  if (isHarbor.value) return 'harbor.example.com（需公网有效 TLS 证书，可含端口）'
+  if (isGeneric.value) return '任意 OCI/Docker v2 仓库地址，如 registry.example.com'
   return 'registry.cn-hangzhou.aliyuncs.com'
 })
 
 const namespacePlaceholder = computed(() => {
   if (isSwr.value) return 'SWR 组织名（需预先在华为云控制台创建）'
   if (isCcr.value) return '命名空间，如 lpx03'
+  if (isHarbor.value) return 'Harbor 项目名（需预先创建）'
+  if (isGeneric.value) return '命名空间 / 项目（按目标仓库的实际路径层级填写）'
   return 'your-namespace'
 })
 
 const usernamePlaceholder = computed(() => {
   if (isSwr.value) return '格式：区域@AK，如 cn-east-4@HPUAXXXXXXXX'
   if (isCcr.value) return '腾讯云账号数字 ID（docker login 用户名），如 100020724643'
+  if (isHarbor.value) return 'Harbor 用户名'
+  if (isGeneric.value) return 'docker login 用户名'
   return '阿里云用户名'
 })
 
 const passwordPlaceholder = computed(() => {
   if (isSwr.value) return '华为云 SK（与登录用户名配对的密钥）'
   if (isCcr.value) return '仓库登录密码（docker login 密码，开通 CCR 时设置）'
+  if (isHarbor.value) return 'Harbor 密码'
+  if (isGeneric.value) return 'docker login 密码'
   return '阿里云密码'
 })
 

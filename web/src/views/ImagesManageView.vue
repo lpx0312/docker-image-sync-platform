@@ -16,7 +16,7 @@
             <span>
               {{ item.alias || item.namespace }}
               <el-tag :type="item.registry_type === 'swr' ? 'warning' : item.registry_type === 'ccr' ? 'success' : 'primary'" size="small" style="margin-left: 6px;">
-                {{ item.registry_type === 'swr' ? '华为 SWR' : item.registry_type === 'ccr' ? '腾讯 CCR' : '阿里 ACR' }}
+                {{ typeLabel(item) }}
               </el-tag>
             </span>
             <span class="quota-count">{{ formatQuotaCount(item) }}</span>
@@ -261,14 +261,23 @@ onMounted(() => {
   loadQuotaSummary()
 })
 
+const typeLabel = (row) => ({
+  acr: '阿里 ACR',
+  swr: '华为 SWR',
+  ccr: '腾讯 CCR',
+  harbor: 'Harbor',
+  generic: '通用',
+}[row.registry_type] || row.registry_type || 'acr')
+
+const typeText = (t) => ({ acr: ' · ACR', swr: ' · SWR', ccr: ' · CCR', harbor: ' · Harbor', generic: ' · Registry' }[t] || '')
+
 const getAcrLabel = (item) => {
-  const typeText = item.registry_type === 'swr' ? ' · SWR' : item.registry_type === 'ccr' ? ' · CCR' : ''
   const name = item.alias || item.namespace
   const quota = quotaMap.value[item.id]
   if (quota) {
-    return `${name} (${formatQuotaCount(quota)})${typeText}`
+    return `${name} (${formatQuotaCount(quota)})${typeText(item.registry_type)}`
   }
-  return `${name}${typeText}`
+  return `${name}${typeText(item.registry_type)}`
 }
 
 const formatQuotaCount = (item) => {

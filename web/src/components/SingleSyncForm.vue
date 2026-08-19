@@ -131,14 +131,14 @@ const forceOverrideWarning = computed(() => {
 })
 
 const getAcrLabel = (item) => {
-  const typeText = item.registry_type === 'swr' ? ' · SWR' : item.registry_type === 'ccr' ? ' · CCR' : ''
+  const typeText = (t) => ({ acr: ' · ACR', swr: ' · SWR', ccr: ' · CCR', harbor: ' · Harbor', generic: ' · Registry' }[t] || '')
   const name = item.alias || item.namespace
   const quota = quotaMap.value[item.id]
   if (quota) {
     const quotaText = quota.repo_quota > 0 ? `${quota.repo_count}/${quota.repo_quota}` : `${quota.repo_count}/不限`
-    return `${name} (${quotaText})${typeText}`
+    return `${name} (${quotaText})${typeText(item.registry_type)}`
   }
-  return `${name}${typeText}`
+  return `${name}${typeText(item.registry_type)}`
 }
 
 const isAcrOptionDisabled = (acrId) => {

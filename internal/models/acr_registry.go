@@ -8,14 +8,29 @@ import (
 
 // 镜像仓库类型
 const (
-	RegistryTypeACR = "acr" // 阿里云 ACR
-	RegistryTypeSWR = "swr" // 华为云 SWR
-	RegistryTypeCCR = "ccr" // 腾讯云 CCR（个人版）
+	RegistryTypeACR     = "acr"     // 阿里云 ACR
+	RegistryTypeSWR     = "swr"     // 华为云 SWR
+	RegistryTypeCCR     = "ccr"     // 腾讯云 CCR（个人版）
+	RegistryTypeHarbor  = "harbor"  // Harbor 私有仓库
+	RegistryTypeGeneric = "generic" // 通用 OCI/Docker Registry v2
 )
+
+// RegistryTypeLabels 类型中文标签
+var RegistryTypeLabels = map[string]string{
+	RegistryTypeACR:     "阿里云 ACR",
+	RegistryTypeSWR:     "华为云 SWR",
+	RegistryTypeCCR:     "腾讯云 CCR",
+	RegistryTypeHarbor:  "Harbor",
+	RegistryTypeGeneric: "通用 Registry",
+}
 
 // IsValidRegistryType 校验仓库类型取值
 func IsValidRegistryType(t string) bool {
-	return t == RegistryTypeACR || t == RegistryTypeSWR || t == RegistryTypeCCR
+	switch t {
+	case RegistryTypeACR, RegistryTypeSWR, RegistryTypeCCR, RegistryTypeHarbor, RegistryTypeGeneric:
+		return true
+	}
+	return false
 }
 
 // AcrRegistry ACR镜像仓库配置数据模型

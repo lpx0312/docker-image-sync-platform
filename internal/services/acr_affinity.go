@@ -15,10 +15,11 @@ const DefaultAcrRepoQuota = 300
 // 华为云 SWR 单组织内镜像仓库数量无限制（仅限制租户组织总数）；
 // 腾讯云 CCR 个人版同样无仓库数量硬限制。
 func repoQuotaFor(registryType string) int {
-	if registryType == models.RegistryTypeSWR || registryType == models.RegistryTypeCCR {
-		return 0
+	// 仅阿里云 ACR 个人版有已知的仓库数配额；其余类型（SWR/CCR/Harbor/通用）按不限处理
+	if registryType == models.RegistryTypeACR {
+		return DefaultAcrRepoQuota
 	}
-	return DefaultAcrRepoQuota
+	return 0
 }
 
 // AcrAffinityService ACR 仓库归属与配额查询服务

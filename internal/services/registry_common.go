@@ -142,7 +142,7 @@ func computeManifestDigest(body []byte) string {
 }
 
 func fetchImageArch(client *resty.Client, registry, token, namespace, repo, configDigest string) string {
-	if configDigest == "" {
+	if configDigest == "" || token == "" {
 		return ""
 	}
 
@@ -184,6 +184,10 @@ func fetchImageArch(client *resty.Client, registry, token, namespace, repo, conf
 }
 
 func fetchResourceLastModified(client *resty.Client, url, token string) string {
+	if token == "" {
+		// Basic 直连/匿名场景无 Bearer token，跳过（推送时间为空的代价可接受）
+		return ""
+	}
 	resp, err := client.R().
 		SetAuthToken(token).
 		Head(url)

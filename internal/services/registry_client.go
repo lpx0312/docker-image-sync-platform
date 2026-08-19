@@ -50,6 +50,7 @@ var (
 	acrClientInstance         RegistryAPIClient
 	swrClientInstance         RegistryAPIClient
 	ccrClientInstance         RegistryAPIClient
+	genericClientInstance     RegistryAPIClient
 )
 
 // IsSWRRegistry 通过地址判断是否为华为云 SWR
@@ -79,6 +80,12 @@ func NewRegistryAPIService(registryType, registryURL string) RegistryAPIClient {
 			ccrClientInstance = NewCcrAPIService()
 		}
 		return ccrClientInstance
+	}
+	if registryType == models.RegistryTypeHarbor || registryType == models.RegistryTypeGeneric {
+		if genericClientInstance == nil {
+			genericClientInstance = NewGenericAPIService()
+		}
+		return genericClientInstance
 	}
 
 	if acrClientInstance == nil {
