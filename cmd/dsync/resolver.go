@@ -66,7 +66,7 @@ func resolveAcrByNamespace(c *Client, ns string) (*AcrRegistryInfo, error) {
 		}
 		return nil, fmt.Errorf("未找到别名为 %q 的镜像仓库，可用别名：%s", ns, strings.Join(names, ", "))
 	default:
-		return nil, fmt.Errorf("%q 同时是多个仓库的 namespace（ACR/SWR 可能同名），请改用别名指定", ns)
+		return nil, fmt.Errorf("%q 同时是多个仓库的 namespace（各厂商命名空间可能同名），请改用别名指定", ns)
 	}
 }
 

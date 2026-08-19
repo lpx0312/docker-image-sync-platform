@@ -12,7 +12,7 @@ import (
 // searchCmd dsync search <关键词> [--acr ns] [--refresh]
 var searchCmd = &cobra.Command{
 	Use:   "search <关键词>",
-	Short: "跨 ACR 搜索镜像仓库与 Tag",
+	Short: "跨仓库搜索镜像仓库与 Tag",
 	Long: `在所有 ACR（或 --acr 指定的 ACR）中按关键词子串搜索仓库名与 Tag。
 
 仓库匹配来自平台本地库（即时）；Tag 匹配来自本地 tag 缓存，

@@ -2,16 +2,16 @@
 name: dsync-cli
 description: >-
   使用 dsync CLI 操作 Docker 镜像同步平台：将海外镜像（Docker Hub / ghcr.io / k8s.gcr.io / quay.io 等）
-  同步到本平台绑定的镜像仓库（阿里云 ACR / 华为云 SWR）并获取国内可直接拉取的地址；查询各仓库的镜像、Tag 与配额用量；
-  跨 ACR 搜索镜像、确认某镜像是否已同步过；查看同步任务进度、排查并重试失败任务；
+  同步到本平台绑定的镜像仓库（阿里云 ACR / 华为云 SWR / 腾讯云 CCR / Harbor / 通用 Registry）并获取国内可直接拉取的地址；查询各仓库的镜像、Tag 与配额用量；
+  跨仓库搜索镜像、确认某镜像是否已同步过；查看同步任务进度、排查并重试失败任务；
   把 k8s 部署文件里的海外镜像整体换成国内地址。
 
-  触发场景：用户想同步/搬运/转存镜像到国内、需要镜像的阿里云拉取地址、问"ACR 里有哪些镜像/Tag/配额"、
+  触发场景：用户想同步/搬运/转存镜像到国内、需要国内拉取地址、问"仓库里有哪些镜像/Tag/配额"、
   搜索或确认镜像是否同步过、查询同步任务是否完成、部署文件换国内源；
   以及症状式表达——docker pull 超时/失败/卡住、k8s ImagePullBackOff/ErrImagePull 等海外源导致的拉取问题
   （即使没提"同步"或"国内"也应触发）。
 
-  不适用：镜像构建与 Dockerfile 编写、在仓库建仓/删仓、仓库凭证管理、同步到 Harbor 或其他厂商仓库。
+  不适用：镜像构建与 Dockerfile 编写、在仓库建仓/删仓、仓库凭证管理、同步到平台未支持类型的仓库。
 ---
 
 # dsync CLI · Docker 镜像同步平台操作
@@ -33,16 +33,16 @@ description: >-
 | 需求 | 命令 |
 |---|---|
 | 同步单个镜像并等待完成 | `bin/dsync sync <镜像>[:tag]` |
-| 同步到指定 ACR | `bin/dsync sync nginx:1.25 --acr <namespace>` |
+| 同步到指定仓库 | `bin/dsync sync nginx:1.25 --acr <别名>` |
 | 批量同步 | `bin/dsync batch -f images.txt [--acr ns]` |
 | 只提交不等待（脚本场景） | `bin/dsync sync <镜像> --no-wait` |
 | 查任务状态 | `bin/dsync task status <task-id>` / `task list [--status failed]` |
 | 重试失败记录 | `bin/dsync retry --task <task-id>` |
-| 列出镜像仓库、配额用量（TYPE 列区分 ACR/SWR） | `bin/dsync acr list` |
-| 查某 ACR 的镜像仓库 | `bin/dsync repo list [--acr ns] [--filter kw]` |
+| 列出镜像仓库、配额用量（TYPE 列区分 5 种类型，ALIAS 列为引用标识；除 ACR 外配额「不限」） | `bin/dsync acr list` |
+| 查某仓库的镜像列表 | `bin/dsync repo list [--acr ns] [--filter kw]` |
 | 查某仓库的全部 Tag | `bin/dsync tag list <仓库名> [--acr ns]` |
-| 跨 ACR 搜仓库和 Tag | `bin/dsync search <关键词>` |
-| 查镜像归属/推荐 ACR | `bin/dsync check <镜像>` / `bin/dsync suggest <镜像>` |
+| 跨仓库搜仓库和 Tag | `bin/dsync search <关键词>` |
+| 查镜像归属/推荐目标仓库 | `bin/dsync check <镜像>` / `bin/dsync suggest <镜像>` |
 
 所有命令支持 `--json`（脚本处理时用它，配合 jq）。
 
@@ -57,17 +57,17 @@ description: >-
 
 **先查再提交**。用户只要"能拉的地址"时，先 `check <镜像>` + `tag list <仓库>` 确认是否已同步过：已存在就直接给完整地址，**跳过提交**；未同步且用户没有明确要求同步时，报告查询结果并等待指示，**不要自动提交**。
 
-**同步是异步任务**。`dsync sync` 默认阻塞轮询直到完成（通常 1~5 分钟），成功后打印 `✓ 源镜像 -> ACR完整地址`——这是交付物，直接转述给用户。脚本/批量场景加 `--no-wait` 拿 task-id，之后 `task status <id>` 查询。
+**同步是异步任务**。`dsync sync` 默认阻塞轮询直到完成（通常 1~5 分钟），成功后打印 `✓ 源镜像 -> 目标仓库完整地址`——这是交付物，直接转述给用户。脚本/批量场景加 `--no-wait` 拿 task-id，之后 `task status <id>` 查询。
 
 **查重拦截是特性，不是错误**。提交前 CLI 自动检查，遇到以下报错说明镜像早已同步过，**把拦截消息里的完整地址直接给用户即可，不要加 --force 重试**：
 
 ```
-Error: 已拦截: 镜像已存在于目标 ACR（registry.cn-hangzhou.aliyuncs.com/lpx03/nginx:1.25.1），无需重复同步；确要重试请加 --force
+Error: 已拦截: 镜像已存在于目标仓库（registry.cn-hangzhou.aliyuncs.com/lpx03/nginx:1.25.1），无需重复同步；确要重试请加 --force
 ```
 
 只有用户明确说要"重新同步/覆盖"时才用 `--force`。
 
-**目标 ACR 用 namespace 引用**（如 `lpx03`、`lpx0312`，用 `acr list` 查看），不是 registry 地址。不指定时 CLI 自动按亲和性选择并打印所选 ACR——向用户复述这一行即可。
+**目标仓库用别名引用**（`acr list` 的 ALIAS 列，兼容直接传 namespace；namespace 同名冲突时报错要求改用别名），不是 registry 地址。不指定时 CLI 自动按亲和性选择并打印所选仓库——向用户复述这一行即可。
 
 **执行确认策略**：用户明确说"同步 xxx"→ 直接执行；AI 自己发起的批量同步 → 先列清单确认（模板见下），确认后执行。
 
@@ -96,8 +96,8 @@ Error: 已拦截: 镜像已存在于目标 ACR（registry.cn-hangzhou.aliyuncs.c
 
 ## 查询：数据源差异
 
-- `repo list` / `search` 的**仓库匹配**查平台本地库（即时）；本地库与 ACR 实际状态可能漂移，查不到不代表 ACR 没有。
-- `tag list` 是**实时**查 ACR，最准确，查重判断以它为准。核对某个具体 Tag 是否存在时用 `--json` 精确匹配（如 `tag list <repo> --json | jq -r '.[].Tags[]' | grep -x <tag>`），勿凭多列排版目测——相近 Tag（如 `7.2.12` 与 `7.2.12-alpine`）肉眼极易混淆。
+- `repo list` / `search` 的**仓库匹配**查平台本地库（即时）；本地库与远程仓库实际状态可能漂移，查不到不代表远程没有。
+- `tag list` 是**实时**查目标仓库（按类型自动适配认证），最准确，查重判断以它为准。核对某个具体 Tag 是否存在时用 `--json` 精确匹配（如 `tag list <repo> --json | jq -r '.[].Tags[]' | grep -x <tag>`），勿凭多列排版目测——相近 Tag（如 `7.2.12` 与 `7.2.12-alpine`）肉眼极易混淆。
 - `tag list` 传裸仓库名即可（自动定位）；仓库在多个 ACR 存在时全部展示；本地库漂移导致定位失败时加 `--acr` 指定。
 - `search` 的 Tag 匹配来自本地缓存：首次搜索会拉全部仓库 Tag 建缓存（可能几十秒），之后秒出；出现"N 个仓库 Tag 拉取失败"警告时，对关键镜像用 `tag list` 实时验证，勿只信缓存。
 - Tag 里的 `-amd64-tmp` / `-arm64-tmp` 后缀是平台同步多架构镜像的中间产物，**给用户无后缀的主 Tag 即可**（指向多架构 manifest）。

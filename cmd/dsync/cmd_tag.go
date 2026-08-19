@@ -51,7 +51,7 @@ var tagListCmd = &cobra.Command{
 				}
 			}
 			if len(targets) == 0 {
-				return fmt.Errorf("仓库 %q 在平台本地库中不存在；若确认 ACR 中已存在，请用 --acr 指定所属 ACR", repo)
+				return fmt.Errorf("仓库 %q 在平台本地库中不存在；若确认远程仓库中已存在，请用 --acr 指定所属仓库（别名优先）", repo)
 			}
 		}
 
@@ -86,7 +86,7 @@ var tagListCmd = &cobra.Command{
 }
 
 func init() {
-	tagListCmd.Flags().String("acr", "", "仓库所属 ACR（namespace，默认自动定位）")
+	tagListCmd.Flags().String("acr", "", "仓库所属镜像仓库（别名优先，默认自动定位）")
 	tagCmd.AddCommand(tagListCmd)
 	rootCmd.AddCommand(tagCmd)
 }

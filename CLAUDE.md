@@ -4,7 +4,7 @@
 
 ## 项目概览
 
-本项目为 Docker 镜像同步平台：后端 Go、前端 Vue.js，通过 GitHub Actions 工作流，将 Docker Hub、GCR 等来源的镜像自动同步到阿里云容器镜像服务（ACR）。
+本项目为 Docker 镜像同步平台：后端 Go、前端 Vue.js，通过 GitHub Actions 工作流，将 Docker Hub、GCR 等来源的镜像自动同步到绑定的目标仓库——支持阿里云 ACR、华为云 SWR、腾讯云 CCR、Harbor、通用 Registry（OCI v2）五种类型多实例混管（以别名 ALIAS 标识区分）。
 
 ## 架构概览
 
@@ -88,19 +88,32 @@ docker-image-sync-platform/
 
 ### 5. 同步处理器
 - `internal/handlers/sync.go`
-- 处理镜像同步请求
+- 处理镜像同步请求（单条/批量），按目标仓库分组触发 workflow_dispatch（通用 inputs：registry/namespace/registry_user/registry_password），多目标分组串行提交
 - 支持单条与批量同步
 
-### 6. Git 优化服务
+### 6. 镜像仓库服务（多类型 Registry）
+- `internal/services/registry_client.go` — `RegistryAPIClient` 统一接口 + 工厂 `NewRegistryAPIService(registryType, registryURL)`，按类型分发（地址含 myhuaweicloud.com/tencentyun.com 时兜底识别）
+- `internal/services/acr_api.go` — 阿里云 ACR 客户端（dockerauth token）
+- `internal/services/swr_api.go` — 华为云 SWR 客户端（数据面 Bearer token + 管理面 AK/SK 签名列仓库）
+- `internal/services/ccr_api.go` — 腾讯云 CCR 客户端（数据面复用通用 bearer 客户端 + 腾讯云 API 列仓库）
+- `internal/services/generic_api.go` — 通用 OCI v2 客户端（Basic 直连优先，401 Bearer challenge 自动切换；覆盖 Harbor/自建仓库）
+- `internal/services/registry_v2_auth.go` — SWR/CCR 共用的 Bearer v2 认证基座
+- `internal/services/registry_common.go` — 各客户端共用的 manifest/Tag 解析层
+- `internal/services/swr_signer.go` — 华为云 APIGW SDK-HMAC-SHA256 请求签名
+- `internal/services/acr_registry.go` — 仓库实例 CRUD、别名查重、连接测试
+- `internal/services/acr_repository.go` — 仓库台账（批量添加远程校验/清理无效/从同步记录导入/从仓库导入）
+- `internal/services/acr_affinity.go` — 仓库归属亲和与配额路由（仅 ACR 个人版 300 限额，其余类型不限）
+
+### 7. Git 优化服务
 - `internal/services/git_optimized.go`
 - 带缓存与稀疏检出的 Git 操作
 - 含 GitHub 代码操作测试：`PullImagesFileForTesting()`、`UpdateImagesFileForTesting()`
 
-### 7. Git API 与接口抽象
+### 8. Git API 与接口抽象
 - `internal/services/git_api.go` — 基于 HTTP API 的 Git 操作实现
 - `internal/services/git_interfaces.go` — Git 服务接口定义
 
-### 8. 工具函数
+### 9. 工具函数
 - `internal/utils/acr.go` — ACR 镜像地址解析与构建
 - `internal/utils/git_config.go` — Git 配置辅助
 - `internal/utils/git_url.go` — Git URL 解析
@@ -150,6 +163,35 @@ docker-image-sync-platform/
 - `GET /sync/batch/status/:taskId` — 查询批量任务状态（已废弃，返回 410 Gone）
 - `GET /sync/history` — 同步历史
 
+### 镜像仓库实例 (Config) — 读需 config/sync/images 任一权限，写需 `config` 权限
+- `GET /acr-registries` — 仓库实例列表（含 registry_type/alias/access_key）
+- `GET /acr-registries/:id` — 详情
+- `GET /acr-registries/default` — 默认仓库
+- `GET /acr-registries/quota-summary` — 配额摘要（含 registry_type/alias；repo_quota=0 表示不限）
+- `POST /acr-registries` — 创建（支持 registry_type=acr|swr|ccr|harbor|generic、alias 别名查重、access_key/secret_key 管理面凭证）
+- `PUT /acr-registries/:id` — 更新（密码/SK 传 `***` 表示不变）
+- `PUT /acr-registries/:id/default` — 设为默认
+- `POST /acr-registries/:id/test` — 连接测试（登录凭证必测；SWR 额外测 AK/SK、CCR 额外测 SecretId/Key）
+- `DELETE /acr-registries/:id` — 删除
+
+### 镜像仓库台账 (Images) — 需 `images` 权限
+- `GET /acr-repositories?acr_registry_id=` — 台账列表
+- `POST /acr-repositories` / `POST /acr-repositories/batch` — 添加/批量添加（逐个远程校验存在性）
+- `POST /acr-repositories/batch-delete` / `DELETE /acr-repositories/:id` — 删除
+- `POST /acr-repositories/clean-invalid` — 清理本地存在但远程不存在的记录
+- `POST /acr-repositories/sync-from-records` — 从同步记录导入
+- `POST /acr-repositories/import-from-registry` — 从远程仓库导入镜像列表（ACR/generic 走 _catalog，SWR 走管理面 API，CCR 走腾讯云 API）
+- `GET /acr-repositories/duplicates` — 跨仓库重复仓库名报告
+
+### 镜像仓库 Tag 查询 (Images) — 需 `images` 权限
+- `GET /acr-tags?acr_registry_id=&repository_name=` — Tag 名称列表
+- `GET /acr-tags/details?...&tags=a,b` — 批量 Tag 详情（架构/digest/大小/推送时间）
+- `GET /acr-tags/detail?...&tag=` — 单 Tag 详情
+
+### 亲和与建议 (Sync) — 需登录
+- `GET /sync/suggest-acr?image=` — 推荐目标仓库（返回 suggested_alias/suggested_namespace 与理由）
+- `POST /sync/check-acr` — 批量检查镜像与所选仓库的归属冲突
+
 ### 镜像管理 (Images) — 需登录
 - `GET /images/list` — 分页列表（支持搜索、状态与架构筛选）
 - `GET /images/stats` — 各状态数量统计
@@ -193,7 +235,7 @@ docker-image-sync-platform/
 - `server`：HTTP 服务
 - `database`：MySQL
 - `git`：Gitee/GitHub 仓库及优化参数（操作模式、稀疏检出、缓存等）
-- `aliyun`：阿里云镜像仓库
+- `aliyun`：阿里云 ACR 默认兜底配置（多类型仓库实例在 Web 端「镜像仓库配置」中管理）
 - `log`：日志
 - `sync`：同步任务（超时、并发、重试等）
 - `auth`：JWT 认证（密钥、Token 有效期、自动登出、默认管理员账号）
@@ -212,6 +254,8 @@ docker-image-sync-platform/
 ## 数据库模型
 
 ### 核心表
+- `acr_registries`：镜像仓库实例（registry_url/namespace/**alias 别名**/username/password 加密/auth_server/docker_service（ACR 专用）/**registry_type（acr|swr|ccr|harbor|generic）**/**access_key/secret_key（SWR/CCR 管理面凭证，SK 加密）**/is_default）
+- `acr_repositories`：仓库台账（acr_registry_id + repository_name）
 - `image_sync_records`：单条镜像同步记录
 - `sync_tasks`：批量任务
 - `system_configs`：加密配置
@@ -258,7 +302,10 @@ docker-image-sync-platform/
 - `BatchSyncForm.vue` — 批量同步
 - `GitConfigForm.vue` — Git 配置与 GitHub 测试入口
 - `GitTestResultDialog.vue` — 测试结果展示
-- `AliyunConfigForm.vue` — ACR 配置
+- `AliyunConfigForm.vue` — 镜像仓库配置列表（类型标签/别名/连接测试）
+- `AcrRegistryDialog.vue` — 添加/编辑仓库（类型下拉：ACR/SWR/CCR/Harbor/通用；别名；SWR 的 AK/SK、CCR 的 SecretId/Key 管理面凭证区）
+- `ImagesManageView.vue` — 镜像管理台账页（配额卡片、从仓库导入）
+- `ImageTagsView.vue` — 仓库 Tag 浏览页
 - `ChangePasswordDialog.vue` — 修改密码对话框
 
 ### 状态管理
@@ -466,7 +513,7 @@ sudo docker restart docker-sync-mysql-dev
 ### 环境变量
 - 数据库连接
 - Git 仓库凭据
-- 阿里云镜像配置
+- 阿里云 ACR 默认兜底配置（多仓库实例在 Web 端管理）
 - 服务与日志相关项
 
 ## 故障排查

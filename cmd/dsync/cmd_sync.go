@@ -38,7 +38,7 @@ func decideDedup(item checkAcrItem, effectiveAcrID uint, registryURL, effectiveA
 					addr := fmt.Sprintf("%s/%s/%s:%s", registryURL, effectiveNs, item.RepositoryName, targetTag)
 					return dedupOutcome{
 						Action:  "block",
-						Message: fmt.Sprintf("镜像已存在于目标 ACR（%s），无需重复同步；确要重试请加 --force", addr),
+						Message: fmt.Sprintf("镜像已存在于目标仓库（%s），无需重复同步；确要重试请加 --force", addr),
 					}
 				}
 			}
@@ -69,8 +69,8 @@ var syncCmd = &cobra.Command{
 
 提交前自动查重（--force 跳过）：
   - 仓库已归属其他 ACR 时拦截
-  - 目标 ACR 已存在相同 仓库:Tag 时拦截
-未指定 --acr 时按服务端亲和性逻辑自动选择目标 ACR（与 Web 端一致）。`,
+  - 目标仓库已存在相同 仓库:Tag 时拦截
+未指定 --acr 时按服务端亲和性逻辑自动选择目标仓库（与 Web 端一致）。`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		image := args[0]
@@ -94,7 +94,7 @@ var syncCmd = &cobra.Command{
 		} else {
 			sug, err := suggestAcr(client, image)
 			if err != nil {
-				return fmt.Errorf("推荐目标 ACR 失败: %w", err)
+				return fmt.Errorf("推荐目标仓库失败: %w", err)
 			}
 			regs, err := listRegistries(client)
 			if err != nil {

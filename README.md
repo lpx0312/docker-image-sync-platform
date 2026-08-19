@@ -4,15 +4,22 @@
 [![Go Version](https://img.shields.io/badge/Go-1.21+-blue.svg)](https://golang.org)
 [![Vue Version](https://img.shields.io/badge/Vue-3.0+-green.svg)](https://vuejs.org)
 
-一个功能完整的Docker镜像自动化同步平台，专为解决国内访问Docker Hub等海外镜像仓库困难而设计。通过Web界面轻松管理镜像同步任务，自动将镜像同步到阿里云容器镜像服务(ACR)或华为云容器镜像服务(SWR)，提供稳定可靠的镜像访问服务。
+一个功能完整的Docker镜像自动化同步平台，专为解决国内访问Docker Hub等海外镜像仓库困难而设计。通过Web界面轻松管理镜像同步任务，自动将镜像同步到绑定的目标仓库——支持阿里云 ACR、华为云 SWR、腾讯云 CCR、Harbor 与通用 Registry（OCI/Docker v2）五种类型多实例混管，提供稳定可靠的镜像访问服务。
 
 ## ✨ 核心特性
 
 ### 🚀 自动化同步
 - **一键同步**: 简单输入镜像名称即可启动同步流程
-- **智能流程**: Gitee → GitHub → Actions → 阿里云ACR / 华为云SWR 全自动化
+- **智能流程**: Gitee → GitHub → Actions → 目标镜像仓库全自动化（可选配置 SWR 附加推送，每次同步自动双写备份）
 - **多源支持**: DockerHub、gcr.io、k8s.io、ghcr.io、quay.io等主流镜像仓库
 - **架构兼容**: 支持AMD64、ARM64等多种CPU架构
+
+### 🗂️ 多仓库管理
+- **五种类型**: 阿里云 ACR / 华为云 SWR / 腾讯云 CCR / Harbor / 通用 Registry（OCI v2），同类型可配多个实例
+- **别名标识**: 仓库以别名（ALIAS）区分与引用，避免各厂商命名空间同名冲突
+- **连接测试**: 每个仓库配置支持一键测试（登录凭证 + SWR/CCR 管理面 AK/SK），配置错误即时暴露
+- **仓库导入**: 支持从远程仓库拉取镜像列表导入台账（ACR/generic 走 `_catalog`，SWR 走管理面 API，CCR 走腾讯云 API）
+- **配额感知**: ACR 个人版按 300 仓库配额参与目标路由，其余类型不限
 
 ### 📊 实时监控
 - **状态跟踪**: 实时显示同步进度和状态
@@ -136,7 +143,7 @@ GITEE_PASSWORD=your-gitee-password
 GITHUB_USERNAME=your-github-username
 GITHUB_TOKEN=your-github-token
 
-# 阿里云ACR配置（必填）
+# 阿里云ACR配置（默认兜底配置；多仓库实例请在 Web 端「系统配置 → 镜像仓库配置」中添加）
 ALIYUN_REGISTRY=registry.cn-hangzhou.aliyuncs.com
 ALIYUN_NAMESPACE=your-namespace
 ALIYUN_USERNAME=your-aliyun-username
@@ -240,7 +247,7 @@ git:
     token: "ghp_your-github-token"
     repo_url: "https://github.com/your-username/docker_image_pusher.git"
 
-# 阿里云ACR配置
+# 阿里云ACR配置（默认兜底；多类型仓库实例在 Web 端「镜像仓库配置」中管理）
 aliyun:
   registry: "registry.cn-hangzhou.aliyuncs.com"
   namespace: "your-namespace"
@@ -513,6 +520,9 @@ A: 支持所有公开的Docker镜像仓库，包括：
 - Quay.io
 - 其他符合OCI标准的镜像仓库
 
+### Q: 支持同步到哪些目标仓库？
+A: 阿里云 ACR、华为云 SWR、腾讯云 CCR（个人版）、Harbor、通用 Registry（OCI/Docker v2）五种类型，可在「镜像仓库配置」中添加多个实例并用别名区分；同步任务按亲和性/默认仓库自动路由，也可手动指定目标。
+
 ### Q: 同步失败怎么办？
 A: 常见原因包括：
 - 网络连接问题
@@ -525,12 +535,19 @@ A: 常见原因包括：
 A: 修改 `deploy/docker-signal/nginx.conf` 或 `deploy/docker-all/nginx-all.conf` 中的 Nginx 配置。
 
 ### Q: 支持私有镜像仓库吗？
-A: 目前主要支持公开镜像仓库，私有仓库支持正在开发中。
+A: 目标仓库支持私有——Harbor 与通用 Registry 类型可对接自建私有仓库（Harbor 需公网有效 TLS 证书）；源镜像侧 Docker Hub / ghcr.io 的私有拉取凭证可在同步执行仓库的 vars/secrets 中配置。
 
 ### Q: 如何批量导入镜像列表？
-A: 可以使用批量同步功能，或通过API接口批量提交同步任务。
+A: 镜像管理页支持「从仓库导入」（远程拉取已有仓库列表）、「批量添加」（逐个远程校验存在性）、「从同步记录导入」三种方式建立台账；同步侧可使用批量同步功能或 `dsync batch -f images.txt`。
 
 ## 🔄 更新日志
+
+### v2.1.0 (2026-08)
+- ✨ 多类型目标仓库：华为云 SWR（双凭证：登录凭证 + 管理面 AK/SK）、腾讯云 CCR、Harbor、通用 Registry
+- ✨ 镜像仓库别名（ALIAS）体系：展示/选择/CLI 引用统一按别名，老数据自动迁移
+- ✨ 仓库连接测试、从仓库导入镜像列表
+- ✨ 同步流水线目标参数通用化；可选 SWR 附加推送（自动双写备份）
+- ✨ 镜像管理（台账/Tag/架构/清理）全链路适配多类型仓库
 
 ### v2.0.0 (2024-01-15)
 - ✨ 新增批量同步功能

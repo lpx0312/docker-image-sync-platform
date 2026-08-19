@@ -46,7 +46,7 @@ ss -tlnp | grep -E ':3000|:8080|:3306'
 | T3 | 批量镜像同步 | Tab 切换、手动输入/文件导入 Radio、表单填写 |
 | T4 | 镜像列表 | 搜索、状态/架构筛选、去重勾选、批量检测、复制、详情弹层 |
 | T5 | 系统配置 - Git | 字段完整性、仓库类型切换（Gitee ↔ GitHub） |
-| T6 | 系统配置 - 阿里云 | 字段完整性、密码填写后保存按钮激活 |
+| T6 | 系统配置 - 镜像仓库 | 字段完整性、密码填写后保存按钮激活 |
 | T7 | 系统配置 - 系统设置 | 同步间隔/最大并发 spinbutton 调整 |
 | T8 | GitHub Actions | 检查 API 限制、状态筛选、运行详情弹层 |
 | T9 | 用户管理 | 新建用户弹层校验、修改密码校验、登录日志筛选 |
@@ -310,10 +310,10 @@ chrome-devtools fill "<Gitee密码textboxUID>" "test-pass"
 
 ---
 
-### T6 — 系统配置阿里云
+### T6 — 系统配置镜像仓库
 
 ```bash
-chrome-devtools click "<阿里云配置TabUID>"
+chrome-devtools click "<镜像仓库配置TabUID>"
 ```
 
 **T6-a：字段完整性**
