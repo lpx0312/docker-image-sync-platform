@@ -26,7 +26,7 @@
               <el-option
                 v-for="item in acrList"
                 :key="item.id"
-                :label="item.namespace"
+                :label="`${item.alias || item.namespace}（${typeLabel(item)}）`"
                 :value="item.id"
               />
             </el-select>
@@ -128,7 +128,7 @@ const handleTest = async (row) => {
       }
     }
     const ok = r.login_ok && (r.registry_type !== 'swr' || r.manage_ok || r.manage_skipped)
-    ElMessageBox.alert(lines.join('\n'), `连接测试 - ${row.namespace}`, {
+    ElMessageBox.alert(lines.join('\n'), `连接测试 - ${row.alias || row.namespace}`, {
       type: ok ? 'success' : 'error',
       confirmButtonText: '知道了',
     })
