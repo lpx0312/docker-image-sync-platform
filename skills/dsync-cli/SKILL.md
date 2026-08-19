@@ -39,7 +39,9 @@ description: >-
 | 查任务状态 | `bin/dsync task status <task-id>` / `task list [--status failed]` |
 | 重试失败记录 | `bin/dsync retry --task <task-id>` |
 | 列出镜像仓库、配额用量（TYPE 列区分 5 种类型，ALIAS 列为引用标识；除 ACR 外配额「不限」） | `bin/dsync acr list` |
-| 查某仓库的镜像列表 | `bin/dsync repo list [--acr ns] [--filter kw]` |
+| 测试仓库配置连通性（登录凭证 + SWR/CCR 管理面凭证） | `bin/dsync acr test [别名]` |
+| 查某仓库的镜像台账 | `bin/dsync repo list [--acr ns] [--filter kw]` |
+| 从远程仓库导入镜像列表 | `bin/dsync repo import --acr <别名>` |
 | 查某仓库的全部 Tag | `bin/dsync tag list <仓库名> [--acr ns]` |
 | 跨仓库搜仓库和 Tag | `bin/dsync search <关键词>` |
 | 查镜像归属/推荐目标仓库 | `bin/dsync check <镜像>` / `bin/dsync suggest <镜像>` |
@@ -96,7 +98,7 @@ Error: 已拦截: 镜像已存在于目标仓库（registry.cn-hangzhou.aliyuncs
 
 ## 查询：数据源差异
 
-- `repo list` / `search` 的**仓库匹配**查平台本地库（即时）；本地库与远程仓库实际状态可能漂移，查不到不代表远程没有。
+- `repo list` / `search` 的**仓库匹配**查平台本地库（即时）；本地库与远程仓库实际状态可能漂移，查不到不代表远程没有。对账用 `repo import`（远程拉取补齐）/ `repo sync-records`（同步记录补齐）/ `repo clean --yes`（清理失效记录）。
 - `tag list` 是**实时**查目标仓库（按类型自动适配认证），最准确，查重判断以它为准。核对某个具体 Tag 是否存在时用 `--json` 精确匹配（如 `tag list <repo> --json | jq -r '.[].Tags[]' | grep -x <tag>`），勿凭多列排版目测——相近 Tag（如 `7.2.12` 与 `7.2.12-alpine`）肉眼极易混淆。
 - `tag list` 传裸仓库名即可（自动定位）；仓库在多个 ACR 存在时全部展示；本地库漂移导致定位失败时加 `--acr` 指定。
 - `search` 的 Tag 匹配来自本地缓存：首次搜索会拉全部仓库 Tag 建缓存（可能几十秒），之后秒出；出现"N 个仓库 Tag 拉取失败"警告时，对关键镜像用 `tag list` 实时验证，勿只信缓存。

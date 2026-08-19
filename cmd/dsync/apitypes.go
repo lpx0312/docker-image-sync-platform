@@ -190,3 +190,55 @@ func suggestReasonText(reason string) string {
 		return reason
 	}
 }
+
+// registryTestResult POST /acr-registries/:id/test 的结果
+type registryTestResult struct {
+	RegistryType  string `json:"registry_type"`
+	LoginOK       bool   `json:"login_ok"`
+	LoginMessage  string `json:"login_message"`
+	ManageOK      bool   `json:"manage_ok"`
+	ManageMessage string `json:"manage_message"`
+	ManageSkipped bool   `json:"manage_skipped"`
+}
+
+type registryTestResponse struct {
+	Data registryTestResult `json:"data"`
+}
+
+// importFromRegistryResult POST /acr-repositories/import-from-registry 的结果
+type importFromRegistryResult struct {
+	Created           int      `json:"created"`
+	AlreadyExist      int      `json:"already_exist"`
+	CreatedNames      []string `json:"created_names"`
+	AlreadyExistNames []string `json:"already_exist_names"`
+}
+
+type importFromRegistryResponse struct {
+	Data importFromRegistryResult `json:"data"`
+}
+
+// syncFromRecordsResult POST /acr-repositories/sync-from-records 的结果
+type syncFromRecordsResult struct {
+	Created           int      `json:"created"`
+	Skipped           int      `json:"skipped"`
+	AlreadyExist      int      `json:"already_exist"`
+	CreatedNames      []string `json:"created_names"`
+	MissingInACR      []string `json:"missing_in_acr"`
+	CheckFailedNames  []string `json:"check_failed_names"`
+	AlreadyExistNames []string `json:"already_exist_names"`
+}
+
+type syncFromRecordsResponse struct {
+	Data syncFromRecordsResult `json:"data"`
+}
+
+// cleanInvalidResult POST /acr-repositories/clean-invalid 的结果
+type cleanInvalidResult struct {
+	Cleaned          int      `json:"cleaned"`
+	CleanedNames     []string `json:"cleaned_names"`
+	CheckFailedNames []string `json:"check_failed_names"`
+}
+
+type cleanInvalidResponse struct {
+	Data cleanInvalidResult `json:"data"`
+}

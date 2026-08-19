@@ -54,7 +54,11 @@ dsync search nginx
 | `dsync login [--server URL] [--username u]` | 登录并保存凭据；token 过期后自动用保存的密码续登 |
 | `dsync whoami` / `dsync logout` | 查看当前用户 / 登出并清除本地凭据 |
 | `dsync acr list` | 所有镜像仓库 + 仓库配额用量（TYPE 列区分 5 种类型、ALIAS 列为引用标识、`*` 为默认仓库；除 ACR 个人版 300 外配额均显示「不限」） |
-| `dsync repo list [--acr ns] [--filter kw]` | 镜像仓库列表（数据源：平台本地库） |
+| `dsync acr test [别名]` | 测试仓库配置连通性（登录凭证必测；SWR/CCR 额外测管理面凭证；不带别名测全部） |
+| `dsync repo list [--acr ns] [--filter kw]` | 镜像台账列表（ALIAS 列标识所属仓库；数据源：平台本地库） |
+| `dsync repo import --acr <别名>` | 从远程仓库导入镜像列表到台账（ACR/Harbor/通用走 `_catalog`，SWR 走管理面 API，CCR 走腾讯云 API） |
+| `dsync repo sync-records --acr <别名>` | 从平台同步记录导入台账（校验远程仍存在） |
+| `dsync repo clean --acr <别名> --yes` | 清理台账中远程已不存在的记录（不删除远程镜像，需 `--yes` 确认） |
 | `dsync tag list <repo> [--acr ns]` | 某仓库全部 Tag（实时查目标仓库，按类型自动适配认证） |
 | `dsync search <kw> [--acr ns] [--refresh]` | 跨仓库搜索仓库名与 Tag |
 | `dsync sync <源镜像> [flags]` | 提交同步并等待完成 |
@@ -118,7 +122,7 @@ dsync batch -f images.txt --acr my-ns --auto-retry
 
 ## 搜索与 Tag 缓存
 
-- **仓库名搜索**来自平台本地库，即时返回；平台本地库与远程仓库实际状态可能有漂移，可在 Web 端镜像管理执行"从仓库导入 / 从同步记录导入 / 清理无效镜像"对账。
+- **仓库名搜索**来自平台本地库，即时返回；平台本地库与远程仓库实际状态可能有漂移，可对账：`repo import`（从远程拉取补齐）、`repo sync-records`（从同步记录补齐）、`repo clean --yes`（清理远程已不存在的记录），Web 端镜像管理页有同样的操作。
 - **Tag 搜索**来自本地缓存（`~/.config/dsync/tag-cache.json`），超过 24 小时的条目在下次搜索时自动增量刷新；`--refresh` 强制全量刷新。首次搜索会拉取全部仓库的 Tag，视仓库数量可能耗时几十秒。
 
 ## 凭据与安全

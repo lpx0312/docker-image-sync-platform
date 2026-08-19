@@ -538,7 +538,7 @@ A: 修改 `deploy/docker-signal/nginx.conf` 或 `deploy/docker-all/nginx-all.con
 A: 目标仓库支持私有——Harbor 与通用 Registry 类型可对接自建私有仓库（Harbor 需公网有效 TLS 证书）；源镜像侧 Docker Hub / ghcr.io 的私有拉取凭证可在同步执行仓库的 vars/secrets 中配置。
 
 ### Q: 如何批量导入镜像列表？
-A: 镜像管理页支持「从仓库导入」（远程拉取已有仓库列表）、「批量添加」（逐个远程校验存在性）、「从同步记录导入」三种方式建立台账；同步侧可使用批量同步功能或 `dsync batch -f images.txt`。
+A: 镜像管理页支持「从仓库导入」（远程拉取已有仓库列表）、「批量添加」（逐个远程校验存在性）、「从同步记录导入」三种方式建立台账；CLI 侧可用 `dsync repo import --acr <别名>`（从仓库导入）与 `dsync repo sync-records --acr <别名>`；同步侧可使用批量同步功能或 `dsync batch -f images.txt`。
 
 ## 🔄 更新日志
 
