@@ -1,7 +1,11 @@
 package services
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -21,7 +25,7 @@ import (
 //   - Basic 直连 /v2 会被拒绝（401），必须走 token 流程
 //   - scope 必须携带具体 repository:{ns}/{repo}:pull，无 scope 的 token 无仓库访问权限
 //   - 组织不存在时 token 端点直接返回 401 DENIED（"Image organization does not exist"）
-//   - /v2/_catalog 不被支持（404），故 ListRepositories 返回明确错误
+//   - /v2/_catalog 不被支持（404），列举仓库走管理面 API（见 ListRepositories）
 //   - 不存在的仓库 tags/list 返回 200 且 tags 为 null，RepositoryExists 依此判断
 type SwrAPIService struct {
 	client *resty.Client
@@ -352,8 +356,125 @@ func (s *SwrAPIService) GetTagsWithDetails(registry, username, password, namespa
 	return s.GetTagsDetailsBatch(registry, username, password, namespace, repo, authServer, dockerService, tagNames)
 }
 
-// ListRepositories SWR 数据面不支持 /v2/_catalog（实测 404），
-// 远程导入请使用"批量添加"（逐个仓库远程校验存在性）
+// ListRepositories 通过 SWR 管理面 API（swr-api.{region}.myhuaweicloud.com）
+// 列出组织内全部镜像仓库，用于「从仓库导入」。SWR 数据面不支持 /v2/_catalog。
+//
+// 管理面要求永久 IAM AK/SK 签名（与登录指令同源的「区域@AK」/ SK）；
+// 若使用 SWR 控制台的「临时登录指令」（24 小时有效）会被签名校验拒绝。
 func (s *SwrAPIService) ListRepositories(registry, username, password, namespace, authServer, dockerService string) ([]string, error) {
-	return nil, fmt.Errorf("SWR 数据面不支持 _catalog，无法远程列举仓库，请使用批量添加")
+	region := swrRegion(registry, username)
+	if region == "" {
+		return nil, fmt.Errorf("无法从仓库地址 %s 或用户名 %s 推断 SWR 区域", registry, username)
+	}
+	host := fmt.Sprintf("swr-api.%s.myhuaweicloud.com", region)
+	signer := swrSigner{AccessKey: swrAKFromUsername(username), SecretKey: password}
+
+	httpClient := &http.Client{Timeout: 30 * time.Second}
+	repos := make([]string, 0, 64)
+	const limit = 100
+
+	for offset := 0; ; offset += limit {
+		u := &url.URL{
+			Scheme: "https",
+			Host:   host,
+			Path:   "/v2/manage/repos",
+			RawQuery: url.Values{
+				"namespace": []string{namespace},
+				"limit":     []string{fmt.Sprintf("%d", limit)},
+				"offset":    []string{fmt.Sprintf("%d", offset)},
+			}.Encode(),
+		}
+		req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+		if err != nil {
+			return nil, err
+		}
+		signer.sign(req, time.Now())
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("请求 SWR 管理面失败: %w", err)
+		}
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+		resp.Body.Close()
+
+		if resp.StatusCode == http.StatusUnauthorized {
+			return nil, fmt.Errorf("SWR 管理面签名验证失败：当前配置的可能是「临时登录指令」（仅数据面可用且 24 小时过期），请改用永久 IAM AK/SK（华为云控制台「我的凭证 → 访问密钥」，平台中用户名仍填 区域@AK、密码填 SK）")
+		}
+		if resp.StatusCode != http.StatusOK {
+			detail := string(body)
+			if len(detail) > 200 {
+				detail = detail[:200]
+			}
+			return nil, fmt.Errorf("获取 SWR 仓库列表失败: HTTP %d: %s", resp.StatusCode, detail)
+		}
+
+		items, err := parseSwrRepoList(body)
+		if err != nil {
+			return nil, err
+		}
+		for _, it := range items {
+			name := it
+			if idx := strings.LastIndex(name, "/"); idx >= 0 {
+				name = name[idx+1:]
+			}
+			if name = strings.TrimSpace(name); name != "" {
+				repos = append(repos, name)
+			}
+		}
+		if len(items) < limit {
+			break
+		}
+	}
+
+	return repos, nil
+}
+
+// parseSwrRepoList 兼容数组与 {"body":[...]} 两种响应形态
+func parseSwrRepoList(body []byte) ([]string, error) {
+	var arr []struct {
+		Name string `json:"name"`
+		Path string `json:"path"`
+	}
+	if err := json.Unmarshal(body, &arr); err == nil {
+		names := make([]string, 0, len(arr))
+		for _, it := range arr {
+			if it.Name != "" {
+				names = append(names, it.Name)
+			} else if it.Path != "" {
+				names = append(names, it.Path)
+			}
+		}
+		return names, nil
+	}
+
+	var wrapped struct {
+		Body []struct {
+			Name string `json:"name"`
+			Path string `json:"path"`
+		} `json:"body"`
+	}
+	if err := json.Unmarshal(body, &wrapped); err == nil {
+		names := make([]string, 0, len(wrapped.Body))
+		for _, it := range wrapped.Body {
+			if it.Name != "" {
+				names = append(names, it.Name)
+			} else if it.Path != "" {
+				names = append(names, it.Path)
+			}
+		}
+		return names, nil
+	}
+
+	return nil, fmt.Errorf("解析 SWR 仓库列表响应失败")
+}
+
+// swrRegion 从仓库地址（swr.{region}.myhuaweicloud.com）或用户名（{region}@AK）推断区域
+func swrRegion(registry, username string) string {
+	if parts := strings.Split(registry, "."); len(parts) >= 2 && parts[0] == "swr" {
+		return parts[1]
+	}
+	if idx := strings.Index(username, "@"); idx > 0 {
+		return username[:idx]
+	}
+	return ""
 }

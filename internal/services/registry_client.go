@@ -26,8 +26,8 @@ type RegistryAPIClient interface {
 	RepositoryExists(registry, username, password, namespace, repo, authServer, dockerService string) (bool, error)
 	// IsRepositoryNotFound 错误是否表示仓库不存在
 	IsRepositoryNotFound(err error) bool
-	// ListRepositories 列出远程仓库中的全部镜像仓库名（"从仓库导入"用；
-	// SWR 数据面不支持 _catalog，将返回明确错误）
+	// ListRepositories 列出远程仓库中的全部镜像仓库名（"从仓库导入"用）；
+	// SWR 走管理面 API（需永久 IAM AK/SK），ACR 走 /v2/_catalog
 	ListRepositories(registry, username, password, namespace, authServer, dockerService string) ([]string, error)
 }
 

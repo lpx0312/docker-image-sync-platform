@@ -71,7 +71,6 @@
           批量添加
         </el-button>
         <el-button
-          v-if="!selectedIsSwr"
           type="success"
           size="small"
           plain
@@ -275,11 +274,6 @@ const formatQuotaCount = (item) => {
   if (!item || !item.repo_quota) return `${item?.repo_count ?? 0}/不限`
   return `${item.repo_count}/${item.repo_quota}`
 }
-
-const selectedIsSwr = computed(() => {
-  const selected = acrList.value.find(item => item.id === selectedAcrId.value)
-  return selected?.registry_type === 'swr'
-})
 
 const getQuotaPercent = (item) => {
   if (!item.repo_quota) return 0

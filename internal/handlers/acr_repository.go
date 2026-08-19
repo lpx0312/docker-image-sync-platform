@@ -205,7 +205,7 @@ func (h *AcrRepositoryHandler) SyncFromRecords(c *gin.Context) {
 	})
 }
 
-// ImportFromRegistry 从远程仓库导入镜像列表（/v2/_catalog；SWR 不支持时返回明确错误）
+// ImportFromRegistry 从远程仓库导入镜像列表（ACR 走 /v2/_catalog，SWR 走管理面 API）
 func (h *AcrRepositoryHandler) ImportFromRegistry(c *gin.Context) {
 	var req models.AcrRepositorySyncRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
