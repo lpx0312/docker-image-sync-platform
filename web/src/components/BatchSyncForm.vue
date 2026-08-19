@@ -202,7 +202,7 @@ const forceOverrideWarning = computed(() => {
 })
 
 const getAcrLabel = (item) => {
-  const typeText = item.registry_type === 'swr' ? ' · SWR' : ''
+  const typeText = item.registry_type === 'swr' ? ' · SWR' : item.registry_type === 'ccr' ? ' · CCR' : ''
   const name = item.alias || item.namespace
   const quota = quotaMap.value[item.id]
   if (quota) {

@@ -15,8 +15,8 @@
           <div class="quota-label">
             <span>
               {{ item.alias || item.namespace }}
-              <el-tag :type="item.registry_type === 'swr' ? 'warning' : 'primary'" size="small" style="margin-left: 6px;">
-                {{ item.registry_type === 'swr' ? '华为 SWR' : '阿里 ACR' }}
+              <el-tag :type="item.registry_type === 'swr' ? 'warning' : item.registry_type === 'ccr' ? 'success' : 'primary'" size="small" style="margin-left: 6px;">
+                {{ item.registry_type === 'swr' ? '华为 SWR' : item.registry_type === 'ccr' ? '腾讯 CCR' : '阿里 ACR' }}
               </el-tag>
             </span>
             <span class="quota-count">{{ formatQuotaCount(item) }}</span>
@@ -262,7 +262,7 @@ onMounted(() => {
 })
 
 const getAcrLabel = (item) => {
-  const typeText = item.registry_type === 'swr' ? ' · SWR' : ''
+  const typeText = item.registry_type === 'swr' ? ' · SWR' : item.registry_type === 'ccr' ? ' · CCR' : ''
   const name = item.alias || item.namespace
   const quota = quotaMap.value[item.id]
   if (quota) {

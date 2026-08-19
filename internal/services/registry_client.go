@@ -27,8 +27,8 @@ type RegistryAPIClient interface {
 	// IsRepositoryNotFound 错误是否表示仓库不存在
 	IsRepositoryNotFound(err error) bool
 	// ListRepositories 列出远程仓库中的全部镜像仓库名（"从仓库导入"用）；
-	// ACR 走 /v2/_catalog；SWR 走管理面 API（accessKey/secretKey 为 IAM AK/SK，
-	// 未配置时返回明确错误）
+	// ACR 走 /v2/_catalog；SWR/CCR 走各自管理面 API（accessKey/secretKey 为
+	// SWR 的 IAM AK/SK 或 CCR 的 SecretId/SecretKey，未配置时返回明确错误）
 	ListRepositories(registry, username, password, accessKey, secretKey, namespace, authServer, dockerService string) ([]string, error)
 	// TestConnection 测试仓库配置连通性：登录凭证（推送/拉取）必测；
 	// SWR 额外测试管理面 AK/SK（获取镜像列表用）
@@ -49,6 +49,7 @@ var (
 	registryClientInstancesMu sync.Mutex
 	acrClientInstance         RegistryAPIClient
 	swrClientInstance         RegistryAPIClient
+	ccrClientInstance         RegistryAPIClient
 )
 
 // IsSWRRegistry 通过地址判断是否为华为云 SWR
@@ -56,20 +57,30 @@ func IsSWRRegistry(registry string) bool {
 	return strings.Contains(strings.ToLower(registry), "myhuaweicloud.com")
 }
 
+// IsCCRRegistry 通过地址判断是否为腾讯云 CCR
+func IsCCRRegistry(registry string) bool {
+	return strings.Contains(strings.ToLower(registry), "tencentyun.com")
+}
+
 // NewRegistryAPIService 按仓库类型返回对应的 API 客户端（进程内单例，保留 token 缓存）。
-// registryURL 兜底识别：地址含 myhuaweicloud.com 时即使类型缺失也按 SWR 处理。
+// registryURL 兜底识别：地址含 myhuaweicloud.com / tencentyun.com 时即使类型缺失也按对应类型处理。
 func NewRegistryAPIService(registryType, registryURL string) RegistryAPIClient {
+	registryClientInstancesMu.Lock()
+	defer registryClientInstancesMu.Unlock()
+
 	if registryType == models.RegistryTypeSWR || IsSWRRegistry(registryURL) {
-		registryClientInstancesMu.Lock()
-		defer registryClientInstancesMu.Unlock()
 		if swrClientInstance == nil {
 			swrClientInstance = NewSwrAPIService()
 		}
 		return swrClientInstance
 	}
+	if registryType == models.RegistryTypeCCR || IsCCRRegistry(registryURL) {
+		if ccrClientInstance == nil {
+			ccrClientInstance = NewCcrAPIService()
+		}
+		return ccrClientInstance
+	}
 
-	registryClientInstancesMu.Lock()
-	defer registryClientInstancesMu.Unlock()
 	if acrClientInstance == nil {
 		acrClientInstance = NewAcrAPIService()
 	}

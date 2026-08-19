@@ -109,7 +109,7 @@ onMounted(() => {
   loadAcrList()
 })
 
-const typeLabel = (row) => (row.registry_type === 'swr' ? '华为 SWR' : '阿里 ACR')
+const typeLabel = (row) => (row.registry_type === 'swr' ? '华为 SWR' : row.registry_type === 'ccr' ? '腾讯 CCR' : '阿里 ACR')
 
 const testingId = ref(null)
 

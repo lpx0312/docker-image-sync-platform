@@ -10,11 +10,12 @@ import (
 const (
 	RegistryTypeACR = "acr" // 阿里云 ACR
 	RegistryTypeSWR = "swr" // 华为云 SWR
+	RegistryTypeCCR = "ccr" // 腾讯云 CCR（个人版）
 )
 
 // IsValidRegistryType 校验仓库类型取值
 func IsValidRegistryType(t string) bool {
-	return t == RegistryTypeACR || t == RegistryTypeSWR
+	return t == RegistryTypeACR || t == RegistryTypeSWR || t == RegistryTypeCCR
 }
 
 // AcrRegistry ACR镜像仓库配置数据模型

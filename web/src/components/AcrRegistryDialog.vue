@@ -15,34 +15,35 @@
         <el-radio-group v-model="form.registry_type">
           <el-radio value="acr">阿里云 ACR</el-radio>
           <el-radio value="swr">华为云 SWR</el-radio>
+          <el-radio value="ccr">腾讯云 CCR</el-radio>
         </el-radio-group>
       </el-form-item>
 
       <el-form-item label="镜像仓库地址" prop="registry_url">
         <el-input
           v-model="form.registry_url"
-          :placeholder="isSwr ? 'swr.cn-east-4.myhuaweicloud.com' : 'registry.cn-hangzhou.aliyuncs.com'"
+          :placeholder="registryPlaceholder"
         />
       </el-form-item>
 
       <el-form-item :label="isSwr ? '组织' : '命名空间'" prop="namespace">
         <el-input
           v-model="form.namespace"
-          :placeholder="isSwr ? 'SWR 组织名（需预先在华为云控制台创建）' : 'your-namespace'"
+          :placeholder="namespacePlaceholder"
         />
       </el-form-item>
 
       <el-form-item label="别名" prop="alias">
         <el-input
           v-model="form.alias"
-          placeholder="平台内展示与选择用的唯一标识（ACR/SWR 命名空间可能同名）"
+          placeholder="平台内展示与选择用的唯一标识（各云命名空间可能同名）"
         />
       </el-form-item>
 
       <el-form-item label="用户名" prop="username">
         <el-input
           v-model="form.username"
-          :placeholder="isSwr ? '格式：区域@AK，如 cn-east-4@HPUAXXXXXXXX' : '阿里云用户名'"
+          :placeholder="usernamePlaceholder"
         />
       </el-form-item>
 
@@ -50,24 +51,24 @@
         <el-input
           v-model="form.password"
           type="password"
-          :placeholder="isSwr ? '华为云 SK（与登录用户名配对的密钥）' : '阿里云密码'"
+          :placeholder="passwordPlaceholder"
           show-password
         />
       </el-form-item>
 
-      <template v-if="isSwr">
+      <template v-if="isSwr || isCcr">
         <el-divider content-position="left">管理面凭证（可选，用于获取镜像列表）</el-divider>
-        <el-form-item label="Access Key">
+        <el-form-item :label="isCcr ? 'SecretId' : 'Access Key'">
           <el-input
             v-model="form.access_key"
-            placeholder="IAM 访问密钥 AK（华为云控制台「我的凭证 → 访问密钥」）"
+            :placeholder="isCcr ? '访问密钥 SecretId（腾讯云控制台「访问管理 → 访问密钥 → API 密钥管理」）' : 'IAM 访问密钥 AK（华为云控制台「我的凭证 → 访问密钥」）'"
           />
         </el-form-item>
-        <el-form-item label="Secret Key">
+        <el-form-item :label="isCcr ? 'SecretKey' : 'Secret Key'">
           <el-input
             v-model="form.secret_key"
             type="password"
-            placeholder="与 AK 配对的 SK；编辑时留空表示不修改"
+            :placeholder="(isCcr ? '与 SecretId 配对的 SecretKey' : '与 AK 配对的 SK') + '；编辑时留空表示不修改'"
             show-password
           />
         </el-form-item>
@@ -78,14 +79,14 @@
           style="margin-bottom: 18px;"
         >
           <template #title>
-            上方「用户名/密码」即 docker login 凭证（区域@AK / 登录密码），用于推送、拉取与 Tag 查询；
-            AK/SK 仅在「从仓库导入」获取镜像列表时使用（SWR 管理面 API）。
-            组织（namespace）需预先在华为云控制台创建。
+            {{ isCcr
+              ? '上方「用户名/密码」为 docker login 凭证（腾讯云账号数字 ID + 仓库密码），用于推送、拉取与 Tag 查询；SecretId/SecretKey 仅在「从仓库导入」获取镜像列表时使用（腾讯云 API）。'
+              : '上方「用户名/密码」即 docker login 凭证（区域@AK / 登录密码），用于推送、拉取与 Tag 查询；AK/SK 仅在「从仓库导入」获取镜像列表时使用（SWR 管理面 API）。组织（namespace）需预先在华为云控制台创建。' }}
           </template>
         </el-alert>
       </template>
 
-      <template v-if="!isSwr">
+      <template v-if="!isSwr && !isCcr">
         <el-form-item label="认证服务器">
           <div style="display: flex; align-items: center; gap: 8px; width: 100%;">
             <el-input
@@ -182,6 +183,31 @@ const form = reactive({
 })
 
 const isSwr = computed(() => form.registry_type === 'swr')
+const isCcr = computed(() => form.registry_type === 'ccr')
+
+const registryPlaceholder = computed(() => {
+  if (isSwr.value) return 'swr.cn-east-4.myhuaweicloud.com'
+  if (isCcr.value) return 'ccr.ccs.tencentyun.com'
+  return 'registry.cn-hangzhou.aliyuncs.com'
+})
+
+const namespacePlaceholder = computed(() => {
+  if (isSwr.value) return 'SWR 组织名（需预先在华为云控制台创建）'
+  if (isCcr.value) return '命名空间，如 lpx03'
+  return 'your-namespace'
+})
+
+const usernamePlaceholder = computed(() => {
+  if (isSwr.value) return '格式：区域@AK，如 cn-east-4@HPUAXXXXXXXX'
+  if (isCcr.value) return '腾讯云账号数字 ID（docker login 用户名），如 100020724643'
+  return '阿里云用户名'
+})
+
+const passwordPlaceholder = computed(() => {
+  if (isSwr.value) return '华为云 SK（与登录用户名配对的密钥）'
+  if (isCcr.value) return '仓库登录密码（docker login 密码，开通 CCR 时设置）'
+  return '阿里云密码'
+})
 
 // 新增时别名默认跟随命名空间预填，手动改过则不再跟随
 const aliasManuallySet = ref(false)

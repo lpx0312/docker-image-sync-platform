@@ -12,9 +12,10 @@ import (
 const DefaultAcrRepoQuota = 300
 
 // repoQuotaFor 按仓库类型返回仓库配额：0 表示不限。
-// 华为云 SWR 单组织内镜像仓库数量无限制（仅限制租户组织总数）。
+// 华为云 SWR 单组织内镜像仓库数量无限制（仅限制租户组织总数）；
+// 腾讯云 CCR 个人版同样无仓库数量硬限制。
 func repoQuotaFor(registryType string) int {
-	if registryType == models.RegistryTypeSWR {
+	if registryType == models.RegistryTypeSWR || registryType == models.RegistryTypeCCR {
 		return 0
 	}
 	return DefaultAcrRepoQuota
