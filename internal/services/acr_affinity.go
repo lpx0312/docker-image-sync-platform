@@ -11,6 +11,15 @@ import (
 
 const DefaultAcrRepoQuota = 300
 
+// repoQuotaFor 按仓库类型返回仓库配额：0 表示不限。
+// 华为云 SWR 单组织内镜像仓库数量无限制（仅限制租户组织总数）。
+func repoQuotaFor(registryType string) int {
+	if registryType == models.RegistryTypeSWR {
+		return 0
+	}
+	return DefaultAcrRepoQuota
+}
+
 // AcrAffinityService ACR 仓库归属与配额查询服务
 type AcrAffinityService struct {
 	db *gorm.DB
@@ -21,11 +30,12 @@ func NewAcrAffinityService(db *gorm.DB) *AcrAffinityService {
 	return &AcrAffinityService{db: db}
 }
 
-// AcrQuotaSummary 单个 ACR 的仓库配额摘要
+// AcrQuotaSummary 单个仓库的配额摘要（repo_quota=0 表示不限，如 SWR）
 type AcrQuotaSummary struct {
 	AcrRegistryID  uint   `json:"acr_registry_id"`
 	Namespace      string `json:"namespace"`
 	RegistryURL    string `json:"registry_url"`
+	RegistryType   string `json:"registry_type"`
 	RepoCount      int    `json:"repo_count"`
 	RepoQuota      int    `json:"repo_quota"`
 	RemainingQuota int    `json:"remaining_quota"`
@@ -151,15 +161,19 @@ func (s *AcrAffinityService) fillAffinityFromRegistry(result *AcrAffinityResult,
 		return nil, err
 	}
 
+	quota := repoQuotaFor(acr.RegistryType)
 	result.HasAffinity = true
 	result.AcrRegistryID = acrRegistryID
 	result.AcrNamespace = acr.Namespace
 	result.RegistryURL = acr.RegistryURL
 	result.Source = source
 	result.RepoCount = repoCount
-	result.RemainingQuota = DefaultAcrRepoQuota - repoCount
-	if result.RemainingQuota < 0 {
-		result.RemainingQuota = 0
+	result.RepoQuota = quota
+	if quota > 0 {
+		result.RemainingQuota = quota - repoCount
+		if result.RemainingQuota < 0 {
+			result.RemainingQuota = 0
+		}
 	}
 	result.TagCount = tagCount
 	return result, nil
@@ -360,19 +374,24 @@ func (s *AcrAffinityService) GetQuotaSummary() ([]AcrQuotaSummary, error) {
 		if err != nil {
 			return nil, err
 		}
-		remaining := DefaultAcrRepoQuota - repoCount
-		if remaining < 0 {
-			remaining = 0
+		quota := repoQuotaFor(acr.RegistryType)
+		remaining := 0
+		if quota > 0 {
+			remaining = quota - repoCount
+			if remaining < 0 {
+				remaining = 0
+			}
 		}
 		summary = append(summary, AcrQuotaSummary{
 			AcrRegistryID:  acr.ID,
 			Namespace:      acr.Namespace,
 			RegistryURL:    acr.RegistryURL,
+			RegistryType:   acr.RegistryType,
 			RepoCount:      repoCount,
-			RepoQuota:      DefaultAcrRepoQuota,
+			RepoQuota:      quota,
 			RemainingQuota: remaining,
 			IsDefault:      acr.IsDefault,
-			IsFull:         repoCount >= DefaultAcrRepoQuota,
+			IsFull:         quota > 0 && repoCount >= quota,
 		})
 	}
 	return summary, nil

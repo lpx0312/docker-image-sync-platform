@@ -2,7 +2,7 @@
 name: dsync-cli
 description: >-
   使用 dsync CLI 操作 Docker 镜像同步平台：将海外镜像（Docker Hub / ghcr.io / k8s.gcr.io / quay.io 等）
-  同步到本平台绑定的阿里云 ACR 并获取国内可直接拉取的地址；查询各 ACR 的镜像仓库、Tag 与配额用量；
+  同步到本平台绑定的镜像仓库（阿里云 ACR / 华为云 SWR）并获取国内可直接拉取的地址；查询各仓库的镜像、Tag 与配额用量；
   跨 ACR 搜索镜像、确认某镜像是否已同步过；查看同步任务进度、排查并重试失败任务；
   把 k8s 部署文件里的海外镜像整体换成国内地址。
 
@@ -11,12 +11,12 @@ description: >-
   以及症状式表达——docker pull 超时/失败/卡住、k8s ImagePullBackOff/ErrImagePull 等海外源导致的拉取问题
   （即使没提"同步"或"国内"也应触发）。
 
-  不适用：镜像构建与 Dockerfile 编写、在 ACR 建仓/删仓、ACR 凭证管理、同步到 Harbor 或其他厂商仓库。
+  不适用：镜像构建与 Dockerfile 编写、在仓库建仓/删仓、仓库凭证管理、同步到 Harbor 或其他厂商仓库。
 ---
 
 # dsync CLI · Docker 镜像同步平台操作
 
-通过 `dsync` 命令行客户端操作镜像同步平台。平台负责把海外镜像经 GitHub Actions 同步到阿里云 ACR，返回国内可直接 `docker pull` 的地址。
+通过 `dsync` 命令行客户端操作镜像同步平台。平台负责把海外镜像经 GitHub Actions 同步到绑定的镜像仓库（阿里云 ACR 或华为云 SWR，`acr list` 的 TYPE 列区分类型，SWR 的 namespace 即组织名），返回国内可直接 `docker pull` 的地址。
 
 ## 前提与登录态
 
@@ -38,7 +38,7 @@ description: >-
 | 只提交不等待（脚本场景） | `bin/dsync sync <镜像> --no-wait` |
 | 查任务状态 | `bin/dsync task status <task-id>` / `task list [--status failed]` |
 | 重试失败记录 | `bin/dsync retry --task <task-id>` |
-| 列出 ACR、配额用量 | `bin/dsync acr list` |
+| 列出镜像仓库、配额用量（TYPE 列区分 ACR/SWR） | `bin/dsync acr list` |
 | 查某 ACR 的镜像仓库 | `bin/dsync repo list [--acr ns] [--filter kw]` |
 | 查某仓库的全部 Tag | `bin/dsync tag list <仓库名> [--acr ns]` |
 | 跨 ACR 搜仓库和 Tag | `bin/dsync search <关键词>` |

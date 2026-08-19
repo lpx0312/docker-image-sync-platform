@@ -376,9 +376,8 @@ func main() {
 				acrRegistriesWrite.PUT("/:id/default", acrRegistryHandler.SetDefault)
 			}
 
-			// ACR镜像管理
-			acrAPIService := services.NewAcrAPIService()
-			acrRepositoryService := services.NewAcrRepositoryService(database.DB, acrAPIService, encryptionService)
+			// 镜像仓库台账管理（ACR / SWR 通用，客户端按仓库类型内部分发）
+			acrRepositoryService := services.NewAcrRepositoryService(database.DB, encryptionService)
 			acrRepositoryHandler := handlers.NewAcrRepositoryHandler(acrRepositoryService)
 
 			acrRepositories := protected.Group("/acr-repositories")
@@ -392,10 +391,11 @@ func main() {
 				acrRepositories.POST("/clean-invalid", acrRepositoryHandler.CleanInvalid)
 				acrRepositories.DELETE("/:id", acrRepositoryHandler.Delete)
 				acrRepositories.POST("/sync-from-records", acrRepositoryHandler.SyncFromRecords)
+				acrRepositories.POST("/import-from-registry", acrRepositoryHandler.ImportFromRegistry)
 			}
 
-			// ACR Tag查询
-			acrTagHandler := handlers.NewAcrTagHandler(acrAPIService, encryptionService)
+			// 镜像仓库 Tag 查询（ACR / SWR 通用）
+			acrTagHandler := handlers.NewAcrTagHandler(encryptionService)
 
 			acrTags := protected.Group("/acr-tags")
 			acrTags.Use(middleware.PermissionRequired(roleService, models.PermImages))

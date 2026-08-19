@@ -3,6 +3,7 @@ package services
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"docker-image-sync-platform/internal/models"
 
@@ -56,8 +57,25 @@ func (s *AcrRegistryService) GetDefault() (*models.AcrRegistry, error) {
 	return &registry, nil
 }
 
+// normalizeRegistryType 规范化仓库类型，空值默认 acr，非法值报错
+func normalizeRegistryType(registryType string) (string, error) {
+	if registryType == "" {
+		return models.RegistryTypeACR, nil
+	}
+	registryType = strings.ToLower(strings.TrimSpace(registryType))
+	if !models.IsValidRegistryType(registryType) {
+		return "", fmt.Errorf("不支持的仓库类型: %s（可选: acr、swr）", registryType)
+	}
+	return registryType, nil
+}
+
 // Create 创建ACR配置
 func (s *AcrRegistryService) Create(req *models.AcrRegistryRequest) (*models.AcrRegistry, error) {
+	registryType, err := normalizeRegistryType(req.RegistryType)
+	if err != nil {
+		return nil, err
+	}
+
 	// 加密密码
 	encryptedPassword, err := s.encryptionSvc.Encrypt(req.Password)
 	if err != nil {
@@ -71,6 +89,7 @@ func (s *AcrRegistryService) Create(req *models.AcrRegistryRequest) (*models.Acr
 		Password:      encryptedPassword,
 		AuthServer:    req.AuthServer,
 		DockerService: req.DockerService,
+		RegistryType:  registryType,
 	}
 
 	// 如果是第一个ACR，自动设为默认
@@ -110,6 +129,13 @@ func (s *AcrRegistryService) Update(id uint, req *models.AcrRegistryUpdateReques
 			return nil, fmt.Errorf("加密密码失败: %w", err)
 		}
 		updates["password"] = encryptedPassword
+	}
+	if req.RegistryType != "" {
+		registryType, err := normalizeRegistryType(req.RegistryType)
+		if err != nil {
+			return nil, err
+		}
+		updates["registry_type"] = registryType
 	}
 	// auth_server 和 docker_service 允许设置为空字符串（清除值）
 	if req.AuthServer != "" {

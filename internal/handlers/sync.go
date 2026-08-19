@@ -802,8 +802,11 @@ func (h *SyncHandler) processSyncTask(taskID string) {
 
 	acrGroups := groupRecordsByAcrRegistry(records, task.AcrRegistryID)
 	var lastRunID, lastRunURL string
+	groupIndex := 0
+	totalGroups := len(acrGroups)
 
 	for acrRegistryID, groupRecords := range acrGroups {
+		groupIndex++
 		var images []string
 		for _, record := range groupRecords {
 			images = append(images, buildImageLineFromRecord(record))
@@ -811,8 +814,8 @@ func (h *SyncHandler) processSyncTask(taskID string) {
 
 		inputs, err := h.buildAcrWorkflowInputs(acrRegistryID)
 		if err != nil {
-			logger.Logger.Error("获取ACR配置失败", zap.Error(err), zap.Uint("acr_registry_id", acrRegistryID))
-			h.handleSyncError(taskID, fmt.Sprintf("获取ACR配置失败: %v", err))
+			logger.Logger.Error("获取目标仓库配置失败", zap.Error(err), zap.Uint("acr_registry_id", acrRegistryID))
+			h.handleSyncError(taskID, fmt.Sprintf("获取目标仓库配置失败: %v", err))
 			return
 		}
 
@@ -826,6 +829,13 @@ func (h *SyncHandler) processSyncTask(taskID string) {
 			return
 		}
 		lastRunID, lastRunURL = runID, runURL
+
+		// 多目标分组串行提交：等待本组 workflow 到达终态后再提交下一组，
+		// 避免下一组提交覆盖 images.txt 导致前一组同步内容错乱
+		// （一次任务混用多个目标仓库（如 ACR + SWR）时必现）
+		if groupIndex < totalGroups {
+			h.waitForWorkflowRun(taskID, runID)
+		}
 	}
 
 	runID, runURL := lastRunID, lastRunURL
@@ -2144,7 +2154,6 @@ func (h *SyncHandler) registerRepositoryOnSyncSuccess(record *models.ImageSyncRe
 
 	repoSvc := services.NewAcrRepositoryService(
 		database.DB,
-		services.NewAcrAPIService(),
 		h.gitServiceFactory.GetEncryptionService(),
 	)
 	repoName := services.ExtractRepoName(record.OriginalImage)
@@ -2186,13 +2195,13 @@ func (h *SyncHandler) buildAcrWorkflowInputs(acrRegistryID uint) (map[string]str
 		}
 		password, err := encryptionSvc.Decrypt(acr.Password)
 		if err != nil {
-			return nil, fmt.Errorf("解密ACR密码失败: %w", err)
+			return nil, fmt.Errorf("解密仓库密码失败: %w", err)
 		}
 		return map[string]string{
-			"aliyun_registry":          acr.RegistryURL,
-			"aliyun_namespace":         acr.Namespace,
-			"aliyun_registry_user":     acr.Username,
-			"aliyun_registry_password": password,
+			"registry":          acr.RegistryURL,
+			"namespace":         acr.Namespace,
+			"registry_user":     acr.Username,
+			"registry_password": password,
 		}, nil
 	}
 
@@ -2208,13 +2217,50 @@ func (h *SyncHandler) buildAcrWorkflowInputs(acrRegistryID uint) (map[string]str
 	username, _ := configService.GetConfig("aliyun_username")
 	password, _ := configService.GetConfig("aliyun_password")
 	return map[string]string{
-		"aliyun_registry":          registry,
-		"aliyun_namespace":         namespace,
-		"aliyun_registry_user":     username,
-		"aliyun_registry_password": password,
+		"registry":          registry,
+		"namespace":         namespace,
+		"registry_user":     username,
+		"registry_password": password,
 	}, nil
 }
 
 func (h *SyncHandler) buildACRImageForRecord(record models.ImageSyncRecord) string {
 	return utils.BuildACRImageRef(record.AcrRegistryID, record.OriginalImage, record.Tag)
+}
+
+// waitForWorkflowRun 轮询等待指定 GitHub Actions run 到达终态（completed），
+// 用于多目标分组的串行提交；超时（30 分钟）后放弃等待继续下一组。
+func (h *SyncHandler) waitForWorkflowRun(taskID, runID string) {
+	if runID == "" {
+		return
+	}
+	githubAPIService := h.gitServiceFactory.GetGitHubAPIService()
+
+	deadline := time.Now().Add(30 * time.Minute)
+	for time.Now().Before(deadline) {
+		status, err := githubAPIService.GetWorkflowRunStatus(runID)
+		if err != nil {
+			logger.Logger.Warn("查询分组工作流状态失败，稍后重试",
+				zap.String("task_id", taskID),
+				zap.String("run_id", runID),
+				zap.Error(err))
+		} else if status == "completed" || status == "failure" || status == "cancelled" {
+			logger.Logger.Info("分组工作流已结束，继续下一分组",
+				zap.String("task_id", taskID),
+				zap.String("run_id", runID),
+				zap.String("status", status))
+			return
+		}
+
+		select {
+		case <-time.After(30 * time.Second):
+		case <-h.ctx.Done():
+			logger.Logger.Info("收到关闭信号，停止等待分组工作流", zap.String("task_id", taskID))
+			return
+		}
+	}
+
+	logger.Logger.Warn("等待分组工作流超时，继续下一分组",
+		zap.String("task_id", taskID),
+		zap.String("run_id", runID))
 }

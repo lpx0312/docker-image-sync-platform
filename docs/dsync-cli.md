@@ -1,6 +1,8 @@
 # dsync 命令行客户端
 
-`dsync` 是 docker-image-sync-platform 的 CLI 客户端，通过平台 REST API（`/api/v1`）完成登录、ACR/镜像/Tag 查询、镜像同步提交与进度跟踪，适合日常使用与脚本自动化。
+`dsync` 是 docker-image-sync-platform 的 CLI 客户端，通过平台 REST API（`/api/v1`）完成登录、镜像仓库（阿里云 ACR / 华为云 SWR）/镜像/Tag 查询、镜像同步提交与进度跟踪，适合日常使用与脚本自动化。
+
+> 平台支持多仓库实例混管：阿里云 ACR 与华为云 SWR 使用同一套 `--acr <namespace>` 引用方式（SWR 的 namespace 即组织名），`dsync acr list` 的 TYPE 列会标注类型。
 
 ## 安装
 
@@ -51,7 +53,7 @@ dsync search nginx
 |------|------|
 | `dsync login [--server URL] [--username u]` | 登录并保存凭据；token 过期后自动用保存的密码续登 |
 | `dsync whoami` / `dsync logout` | 查看当前用户 / 登出并清除本地凭据 |
-| `dsync acr list` | 所有 ACR + 仓库配额用量（`*` 为默认 ACR） |
+| `dsync acr list` | 所有镜像仓库 + 仓库配额用量（TYPE 列区分 ACR/SWR，`*` 为默认仓库；SWR 配额显示「不限」） |
 | `dsync repo list [--acr ns] [--filter kw]` | 镜像仓库列表（数据源：平台本地库） |
 | `dsync tag list <repo> [--acr ns]` | 某仓库全部 Tag（实时查 ACR） |
 | `dsync search <kw> [--acr ns] [--refresh]` | 跨 ACR 搜索仓库名与 Tag |

@@ -4,13 +4,13 @@
 [![Go Version](https://img.shields.io/badge/Go-1.21+-blue.svg)](https://golang.org)
 [![Vue Version](https://img.shields.io/badge/Vue-3.0+-green.svg)](https://vuejs.org)
 
-一个功能完整的Docker镜像自动化同步平台，专为解决国内访问Docker Hub等海外镜像仓库困难而设计。通过Web界面轻松管理镜像同步任务，自动将镜像同步到阿里云容器镜像服务(ACR)，提供稳定可靠的镜像访问服务。
+一个功能完整的Docker镜像自动化同步平台，专为解决国内访问Docker Hub等海外镜像仓库困难而设计。通过Web界面轻松管理镜像同步任务，自动将镜像同步到阿里云容器镜像服务(ACR)或华为云容器镜像服务(SWR)，提供稳定可靠的镜像访问服务。
 
 ## ✨ 核心特性
 
 ### 🚀 自动化同步
 - **一键同步**: 简单输入镜像名称即可启动同步流程
-- **智能流程**: Gitee → GitHub → Actions → 阿里云ACR 全自动化
+- **智能流程**: Gitee → GitHub → Actions → 阿里云ACR / 华为云SWR 全自动化
 - **多源支持**: DockerHub、gcr.io、k8s.io、ghcr.io、quay.io等主流镜像仓库
 - **架构兼容**: 支持AMD64、ARM64等多种CPU架构
 

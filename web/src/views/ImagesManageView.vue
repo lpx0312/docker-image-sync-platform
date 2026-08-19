@@ -1,22 +1,28 @@
 <template>
   <div class="images-manage-view">
-    <!-- ACR 配额概览 -->
+    <!-- 镜像仓库配额概览 -->
     <el-card v-if="quotaSummary.length" class="quota-card">
       <template #header>
         <div class="card-header">
-          <span>ACR 仓库配额</span>
+          <span>镜像仓库配额</span>
           <el-button type="warning" link size="small" @click="showDuplicateReport">
-            检测跨 ACR 重复
+            检测跨仓库重复
           </el-button>
         </div>
       </template>
       <div class="quota-list">
         <div v-for="item in quotaSummary" :key="item.acr_registry_id" class="quota-item">
           <div class="quota-label">
-            <span>{{ item.namespace }}</span>
-            <span class="quota-count">{{ item.repo_count }}/{{ item.repo_quota }}</span>
+            <span>
+              {{ item.namespace }}
+              <el-tag :type="item.registry_type === 'swr' ? 'warning' : 'primary'" size="small" style="margin-left: 6px;">
+                {{ item.registry_type === 'swr' ? '华为 SWR' : '阿里 ACR' }}
+              </el-tag>
+            </span>
+            <span class="quota-count">{{ formatQuotaCount(item) }}</span>
           </div>
           <el-progress
+            v-if="item.repo_quota > 0"
             :percentage="getQuotaPercent(item)"
             :status="item.is_full ? 'exception' : (getQuotaPercent(item) >= 80 ? 'warning' : '')"
             :stroke-width="10"
@@ -32,7 +38,7 @@
           <div class="header-actions">
             <el-select
               v-model="selectedAcrId"
-              placeholder="选择 ACR"
+              placeholder="选择镜像仓库"
               style="width: 300px; margin-right: 16px;"
               @change="handleAcrChange"
             >
@@ -63,6 +69,16 @@
         </el-button>
         <el-button type="success" size="small" @click="showBatchAddDialog">
           批量添加
+        </el-button>
+        <el-button
+          v-if="!selectedIsSwr"
+          type="success"
+          size="small"
+          plain
+          @click="handleImportFromRegistry"
+          :loading="importing"
+        >
+          从仓库导入
         </el-button>
         <el-button
           type="danger"
@@ -195,6 +211,7 @@ const tableRef = ref(null)
 
 const addDialogVisible = ref(false)
 const batchAddDialogVisible = ref(false)
+const importing = ref(false)
 const searchText = ref('')
 const currentPage = ref(1)
 const pageSize = ref(20)
@@ -246,12 +263,23 @@ onMounted(() => {
 })
 
 const getAcrLabel = (item) => {
+  const typeText = item.registry_type === 'swr' ? ' · SWR' : ''
   const quota = quotaMap.value[item.id]
   if (quota) {
-    return `${item.namespace} (${quota.repo_count}/${quota.repo_quota})`
+    return `${item.namespace} (${formatQuotaCount(quota)})${typeText}`
   }
-  return item.namespace
+  return `${item.namespace}${typeText}`
 }
+
+const formatQuotaCount = (item) => {
+  if (!item || !item.repo_quota) return `${item?.repo_count ?? 0}/不限`
+  return `${item.repo_count}/${item.repo_quota}`
+}
+
+const selectedIsSwr = computed(() => {
+  const selected = acrList.value.find(item => item.id === selectedAcrId.value)
+  return selected?.registry_type === 'swr'
+})
 
 const getQuotaPercent = (item) => {
   if (!item.repo_quota) return 0
@@ -270,7 +298,7 @@ const loadQuotaSummary = async () => {
       quotaMap.value = map
     }
   } catch (error) {
-    console.error('加载 ACR 配额失败:', error)
+    console.error('加载仓库配额失败:', error)
   }
 }
 
@@ -279,14 +307,14 @@ const showDuplicateReport = async () => {
     const response = await acrRepositoryAPI.getDuplicates()
     const duplicates = response?.data || []
     if (!duplicates.length) {
-      ElMessage.success('未发现跨 ACR 重复的仓库')
+      ElMessage.success('未发现跨仓库重复的仓库')
       return
     }
 
     const lines = duplicates.map(item =>
-      `${item.repository_name}：出现在 ${item.namespaces.join('、')}（${item.acr_count} 个 ACR）`
+      `${item.repository_name}：出现在 ${item.namespaces.join('、')}（${item.acr_count} 个仓库）`
     )
-    ElMessageBox.alert(lines.join('\n'), '跨 ACR 重复仓库', {
+    ElMessageBox.alert(lines.join('\n'), '跨仓库重复仓库', {
       type: 'warning',
       confirmButtonText: '知道了',
     })
@@ -329,7 +357,7 @@ const loadAcrList = async () => {
       }
     }
   } catch (error) {
-    console.error('加载 ACR 列表失败:', error)
+    console.error('加载镜像仓库列表失败:', error)
   }
 }
 
@@ -361,7 +389,7 @@ const loadRepositories = async () => {
 
 const showAddDialog = () => {
   if (!selectedAcrId.value) {
-    ElMessage.warning('请先选择 ACR')
+    ElMessage.warning('请先选择镜像仓库')
     return
   }
   addDialogVisible.value = true
@@ -369,7 +397,7 @@ const showAddDialog = () => {
 
 const showBatchAddDialog = () => {
   if (!selectedAcrId.value) {
-    ElMessage.warning('请先选择 ACR')
+    ElMessage.warning('请先选择镜像仓库')
     return
   }
   batchAddDialogVisible.value = true
@@ -377,7 +405,7 @@ const showBatchAddDialog = () => {
 
 const goToTags = (row) => {
   if (!selectedAcrId.value) {
-    ElMessage.warning('请先选择 ACR')
+    ElMessage.warning('请先选择镜像仓库')
     return
   }
   router.push({
@@ -398,7 +426,7 @@ const showSyncImportResult = (data) => {
     sections.push(`成功导入 ${data.created_names.length} 个：\n${formatNameList(data.created_names)}`)
   }
   if (data.missing_in_acr?.length) {
-    sections.push(`ACR 中不存在，已跳过 ${data.missing_in_acr.length} 个：\n${formatNameList(data.missing_in_acr)}`)
+    sections.push(`目标仓库中不存在，已跳过 ${data.missing_in_acr.length} 个：\n${formatNameList(data.missing_in_acr)}`)
   }
   if (data.check_failed_names?.length) {
     sections.push(`检查失败，已跳过 ${data.check_failed_names.length} 个：\n${formatNameList(data.check_failed_names)}`)
@@ -421,7 +449,7 @@ const showSyncImportResult = (data) => {
 
 const handleSyncFromRecords = async () => {
   if (!selectedAcrId.value) {
-    ElMessage.warning('请先选择 ACR')
+    ElMessage.warning('请先选择镜像仓库')
     return
   }
 
@@ -437,6 +465,42 @@ const handleSyncFromRecords = async () => {
     ElMessage.error('导入失败')
   } finally {
     syncing.value = false
+  }
+}
+
+const handleImportFromRegistry = async () => {
+  if (!selectedAcrId.value) {
+    ElMessage.warning('请先选择镜像仓库')
+    return
+  }
+
+  importing.value = true
+  try {
+    const response = await acrRepositoryAPI.importFromRegistry(selectedAcrId.value)
+    if (response && response.status === 'success') {
+      const data = response.data || {}
+      const sections = []
+      if (data.created_names?.length) {
+        sections.push(`成功导入 ${data.created_names.length} 个：\n${formatNameList(data.created_names)}`)
+      }
+      if (data.already_exist_names?.length) {
+        sections.push(`本地已存在，未重复导入 ${data.already_exist_names.length} 个`)
+      }
+      if (!sections.length) {
+        ElMessage.info('远程仓库中没有可导入的新镜像')
+      } else {
+        ElMessageBox.alert(sections.join('\n\n'), '导入结果', {
+          type: 'success',
+          confirmButtonText: '知道了',
+        })
+      }
+      await Promise.all([loadRepositories(), loadQuotaSummary()])
+    }
+  } catch (error) {
+    console.error('从仓库导入失败:', error)
+    ElMessage.error('从仓库导入失败: ' + (error.response?.data?.message || error.message || '未知错误'))
+  } finally {
+    importing.value = false
   }
 }
 
@@ -483,15 +547,15 @@ const handleBatchDelete = async () => {
 
 const handleCleanInvalid = async () => {
   if (!selectedAcrId.value) {
-    ElMessage.warning('请先选择 ACR')
+    ElMessage.warning('请先选择镜像仓库')
     return
   }
 
-  const acrLabel = acrList.value.find(item => item.id === selectedAcrId.value)?.namespace || '当前 ACR'
+  const acrLabel = acrList.value.find(item => item.id === selectedAcrId.value)?.namespace || '当前仓库'
 
   try {
     await ElMessageBox.confirm(
-      `将检查 ${acrLabel} 下的本地镜像列表，并清理在 ACR 中不存在的无效记录。此操作不会删除 ACR 中的实际镜像。`,
+      `将检查 ${acrLabel} 下的本地镜像列表，并清理在目标仓库中不存在的无效记录。此操作不会删除远程仓库中的实际镜像。`,
       '清理无效镜像',
       {
         type: 'warning',

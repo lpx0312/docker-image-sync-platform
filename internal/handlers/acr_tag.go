@@ -14,33 +14,31 @@ import (
 	"go.uber.org/zap"
 )
 
-// AcrTagHandler ACR Tag查询处理器
+// AcrTagHandler 镜像仓库 Tag 查询处理器（ACR / SWR 通用，按仓库类型分发客户端）
 type AcrTagHandler struct {
-	acrAPIService *services.AcrAPIService
 	encryptionSvc *services.EncryptionService
 }
 
-// NewAcrTagHandler 创建ACR Tag查询处理器实例
-func NewAcrTagHandler(acrAPIService *services.AcrAPIService, encryptionSvc *services.EncryptionService) *AcrTagHandler {
+// NewAcrTagHandler 创建Tag查询处理器实例
+func NewAcrTagHandler(encryptionSvc *services.EncryptionService) *AcrTagHandler {
 	return &AcrTagHandler{
-		acrAPIService: acrAPIService,
 		encryptionSvc: encryptionSvc,
 	}
 }
 
-// getAcrConfig 获取 ACR 配置并解密密码
-func (h *AcrTagHandler) getAcrConfig(acrRegistryID uint) (*models.AcrRegistry, string, error) {
+// getAcrConfig 获取镜像仓库配置并解密密码，同时返回对应类型的数据面 API 客户端
+func (h *AcrTagHandler) getAcrConfig(acrRegistryID uint) (*models.AcrRegistry, string, services.RegistryAPIClient, error) {
 	var acr models.AcrRegistry
 	if err := database.DB.First(&acr, acrRegistryID).Error; err != nil {
-		return nil, "", err
+		return nil, "", nil, err
 	}
 
 	password, err := h.encryptionSvc.Decrypt(acr.Password)
 	if err != nil {
-		return nil, "", err
+		return nil, "", nil, err
 	}
 
-	return &acr, password, nil
+	return &acr, password, services.NewRegistryAPIService(acr.RegistryType, acr.RegistryURL), nil
 }
 
 // GetTags 获取镜像的 Tag 名称列表（轻量，不含 manifest 详情）
@@ -59,13 +57,13 @@ func (h *AcrTagHandler) GetTags(c *gin.Context) {
 		return
 	}
 
-	acr, password, err := h.getAcrConfig(uint(acrRegistryID))
+	acr, password, apiClient, err := h.getAcrConfig(uint(acrRegistryID))
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "ACR配置不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "镜像仓库配置不存在"})
 		return
 	}
 
-	tagNames, err := h.acrAPIService.GetTagNames(acr.RegistryURL, acr.Username, password, acr.Namespace, repositoryName, acr.AuthServer, acr.DockerService)
+	tagNames, err := apiClient.GetTagNames(acr.RegistryURL, acr.Username, password, acr.Namespace, repositoryName, acr.AuthServer, acr.DockerService)
 	if err != nil {
 		logger.Logger.Error("获取Tag列表失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
@@ -104,13 +102,13 @@ func (h *AcrTagHandler) GetTagsDetails(c *gin.Context) {
 		return
 	}
 
-	acr, password, err := h.getAcrConfig(uint(acrRegistryID))
+	acr, password, apiClient, err := h.getAcrConfig(uint(acrRegistryID))
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "ACR配置不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "镜像仓库配置不存在"})
 		return
 	}
 
-	details, err := h.acrAPIService.GetTagsDetailsBatch(acr.RegistryURL, acr.Username, password, acr.Namespace, repositoryName, acr.AuthServer, acr.DockerService, tagNames)
+	details, err := apiClient.GetTagsDetailsBatch(acr.RegistryURL, acr.Username, password, acr.Namespace, repositoryName, acr.AuthServer, acr.DockerService, tagNames)
 	if err != nil {
 		logger.Logger.Error("批量获取Tag详情失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
@@ -149,15 +147,15 @@ func (h *AcrTagHandler) GetTagDetail(c *gin.Context) {
 		return
 	}
 
-	// 获取 ACR 配置
-	acr, password, err := h.getAcrConfig(uint(acrRegistryID))
+	// 获取镜像仓库配置
+	acr, password, apiClient, err := h.getAcrConfig(uint(acrRegistryID))
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "ACR配置不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "镜像仓库配置不存在"})
 		return
 	}
 
 	// 获取 Tag 详细信息
-	detail, err := h.acrAPIService.GetTagDetail(acr.RegistryURL, acr.Username, password, acr.Namespace, repositoryName, tag, acr.AuthServer, acr.DockerService)
+	detail, err := apiClient.GetTagDetail(acr.RegistryURL, acr.Username, password, acr.Namespace, repositoryName, tag, acr.AuthServer, acr.DockerService)
 	if err != nil {
 		logger.Logger.Error("获取Tag详细信息失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})

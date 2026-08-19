@@ -626,7 +626,12 @@ export const acrRepositoryAPI = {
     return api.post('/acr-repositories/sync-from-records', { acr_registry_id: acrRegistryId })
   },
 
-  // 获取跨 ACR 重复的仓库名
+  // 从远程仓库导入镜像列表（/v2/_catalog；SWR 不支持）
+  importFromRegistry: (acrRegistryId) => {
+    return api.post('/acr-repositories/import-from-registry', { acr_registry_id: acrRegistryId })
+  },
+
+  // 获取跨仓库重复的仓库名
   getDuplicates: () => api.get('/acr-repositories/duplicates'),
 }
 

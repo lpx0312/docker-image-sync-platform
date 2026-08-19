@@ -83,8 +83,11 @@ func InitDatabase() error {
 	var err error
 	DB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{
 		// 设置日志级别为Info，记录SQL执行信息
-		// 生产环境可考虑设置为Error级别以减少日志输出
+		// 生产环境可考虑设置为Error级别以减少SQL日志输出
 		Logger: logger.Default.LogMode(logger.Info),
+		// 不为关联字段创建外键约束：acr_registry_id=0 是"使用默认配置"的哨兵值，
+		// 外键会导致该场景插入失败（全新安装必现）
+		DisableForeignKeyConstraintWhenMigrating: true,
 	})
 
 	if err != nil {
@@ -319,6 +322,10 @@ func ensureUserRoleIDColumn() error {
 }
 
 func migrateUserRoleIDs() error {
+	// 全新数据库：users 表在第二步 AutoMigrate 才创建，此时无旧数据可迁移
+	if !hasUsersTable() {
+		return nil
+	}
 	if hasUsersRoleColumn() {
 		if err := DB.Exec(`
 			UPDATE users u
@@ -338,6 +345,15 @@ func migrateUserRoleIDs() error {
 		return fmt.Errorf("设置默认角色失败: %w", err)
 	}
 	return nil
+}
+
+func hasUsersTable() bool {
+	var count int64
+	DB.Raw(`
+		SELECT COUNT(*) FROM information_schema.tables
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND table_type = 'BASE TABLE'
+	`).Scan(&count)
+	return count > 0
 }
 
 func dropLegacyUserRoleColumn() error {

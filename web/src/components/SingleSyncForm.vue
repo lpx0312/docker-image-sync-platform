@@ -16,10 +16,10 @@
       :rules="syncRules" 
       label-width="120px"
     >
-      <el-form-item label="目标 ACR">
+      <el-form-item label="目标仓库">
         <el-select
           v-model="selectedAcrId"
-          placeholder="选择目标 ACR"
+          placeholder="选择目标镜像仓库"
           style="width: 100%"
           @change="handleAcrChange"
         >
@@ -131,11 +131,13 @@ const forceOverrideWarning = computed(() => {
 })
 
 const getAcrLabel = (item) => {
+  const typeText = item.registry_type === 'swr' ? ' · SWR' : ''
   const quota = quotaMap.value[item.id]
   if (quota) {
-    return `${item.namespace} (${quota.repo_count}/${quota.repo_quota})`
+    const quotaText = quota.repo_quota > 0 ? `${quota.repo_count}/${quota.repo_quota}` : `${quota.repo_count}/不限`
+    return `${item.namespace} (${quotaText})${typeText}`
   }
-  return item.namespace
+  return `${item.namespace}${typeText}`
 }
 
 const isAcrOptionDisabled = (acrId) => {

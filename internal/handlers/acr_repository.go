@@ -15,7 +15,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// AcrRepositoryHandler ACR镜像仓库处理器
+// AcrRepositoryHandler 镜像仓库台账处理器（ACR / SWR 通用）
 type AcrRepositoryHandler struct {
 	service *services.AcrRepositoryService
 }
@@ -90,7 +90,7 @@ func (h *AcrRepositoryHandler) BatchCreate(c *gin.Context) {
 		message += fmt.Sprintf("，本地已存在 %d 个：%s", len(created.AlreadyExistNames), strings.Join(created.AlreadyExistNames, "、"))
 	}
 	if len(created.MissingInACR) > 0 {
-		message += fmt.Sprintf("，ACR 中不存在 %d 个：%s", len(created.MissingInACR), strings.Join(created.MissingInACR, "、"))
+		message += fmt.Sprintf("，目标仓库中不存在 %d 个：%s", len(created.MissingInACR), strings.Join(created.MissingInACR, "、"))
 	}
 	if len(created.CheckFailedNames) > 0 {
 		message += fmt.Sprintf("，检查失败 %d 个：%s", len(created.CheckFailedNames), strings.Join(created.CheckFailedNames, "、"))
@@ -127,7 +127,7 @@ func (h *AcrRepositoryHandler) BatchDelete(c *gin.Context) {
 	})
 }
 
-// CleanInvalid 清理本地存在但 ACR 中不存在的镜像
+// CleanInvalid 清理本地存在但目标仓库中不存在的镜像
 func (h *AcrRepositoryHandler) CleanInvalid(c *gin.Context) {
 	var req models.AcrRepositoryCleanInvalidRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -189,7 +189,7 @@ func (h *AcrRepositoryHandler) SyncFromRecords(c *gin.Context) {
 
 	message := fmt.Sprintf("成功导入 %d 个镜像", created.Created)
 	if len(created.MissingInACR) > 0 {
-		message += fmt.Sprintf("，%d 个在 ACR 中不存在：%s", len(created.MissingInACR), strings.Join(created.MissingInACR, "、"))
+		message += fmt.Sprintf("，%d 个在目标仓库中不存在：%s", len(created.MissingInACR), strings.Join(created.MissingInACR, "、"))
 	}
 	if len(created.CheckFailedNames) > 0 {
 		message += fmt.Sprintf("，%d 个检查失败：%s", len(created.CheckFailedNames), strings.Join(created.CheckFailedNames, "、"))
@@ -205,7 +205,34 @@ func (h *AcrRepositoryHandler) SyncFromRecords(c *gin.Context) {
 	})
 }
 
-// GetDuplicates 获取跨 ACR 重复的仓库名
+// ImportFromRegistry 从远程仓库导入镜像列表（/v2/_catalog；SWR 不支持时返回明确错误）
+func (h *AcrRepositoryHandler) ImportFromRegistry(c *gin.Context) {
+	var req models.AcrRepositorySyncRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "请求参数错误: " + err.Error()})
+		return
+	}
+
+	result, err := h.service.ImportFromRegistry(req.AcrRegistryID)
+	if err != nil {
+		logger.Logger.Error("从远程仓库导入失败", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		return
+	}
+
+	message := fmt.Sprintf("成功导入 %d 个镜像", result.Created)
+	if result.AlreadyExist > 0 {
+		message += fmt.Sprintf("，%d 个已存在", result.AlreadyExist)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": message,
+		"data":    result,
+	})
+}
+
+// GetDuplicates 获取跨仓库重复的仓库名
 func (h *AcrRepositoryHandler) GetDuplicates(c *gin.Context) {
 	affinitySvc := services.NewAcrAffinityService(database.DB)
 	duplicates, err := affinitySvc.GetDuplicateRepositories()

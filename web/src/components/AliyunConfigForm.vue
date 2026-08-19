@@ -4,10 +4,10 @@
       <template #header>
         <div class="card-header">
           <el-icon class="header-icon"><Monitor /></el-icon>
-          <span class="header-title">阿里云镜像仓库配置</span>
+          <span class="header-title">镜像仓库配置</span>
           <div class="header-actions">
             <el-button type="primary" size="small" @click="showAddDialog">
-              添加新 ACR
+              添加镜像仓库
             </el-button>
           </div>
         </div>
@@ -16,10 +16,10 @@
       <div class="config-section">
         <!-- 默认 ACR 选择 -->
         <div class="default-acr-section">
-          <el-form-item label="默认 ACR">
+          <el-form-item label="默认仓库">
             <el-select
               v-model="defaultAcrId"
-              placeholder="选择默认 ACR"
+              placeholder="选择默认镜像仓库"
               @change="handleDefaultChange"
               style="width: 100%"
             >
@@ -38,6 +38,13 @@
           <el-table-column type="index" label="序号" width="60" />
           <el-table-column prop="registry_url" label="镜像仓库地址" />
           <el-table-column prop="namespace" label="命名空间" />
+          <el-table-column label="类型" width="90">
+            <template #default="{ row }">
+              <el-tag :type="row.registry_type === 'swr' ? 'warning' : 'primary'" size="small">
+                {{ typeLabel(row) }}
+              </el-tag>
+            </template>
+          </el-table-column>
           <el-table-column prop="username" label="用户名" />
           <el-table-column label="状态" width="80">
             <template #default="{ row }">
@@ -50,7 +57,7 @@
                 编辑
               </el-button>
               <el-popconfirm
-                title="确定要删除这个 ACR 配置吗？"
+                title="确定要删除这个镜像仓库配置吗？"
                 @confirm="handleDelete(row)"
               >
                 <template #reference>
@@ -88,6 +95,8 @@ onMounted(() => {
   loadAcrList()
 })
 
+const typeLabel = (row) => (row.registry_type === 'swr' ? '华为 SWR' : '阿里 ACR')
+
 const loadAcrList = async () => {
   try {
     const response = await acrRegistryAPI.getAll()
@@ -100,8 +109,8 @@ const loadAcrList = async () => {
       }
     }
   } catch (error) {
-    console.error('加载 ACR 列表失败:', error)
-    ElMessage.error('加载 ACR 列表失败')
+    console.error('加载镜像仓库列表失败:', error)
+    ElMessage.error('加载镜像仓库列表失败')
   }
 }
 
@@ -118,10 +127,10 @@ const showEditDialog = (row) => {
 const handleDefaultChange = async (id) => {
   try {
     await acrRegistryAPI.setDefault(id)
-    ElMessage.success('默认 ACR 已更新')
+    ElMessage.success('默认镜像仓库已更新')
     await loadAcrList()
   } catch (error) {
-    ElMessage.error('设置默认 ACR 失败')
+    ElMessage.error('设置默认镜像仓库失败')
   }
 }
 

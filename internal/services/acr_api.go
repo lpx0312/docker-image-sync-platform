@@ -1,9 +1,7 @@
 package services
 
 import (
-	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -11,51 +9,17 @@ import (
 	"github.com/go-resty/resty/v2"
 )
 
-// AcrAPIService ACR API调用服务
+// AcrAPIService 阿里云 ACR 数据面 API 客户端
+//
+// 认证流程：Basic 凭证换取 dockerauth.{region}.aliyuncs.com 的 Bearer token，
+// 之后所有 /v2 请求携带 Authorization: Bearer <token>。
 type AcrAPIService struct {
 	client     *resty.Client
 	tokenCache map[string]*tokenCacheItem
 	tokenMu    sync.Mutex
 }
 
-type tokenCacheItem struct {
-	token     string
-	expiresAt time.Time
-}
-
-// ACRManifest ACR Manifest 结构
-type ACRManifest struct {
-	SchemaVersion int    `json:"schemaVersion"`
-	MediaType     string `json:"mediaType"`
-	Manifests     []struct {
-		MediaType string `json:"mediaType"`
-		Size      int64  `json:"size"`
-		Digest    string `json:"digest"`
-		Platform  struct {
-			Architecture string `json:"architecture"`
-			OS           string `json:"os"`
-		} `json:"platform"`
-	} `json:"manifests"`
-	Config struct {
-		MediaType string `json:"mediaType"`
-		Size      int64  `json:"size"`
-		Digest    string `json:"digest"`
-	} `json:"config"`
-	Layers []struct {
-		MediaType string `json:"mediaType"`
-		Size      int64  `json:"size"`
-		Digest    string `json:"digest"`
-	} `json:"layers"`
-}
-
-// TagDetail Tag详细信息
-type TagDetail struct {
-	Tag           string            `json:"tag"`
-	Architectures []string          `json:"architectures"`
-	Digests       map[string]string `json:"digests"`
-	Sizes         map[string]int64  `json:"sizes"`
-	PushedAt      map[string]string `json:"pushed_at"`
-}
+var _ RegistryAPIClient = (*AcrAPIService)(nil)
 
 // NewAcrAPIService 创建ACR API服务实例
 func NewAcrAPIService() *AcrAPIService {
@@ -99,10 +63,8 @@ func (s *AcrAPIService) invalidateTokenCache(registry, namespace, repo string) {
 	delete(s.tokenCache, tokenCacheKey(registry, namespace, repo))
 }
 
-// GetToken 获取 ACR 认证 Token
-func (s *AcrAPIService) GetToken(registry, username, password, namespace, repo, authServer, dockerService string) (string, error) {
-	cacheKey := tokenCacheKey(registry, namespace, repo)
-
+// getTokenWithScope 按指定 scope 获取 ACR 认证 Token（repository:{ns}/{repo}:pull 或 registry:catalog:*）
+func (s *AcrAPIService) getTokenWithScope(registry, username, password, scope, authServer, dockerService, cacheKey string) (string, error) {
 	s.tokenMu.Lock()
 	if item, ok := s.tokenCache[cacheKey]; ok && time.Now().Before(item.expiresAt) {
 		token := item.token
@@ -115,7 +77,6 @@ func (s *AcrAPIService) GetToken(registry, username, password, namespace, repo, 
 	if authServer == "" {
 		authServer = getDefaultAuthServer(registry)
 	}
-	scope := fmt.Sprintf("repository:%s/%s:pull", namespace, repo)
 	// 使用配置的 docker_service，为空时使用默认值
 	if dockerService == "" {
 		dockerService = "registry.aliyuncs.com:cn-hangzhou:26842"
@@ -167,6 +128,13 @@ func (s *AcrAPIService) GetToken(registry, username, password, namespace, repo, 
 	return result.Token, nil
 }
 
+// GetToken 获取 ACR 认证 Token
+func (s *AcrAPIService) GetToken(registry, username, password, namespace, repo, authServer, dockerService string) (string, error) {
+	cacheKey := tokenCacheKey(registry, namespace, repo)
+	scope := fmt.Sprintf("repository:%s/%s:pull", namespace, repo)
+	return s.getTokenWithScope(registry, username, password, scope, authServer, dockerService, cacheKey)
+}
+
 // GetTags 获取镜像的 Tag 列表
 func (s *AcrAPIService) GetTags(registry, username, password, namespace, repo, authServer, dockerService string) ([]string, error) {
 	for attempt := 0; attempt < 2; attempt++ {
@@ -209,7 +177,7 @@ func (s *AcrAPIService) GetTags(registry, username, password, namespace, repo, a
 	return nil, fmt.Errorf("获取Tag列表失败: HTTP 401")
 }
 
-// RepositoryExists 检查 ACR 中仓库是否存在（有至少一个 Tag）
+// RepositoryExists 检查仓库中是否存在指定镜像（有至少一个 Tag）
 // 通过 tags/list 判断：404 或空 Tag 列表视为不存在
 func (s *AcrAPIService) RepositoryExists(registry, username, password, namespace, repo, authServer, dockerService string) (bool, error) {
 	tags, err := s.GetTags(registry, username, password, namespace, repo, authServer, dockerService)
@@ -229,269 +197,13 @@ func (s *AcrAPIService) IsRepositoryNotFound(err error) bool {
 	return strings.Contains(msg, "HTTP 404") || strings.Contains(msg, "HTTP 401")
 }
 
-const (
-	tagDetailMaxRetries      = 4
-	tagDetailConcurrency     = 5
-	tagDetailRetryBaseGap    = 300 * time.Millisecond
-	tagDetailsBatchMaxSize   = 50
-)
-
-func inferArchFromTag(tag string) string {
-	lower := strings.ToLower(tag)
-	if strings.Contains(lower, "arm64") {
-		return "arm64"
-	}
-	if strings.Contains(lower, "amd64") {
-		return "amd64"
-	}
-	return ""
-}
-
-func sortArchitectures(archs []string) []string {
-	sorted := append([]string(nil), archs...)
-	sort.Slice(sorted, func(i, j int) bool {
-		order := map[string]int{"amd64": 0, "arm64": 1}
-		oi, oki := order[sorted[i]]
-		oj, okj := order[sorted[j]]
-		switch {
-		case oki && okj:
-			return oi < oj
-		case oki:
-			return true
-		case okj:
-			return false
-		default:
-			return sorted[i] < sorted[j]
-		}
-	})
-	return sorted
-}
-
-func (s *AcrAPIService) fetchImageArch(registry, token, namespace, repo, configDigest string) string {
-	if configDigest == "" {
-		return ""
-	}
-
-	var cfg struct {
-		Architecture string `json:"architecture"`
-		OS           string `json:"os"`
-	}
-
-	for attempt := 0; attempt <= tagDetailMaxRetries; attempt++ {
-		resp, err := s.client.R().
-			SetAuthToken(token).
-			Get(fmt.Sprintf("https://%s/v2/%s/%s/blobs/%s", registry, namespace, repo, configDigest))
-
-		if err != nil {
-			return ""
-		}
-
-		if resp.StatusCode() == 429 && attempt < tagDetailMaxRetries {
-			time.Sleep(tagDetailRetryBaseGap * time.Duration(attempt+1))
-			continue
-		}
-
-		if resp.StatusCode() != 200 {
-			return ""
-		}
-
-		if err := json.Unmarshal(resp.Body(), &cfg); err != nil {
-			return ""
-		}
-
-		if cfg.OS == "linux" && cfg.Architecture != "" {
-			return cfg.Architecture
-		}
-
-		return ""
-	}
-
-	return ""
-}
-
-func parseHTTPTime(value string) string {
-	if value == "" {
-		return ""
-	}
-
-	layouts := []string{
-		time.RFC1123,
-		time.RFC1123Z,
-		time.RFC3339,
-		time.RFC3339Nano,
-	}
-	for _, layout := range layouts {
-		if t, err := time.Parse(layout, value); err == nil {
-			return t.Format(time.RFC3339)
-		}
-	}
-
-	return value
-}
-
-func (s *AcrAPIService) fetchResourceLastModified(url, token string) string {
-	resp, err := s.client.R().
-		SetAuthToken(token).
-		Head(url)
-	if err != nil || resp.StatusCode() != 200 {
-		return ""
-	}
-
-	if lastModified := parseHTTPTime(resp.Header().Get("Last-Modified")); lastModified != "" {
-		return lastModified
-	}
-
-	return parseHTTPTime(resp.Header().Get("Date"))
-}
-
-func (s *AcrAPIService) fetchManifestLastModified(registry, token, namespace, repo, reference string) string {
-	if reference == "" {
-		return ""
-	}
-
-	url := fmt.Sprintf("https://%s/v2/%s/%s/manifests/%s", registry, namespace, repo, reference)
-	return s.fetchResourceLastModified(url, token)
-}
-
-func (s *AcrAPIService) fetchBlobLastModified(registry, token, namespace, repo, digest string) string {
-	if digest == "" {
-		return ""
-	}
-
-	url := fmt.Sprintf("https://%s/v2/%s/%s/blobs/%s", registry, namespace, repo, digest)
-	return s.fetchResourceLastModified(url, token)
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
-}
-
-func (s *AcrAPIService) parseManifestToTagDetail(tag, registry, namespace, repo, token string, body []byte, contentDigest, manifestLastModified string) (*TagDetail, error) {
-	var manifest ACRManifest
-	if err := json.Unmarshal(body, &manifest); err != nil {
-		return nil, fmt.Errorf("解析Manifest失败: %w", err)
-	}
-
-	detail := &TagDetail{
-		Tag:           tag,
-		Architectures: make([]string, 0),
-		Digests:       make(map[string]string),
-		Sizes:         make(map[string]int64),
-		PushedAt:      make(map[string]string),
-	}
-
-	if len(manifest.Manifests) > 0 {
-		for _, m := range manifest.Manifests {
-			if m.Platform.OS == "linux" && m.Platform.Architecture != "" {
-				arch := m.Platform.Architecture
-				detail.Architectures = append(detail.Architectures, arch)
-				detail.Digests[arch] = m.Digest
-				detail.Sizes[arch] = m.Size
-				detail.PushedAt[arch] = firstNonEmpty(
-					manifestLastModified,
-					s.fetchManifestLastModified(registry, token, namespace, repo, m.Digest),
-					s.fetchBlobLastModified(registry, token, namespace, repo, m.Digest),
-				)
-			}
-		}
-		detail.Architectures = sortArchitectures(detail.Architectures)
-		return detail, nil
-	}
-
-	arch := inferArchFromTag(tag)
-	if arch == "" {
-		arch = s.fetchImageArch(registry, token, namespace, repo, manifest.Config.Digest)
-	}
-	if arch == "" {
-		return detail, nil
-	}
-
-	detail.Architectures = append(detail.Architectures, arch)
-	detail.Digests[arch] = contentDigest
-
-	var totalSize int64
-	for _, layer := range manifest.Layers {
-		totalSize += layer.Size
-	}
-	if totalSize > 0 {
-		detail.Sizes[arch] = totalSize
-	}
-
-	digestForPushTime := contentDigest
-	if manifest.Config.Digest != "" {
-		digestForPushTime = manifest.Config.Digest
-	}
-	detail.PushedAt[arch] = firstNonEmpty(
-		manifestLastModified,
-		s.fetchManifestLastModified(registry, token, namespace, repo, tag),
-		s.fetchManifestLastModified(registry, token, namespace, repo, contentDigest),
-		s.fetchBlobLastModified(registry, token, namespace, repo, digestForPushTime),
-	)
-
-	return detail, nil
-}
-
-func (s *AcrAPIService) fetchManifest(registry, token, namespace, repo, tag string) ([]byte, string, string, int, error) {
-	return s.fetchManifestWithRetry(registry, namespace, repo, tag, func(forceRefresh bool) (string, error) {
+func (s *AcrAPIService) fetchManifest(registry, namespace, repo, tag string, username, password, authServer, dockerService string) ([]byte, string, string, int, error) {
+	return fetchManifestWithRetry(s.client, registry, namespace, repo, tag, func(forceRefresh bool) (string, error) {
 		if forceRefresh {
-			return "", fmt.Errorf("token refresh not supported")
+			s.invalidateTokenCache(registry, namespace, repo)
 		}
-		return token, nil
+		return s.GetToken(registry, username, password, namespace, repo, authServer, dockerService)
 	})
-}
-
-func (s *AcrAPIService) fetchManifestWithRetry(registry, namespace, repo, tag string, getToken func(forceRefresh bool) (string, error)) ([]byte, string, string, int, error) {
-	acceptHeader := "application/vnd.oci.image.index.v1+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json,application/vnd.docker.distribution.manifest.list.v2+json"
-
-	var lastStatus int
-	tokenRefreshed := false
-
-	for attempt := 0; attempt <= tagDetailMaxRetries; attempt++ {
-		token, err := getToken(false)
-		if err != nil {
-			return nil, "", "", 0, err
-		}
-
-		resp, err := s.client.R().
-			SetAuthToken(token).
-			SetHeader("Accept", acceptHeader).
-			Get(fmt.Sprintf("https://%s/v2/%s/%s/manifests/%s", registry, namespace, repo, tag))
-
-		if err != nil {
-			return nil, "", "", 0, fmt.Errorf("获取Manifest失败: %w", err)
-		}
-
-		lastStatus = resp.StatusCode()
-		if lastStatus == 200 {
-			lastModified := firstNonEmpty(
-				parseHTTPTime(resp.Header().Get("Last-Modified")),
-				parseHTTPTime(resp.Header().Get("Date")),
-			)
-			return resp.Body(), resp.Header().Get("Docker-Content-Digest"), lastModified, lastStatus, nil
-		}
-
-		if lastStatus == 401 && !tokenRefreshed {
-			tokenRefreshed = true
-			if _, err := getToken(true); err != nil {
-				return nil, "", "", lastStatus, fmt.Errorf("获取Manifest失败: HTTP %d", lastStatus)
-			}
-			continue
-		}
-
-		if lastStatus == 429 && attempt < tagDetailMaxRetries {
-			time.Sleep(tagDetailRetryBaseGap * time.Duration(attempt+1))
-			continue
-		}
-
-		return nil, "", "", lastStatus, fmt.Errorf("获取Manifest失败: HTTP %d", lastStatus)
-	}
-
-	return nil, "", "", lastStatus, fmt.Errorf("获取Manifest失败: HTTP %d", lastStatus)
 }
 
 // GetTagDetail 获取 Tag 详细信息
@@ -501,22 +213,12 @@ func (s *AcrAPIService) GetTagDetail(registry, username, password, namespace, re
 		return nil, err
 	}
 
-	body, contentDigest, manifestLastModified, _, err := s.fetchManifest(registry, token, namespace, repo, tag)
+	body, contentDigest, manifestLastModified, _, err := s.fetchManifest(registry, namespace, repo, tag, username, password, authServer, dockerService)
 	if err != nil {
 		return nil, err
 	}
 
-	return s.parseManifestToTagDetail(tag, registry, namespace, repo, token, body, contentDigest, manifestLastModified)
-}
-
-func emptyTagDetail(tag string) *TagDetail {
-	return &TagDetail{
-		Tag:           tag,
-		Architectures: []string{},
-		Digests:       map[string]string{},
-		Sizes:         map[string]int64{},
-		PushedAt:      map[string]string{},
-	}
+	return parseManifestToTagDetail(s.client, tag, registry, namespace, repo, token, body, contentDigest, manifestLastModified)
 }
 
 // GetTagNames 获取镜像 Tag 名称列表
@@ -567,14 +269,14 @@ func (s *AcrAPIService) GetTagsDetailsBatch(registry, username, password, namesp
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			body, contentDigest, manifestLastModified, _, err := s.fetchManifestWithRetry(registry, namespace, repo, tag, getToken)
+			body, contentDigest, manifestLastModified, _, err := fetchManifestWithRetry(s.client, registry, namespace, repo, tag, getToken)
 			if err != nil {
 				details[index] = emptyTagDetail(tag)
 				return
 			}
 
 			token, _ := getToken(false)
-			detail, err := s.parseManifestToTagDetail(tag, registry, namespace, repo, token, body, contentDigest, manifestLastModified)
+			detail, err := parseManifestToTagDetail(s.client, tag, registry, namespace, repo, token, body, contentDigest, manifestLastModified)
 			if err != nil {
 				details[index] = emptyTagDetail(tag)
 				return
@@ -596,4 +298,53 @@ func (s *AcrAPIService) GetTagsWithDetails(registry, username, password, namespa
 	}
 
 	return s.GetTagsDetailsBatch(registry, username, password, namespace, repo, authServer, dockerService, tagNames)
+}
+
+// ListRepositories 通过 /v2/_catalog 列出远程仓库中的全部镜像仓库名（从仓库导入用）
+func (s *AcrAPIService) ListRepositories(registry, username, password, namespace, authServer, dockerService string) ([]string, error) {
+	cacheKey := fmt.Sprintf("%s:_catalog", registry)
+	scope := "registry:catalog:*"
+
+	repositories := make([]string, 0, 64)
+	last := ""
+	for {
+		var result struct {
+			Repositories []string `json:"repositories"`
+		}
+
+		reqURL := fmt.Sprintf("https://%s/v2/_catalog?n=1000", registry)
+		if last != "" {
+			reqURL += "&last=" + last
+		}
+
+		token, err := s.getTokenWithScope(registry, username, password, scope, authServer, dockerService, cacheKey)
+		if err != nil {
+			return nil, fmt.Errorf("获取Catalog Token失败: %w", err)
+		}
+
+		resp, err := s.client.R().
+			SetAuthToken(token).
+			SetResult(&result).
+			Get(reqURL)
+		if err != nil {
+			return nil, fmt.Errorf("获取仓库列表失败: %w", err)
+		}
+		if resp.StatusCode() != 200 {
+			return nil, fmt.Errorf("获取仓库列表失败: HTTP %d", resp.StatusCode())
+		}
+
+		for _, repo := range result.Repositories {
+			// catalog 返回形如 namespace/repo 的全路径，过滤出本命名空间
+			if namespace != "" && strings.HasPrefix(repo, namespace+"/") {
+				repositories = append(repositories, strings.TrimPrefix(repo, namespace+"/"))
+			}
+		}
+
+		if len(result.Repositories) < 1000 {
+			break
+		}
+		last = result.Repositories[len(result.Repositories)-1]
+	}
+
+	return repositories, nil
 }
