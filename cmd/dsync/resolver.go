@@ -32,23 +32,42 @@ func fetchQuotaSummary(c *Client) ([]quotaSummaryItem, error) {
 	return resp.Data, nil
 }
 
-// resolveAcrByNamespace 按 namespace 精确匹配 ACR。
-// 未命中时列出所有可用 namespace，方便用户纠正。
+// resolveAcrByNamespace 按别名优先匹配镜像仓库（--acr 参数），
+// 兼容按 namespace 匹配的旧用法；namespace 命中多个时要求改用别名。
 func resolveAcrByNamespace(c *Client, ns string) (*AcrRegistryInfo, error) {
 	regs, err := listRegistries(c)
 	if err != nil {
 		return nil, err
 	}
+
+	// 优先按别名精确匹配
 	for i := range regs {
-		if regs[i].Namespace == ns {
+		if regs[i].Alias == ns {
 			return &regs[i], nil
 		}
 	}
-	names := make([]string, 0, len(regs))
-	for _, r := range regs {
-		names = append(names, r.Namespace)
+
+	// 兼容 namespace：未命中别名时按 namespace 匹配
+	var matched *AcrRegistryInfo
+	count := 0
+	for i := range regs {
+		if regs[i].Namespace == ns {
+			matched = &regs[i]
+			count++
+		}
 	}
-	return nil, fmt.Errorf("未找到 namespace 为 %q 的 ACR，可用：%s", ns, strings.Join(names, ", "))
+	switch count {
+	case 1:
+		return matched, nil
+	case 0:
+		names := make([]string, 0, len(regs))
+		for _, r := range regs {
+			names = append(names, r.Alias)
+		}
+		return nil, fmt.Errorf("未找到别名为 %q 的镜像仓库，可用别名：%s", ns, strings.Join(names, ", "))
+	default:
+		return nil, fmt.Errorf("%q 同时是多个仓库的 namespace（ACR/SWR 可能同名），请改用别名指定", ns)
+	}
 }
 
 // suggestAcr 调用服务端亲和性逻辑推荐目标 ACR。
@@ -101,4 +120,12 @@ func splitImageTag(ref string) (repo, tag string) {
 		repo = ref
 	}
 	return repo, tag
+}
+
+// aliasOrNamespace 别名优先，别名缺失时回退 namespace（兼容老数据）
+func aliasOrNamespace(alias, namespace string) string {
+	if alias != "" {
+		return alias
+	}
+	return namespace
 }

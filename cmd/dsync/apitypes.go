@@ -22,6 +22,7 @@ type AcrRegistryInfo = models.AcrRegistry
 type quotaSummaryItem struct {
 	AcrRegistryID  uint   `json:"acr_registry_id"`
 	Namespace      string `json:"namespace"`
+	Alias          string `json:"alias"`
 	RegistryURL    string `json:"registry_url"`
 	RepoCount      int    `json:"repo_count"`
 	RepoQuota      int    `json:"repo_quota"`
@@ -144,6 +145,7 @@ type checkAcrItem struct {
 	HasConflict        bool   `json:"has_conflict"`
 	SuggestedAcrID     uint   `json:"suggested_acr_id"`
 	SuggestedNamespace string `json:"suggested_namespace,omitempty"`
+	SuggestedAlias     string `json:"suggested_alias,omitempty"`
 	Message            string `json:"message,omitempty"`
 	IsNewRepository    bool   `json:"is_new_repository"`
 }
@@ -160,11 +162,13 @@ type suggestAcrData struct {
 		HasAffinity    bool   `json:"has_affinity"`
 		AcrRegistryID  uint   `json:"acr_registry_id"`
 		AcrNamespace   string `json:"acr_namespace"`
+		AcrAlias       string `json:"acr_alias,omitempty"`
 		RegistryURL    string `json:"registry_url"`
 		Source         string `json:"source"`
 	} `json:"affinity"`
 	SuggestedAcrID     uint               `json:"suggested_acr_id"`
 	SuggestedNamespace string             `json:"suggested_namespace"`
+	SuggestedAlias     string             `json:"suggested_alias,omitempty"`
 	SuggestionReason   string             `json:"suggestion_reason"`
 	QuotaSummary       []quotaSummaryItem `json:"quota_summary"`
 }

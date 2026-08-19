@@ -2115,6 +2115,7 @@ func (h *SyncHandler) SuggestAcr(c *gin.Context) {
 		"data": gin.H{
 			"affinity":            resolved.Affinity,
 			"suggested_acr_id":    resolved.SuggestedAcrID,
+			"suggested_alias":     resolved.SuggestedAlias,
 			"suggested_namespace": resolved.SuggestedNamespace,
 			"suggestion_reason":   resolved.SuggestionReason,
 			"quota_summary":       quotaSummary,

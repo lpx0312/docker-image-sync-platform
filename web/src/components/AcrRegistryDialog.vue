@@ -32,6 +32,13 @@
         />
       </el-form-item>
 
+      <el-form-item label="别名" prop="alias">
+        <el-input
+          v-model="form.alias"
+          placeholder="平台内展示与选择用的唯一标识（ACR/SWR 命名空间可能同名）"
+        />
+      </el-form-item>
+
       <el-form-item label="用户名" prop="username">
         <el-input
           v-model="form.username"
@@ -164,6 +171,7 @@ const isEdit = ref(false)
 const form = reactive({
   registry_url: '',
   namespace: '',
+  alias: '',
   username: '',
   password: '',
   auth_server: '',
@@ -174,6 +182,19 @@ const form = reactive({
 })
 
 const isSwr = computed(() => form.registry_type === 'swr')
+
+// 新增时别名默认跟随命名空间预填，手动改过则不再跟随
+const aliasManuallySet = ref(false)
+watch(() => form.namespace, (val) => {
+  if (!isEdit.value && !aliasManuallySet.value) {
+    form.alias = val
+  }
+})
+watch(() => form.alias, (val) => {
+  if (!isEdit.value && val && val !== form.namespace) {
+    aliasManuallySet.value = true
+  }
+})
 
 const rules = {
   registry_url: [{ required: true, message: '请输入镜像仓库地址', trigger: 'blur' }],
@@ -189,6 +210,7 @@ watch(() => props.modelValue, (val) => {
     Object.assign(form, {
       registry_url: props.editData.registry_url,
       namespace: props.editData.namespace,
+      alias: props.editData.alias || props.editData.namespace || '',
       username: props.editData.username,
       password: '***',
       auth_server: props.editData.auth_server || '',
@@ -202,6 +224,7 @@ watch(() => props.modelValue, (val) => {
     Object.assign(form, {
       registry_url: '',
       namespace: '',
+      alias: '',
       username: '',
       password: '',
       auth_server: '',

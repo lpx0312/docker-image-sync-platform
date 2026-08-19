@@ -69,10 +69,43 @@ func normalizeRegistryType(registryType string) (string, error) {
 	return registryType, nil
 }
 
+// normalizeAlias 规范化别名：去空白，留空默认取 namespace
+func normalizeAlias(alias, namespace string) string {
+	alias = strings.TrimSpace(alias)
+	if alias == "" {
+		alias = strings.TrimSpace(namespace)
+	}
+	return alias
+}
+
+// checkAliasConflict 校验别名在平台内唯一（软删除记录除外）
+func (s *AcrRegistryService) checkAliasConflict(alias string, excludeID uint) error {
+	var count int64
+	query := s.db.Model(&models.AcrRegistry{}).Where("alias = ?", alias)
+	if excludeID > 0 {
+		query = query.Where("id != ?", excludeID)
+	}
+	if err := query.Count(&count).Error; err != nil {
+		return fmt.Errorf("查询别名冲突失败: %w", err)
+	}
+	if count > 0 {
+		return fmt.Errorf("别名「%s」已被其他镜像仓库使用，请换一个（ACR 与 SWR 的命名空间可能同名，需用别名区分）", alias)
+	}
+	return nil
+}
+
 // Create 创建ACR配置
 func (s *AcrRegistryService) Create(req *models.AcrRegistryRequest) (*models.AcrRegistry, error) {
 	registryType, err := normalizeRegistryType(req.RegistryType)
 	if err != nil {
+		return nil, err
+	}
+
+	alias := normalizeAlias(req.Alias, req.Namespace)
+	if alias == "" {
+		return nil, fmt.Errorf("别名不能为空（命名空间为空时需手动指定别名）")
+	}
+	if err := s.checkAliasConflict(alias, 0); err != nil {
 		return nil, err
 	}
 
@@ -85,6 +118,7 @@ func (s *AcrRegistryService) Create(req *models.AcrRegistryRequest) (*models.Acr
 	registry := &models.AcrRegistry{
 		RegistryURL:   req.RegistryURL,
 		Namespace:     req.Namespace,
+		Alias:         alias,
 		Username:      req.Username,
 		Password:      encryptedPassword,
 		AuthServer:    req.AuthServer,
@@ -122,6 +156,27 @@ func (s *AcrRegistryService) Update(id uint, req *models.AcrRegistryUpdateReques
 	}
 
 	updates := map[string]interface{}{}
+
+	// 别名：请求携带（非空）时更新并查重
+	newAlias := strings.TrimSpace(req.Alias)
+	effectiveNamespace := req.Namespace
+	if effectiveNamespace == "" {
+		effectiveNamespace = registry.Namespace
+	}
+	if newAlias != "" && newAlias != registry.Alias {
+		if err := s.checkAliasConflict(newAlias, id); err != nil {
+			return nil, err
+		}
+		updates["alias"] = newAlias
+	} else if newAlias == "" && effectiveNamespace != registry.Namespace && registry.Alias == registry.Namespace {
+		// 命名空间变化且别名未手动设置过（别名==旧命名空间）时跟随更新
+		fallback := normalizeAlias("", effectiveNamespace)
+		if err := s.checkAliasConflict(fallback, id); err != nil {
+			return nil, err
+		}
+		updates["alias"] = fallback
+	}
+
 	if req.RegistryURL != "" {
 		updates["registry_url"] = req.RegistryURL
 	}

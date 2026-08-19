@@ -33,6 +33,7 @@ var acrListCmd = &cobra.Command{
 
 		type row struct {
 			ID           uint              `json:"id"`
+			Alias        string            `json:"alias"`
 			Namespace    string            `json:"namespace"`
 			Registry     string            `json:"registry_url"`
 			RegistryType string            `json:"registry_type"`
@@ -47,6 +48,7 @@ var acrListCmd = &cobra.Command{
 		for _, r := range regs {
 			item := row{
 				ID:           r.ID,
+				Alias:        aliasOrNamespace(r.Alias, r.Namespace),
 				Namespace:    r.Namespace,
 				Registry:     r.RegistryURL,
 				RegistryType: r.RegistryType,
@@ -85,6 +87,7 @@ var acrListCmd = &cobra.Command{
 				}
 				table = append(table, []string{
 					fmt.Sprintf("%d%s", r.ID, defMark),
+					r.Alias,
 					r.Namespace,
 					registryType,
 					r.Registry,
@@ -92,8 +95,8 @@ var acrListCmd = &cobra.Command{
 					remaining,
 				})
 			}
-			printTable([]string{"ID", "NAMESPACE", "TYPE", "REGISTRY", "仓库用量", "剩余配额"}, table)
-			fmt.Println("(* 为默认仓库；引用仓库时使用 NAMESPACE 列的值，如 --acr <namespace>)")
+			printTable([]string{"ID", "ALIAS", "NAMESPACE", "TYPE", "REGISTRY", "仓库用量", "剩余配额"}, table)
+			fmt.Println("(* 为默认仓库；引用仓库时优先使用 ALIAS 列的值，如 --acr <alias>；也兼容 namespace)")
 		})
 	},
 }

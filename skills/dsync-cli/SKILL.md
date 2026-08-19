@@ -16,7 +16,7 @@ description: >-
 
 # dsync CLI · Docker 镜像同步平台操作
 
-通过 `dsync` 命令行客户端操作镜像同步平台。平台负责把海外镜像经 GitHub Actions 同步到绑定的镜像仓库（阿里云 ACR 或华为云 SWR，`acr list` 的 TYPE 列区分类型，SWR 的 namespace 即组织名），返回国内可直接 `docker pull` 的地址。
+通过 `dsync` 命令行客户端操作镜像同步平台。平台负责把海外镜像经 GitHub Actions 同步到绑定的镜像仓库（阿里云 ACR 或华为云 SWR，`acr list` 的 TYPE 列区分类型，SWR 的 namespace 即组织名），返回国内可直接 `docker pull` 的地址。仓库以**别名（ALIAS）**标识展示与选择（ACR/SWR 命名空间可能同名），`--acr` 优先按别名匹配、兼容 namespace。
 
 ## 前提与登录态
 

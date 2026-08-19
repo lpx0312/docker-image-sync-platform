@@ -22,6 +22,9 @@ type AcrRegistry struct {
 	ID            uint           `json:"id" gorm:"primaryKey"`
 	RegistryURL   string         `json:"registry_url" gorm:"type:varchar(255);not null"`
 	Namespace     string         `json:"namespace" gorm:"type:varchar(100);not null"`
+	// Alias 别名：平台内展示与选择的唯一标识（ACR/SWR 的 namespace 可能同名，
+	// 需要用别名区分）。留空时默认取 namespace，同名冲突时需手动指定
+	Alias         string         `json:"alias" gorm:"type:varchar(100)"`
 	Username      string         `json:"username" gorm:"type:varchar(100);not null"`
 	Password      string         `json:"-" gorm:"type:varchar(500);not null"`
 	AuthServer    string         `json:"auth_server" gorm:"type:varchar(255)"`
@@ -41,6 +44,7 @@ type AcrRegistry struct {
 type AcrRegistryRequest struct {
 	RegistryURL   string `json:"registry_url" binding:"required"`
 	Namespace     string `json:"namespace" binding:"required"`
+	Alias         string `json:"alias"`
 	Username      string `json:"username" binding:"required"`
 	Password      string `json:"password" binding:"required"`
 	AuthServer    string `json:"auth_server"`
@@ -54,6 +58,7 @@ type AcrRegistryRequest struct {
 type AcrRegistryUpdateRequest struct {
 	RegistryURL   string `json:"registry_url"`
 	Namespace     string `json:"namespace"`
+	Alias         string `json:"alias"`
 	Username      string `json:"username"`
 	Password      string `json:"password"`
 	AuthServer    string `json:"auth_server"`

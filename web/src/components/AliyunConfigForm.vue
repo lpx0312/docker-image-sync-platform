@@ -37,6 +37,11 @@
         <el-table :data="acrList" style="width: 100%; margin-top: 20px">
           <el-table-column type="index" label="序号" width="60" />
           <el-table-column prop="registry_url" label="镜像仓库地址" />
+          <el-table-column prop="alias" label="别名">
+            <template #default="{ row }">
+              {{ row.alias || row.namespace }}
+            </template>
+          </el-table-column>
           <el-table-column prop="namespace" label="命名空间" />
           <el-table-column label="类型" width="90">
             <template #default="{ row }">

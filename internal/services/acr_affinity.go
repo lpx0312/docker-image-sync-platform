@@ -33,6 +33,7 @@ func NewAcrAffinityService(db *gorm.DB) *AcrAffinityService {
 // AcrQuotaSummary 单个仓库的配额摘要（repo_quota=0 表示不限，如 SWR）
 type AcrQuotaSummary struct {
 	AcrRegistryID  uint   `json:"acr_registry_id"`
+	Alias          string `json:"alias"`
 	Namespace      string `json:"namespace"`
 	RegistryURL    string `json:"registry_url"`
 	RegistryType   string `json:"registry_type"`
@@ -48,6 +49,7 @@ type AcrAffinityResult struct {
 	RepositoryName string `json:"repository_name"`
 	HasAffinity    bool   `json:"has_affinity"`
 	AcrRegistryID  uint   `json:"acr_registry_id,omitempty"`
+	AcrAlias       string `json:"acr_alias,omitempty"`
 	AcrNamespace   string `json:"acr_namespace,omitempty"`
 	RegistryURL    string `json:"registry_url,omitempty"`
 	Source         string `json:"source"` // repository | sync_record | none
@@ -61,6 +63,7 @@ type AcrAffinityResult struct {
 type AcrResolveResult struct {
 	Affinity           *AcrAffinityResult `json:"affinity"`
 	SuggestedAcrID     uint               `json:"suggested_acr_id"`
+	SuggestedAlias     string             `json:"suggested_alias,omitempty"`
 	SuggestedNamespace string             `json:"suggested_namespace,omitempty"`
 	SuggestionReason   string             `json:"suggestion_reason"` // affinity | default | alternate | default_full | fallback
 }
@@ -71,6 +74,7 @@ type AcrConflictInfo struct {
 	RepositoryName     string `json:"repository_name"`
 	SelectedAcrID      uint   `json:"selected_acr_id"`
 	SuggestedAcrID     uint   `json:"suggested_acr_id,omitempty"`
+	SuggestedAlias     string `json:"suggested_alias,omitempty"`
 	SuggestedNamespace string `json:"suggested_namespace,omitempty"`
 	Message            string `json:"message,omitempty"`
 }
@@ -82,6 +86,7 @@ type AcrCheckItem struct {
 	HasAffinity        bool   `json:"has_affinity"`
 	HasConflict        bool   `json:"has_conflict"`
 	SuggestedAcrID     uint   `json:"suggested_acr_id,omitempty"`
+	SuggestedAlias     string `json:"suggested_alias,omitempty"`
 	SuggestedNamespace string `json:"suggested_namespace,omitempty"`
 	Message            string `json:"message,omitempty"`
 	IsNewRepository    bool   `json:"is_new_repository"`
@@ -164,6 +169,7 @@ func (s *AcrAffinityService) fillAffinityFromRegistry(result *AcrAffinityResult,
 	quota := repoQuotaFor(acr.RegistryType)
 	result.HasAffinity = true
 	result.AcrRegistryID = acrRegistryID
+	result.AcrAlias = acr.Alias
 	result.AcrNamespace = acr.Namespace
 	result.RegistryURL = acr.RegistryURL
 	result.Source = source
@@ -222,6 +228,7 @@ func (s *AcrAffinityService) ResolveTargetAcr(sourceImage string) (*AcrResolveRe
 	result := &AcrResolveResult{Affinity: affinity}
 	if affinity.HasAffinity {
 		result.SuggestedAcrID = affinity.AcrRegistryID
+		result.SuggestedAlias = affinity.AcrAlias
 		result.SuggestedNamespace = affinity.AcrNamespace
 		result.SuggestionReason = "affinity"
 		return result, nil
@@ -235,6 +242,7 @@ func (s *AcrAffinityService) ResolveTargetAcr(sourceImage string) (*AcrResolveRe
 	for _, item := range quotaSummary {
 		if item.IsDefault && !item.IsFull {
 			result.SuggestedAcrID = item.AcrRegistryID
+			result.SuggestedAlias = item.Alias
 			result.SuggestedNamespace = item.Namespace
 			result.SuggestionReason = "default"
 			return result, nil
@@ -244,6 +252,7 @@ func (s *AcrAffinityService) ResolveTargetAcr(sourceImage string) (*AcrResolveRe
 	for _, item := range quotaSummary {
 		if !item.IsFull {
 			result.SuggestedAcrID = item.AcrRegistryID
+			result.SuggestedAlias = item.Alias
 			result.SuggestedNamespace = item.Namespace
 			result.SuggestionReason = "alternate"
 			return result, nil
@@ -253,6 +262,7 @@ func (s *AcrAffinityService) ResolveTargetAcr(sourceImage string) (*AcrResolveRe
 	for _, item := range quotaSummary {
 		if item.IsDefault {
 			result.SuggestedAcrID = item.AcrRegistryID
+			result.SuggestedAlias = item.Alias
 			result.SuggestedNamespace = item.Namespace
 			result.SuggestionReason = "default_full"
 			return result, nil
@@ -261,6 +271,7 @@ func (s *AcrAffinityService) ResolveTargetAcr(sourceImage string) (*AcrResolveRe
 
 	if len(quotaSummary) > 0 {
 		result.SuggestedAcrID = quotaSummary[0].AcrRegistryID
+		result.SuggestedAlias = quotaSummary[0].Alias
 		result.SuggestedNamespace = quotaSummary[0].Namespace
 		result.SuggestionReason = "fallback"
 	}
@@ -291,11 +302,12 @@ func (s *AcrAffinityService) CheckConflict(repositoryName string, selectedAcrID 
 
 	info.HasConflict = true
 	info.SuggestedAcrID = affinity.AcrRegistryID
+	info.SuggestedAlias = affinity.AcrAlias
 	info.SuggestedNamespace = affinity.AcrNamespace
 	info.Message = fmt.Sprintf(
-		"仓库 %s 已归属 ACR「%s」，当前选择了其他 ACR，建议同步到原 ACR",
+		"仓库 %s 已归属镜像仓库「%s」，当前选择了其他仓库，建议同步到原仓库",
 		repositoryName,
-		affinity.AcrNamespace,
+		affinity.AcrAlias,
 	)
 	return info, nil
 }
@@ -330,6 +342,7 @@ func (s *AcrAffinityService) CheckImages(images []string, selectedAcrID uint) (*
 			HasAffinity:        affinity.HasAffinity,
 			IsNewRepository:    !affinity.HasAffinity,
 			SuggestedAcrID:     resolved.SuggestedAcrID,
+			SuggestedAlias:     resolved.SuggestedAlias,
 			SuggestedNamespace: resolved.SuggestedNamespace,
 		}
 
@@ -339,9 +352,9 @@ func (s *AcrAffinityService) CheckImages(images []string, selectedAcrID uint) (*
 			if selectedAcrID > 0 && selectedAcrID != resolved.SuggestedAcrID {
 				item.HasConflict = true
 				item.Message = fmt.Sprintf(
-					"仓库「%s」已归属 ACR「%s」，但强制选择了其他 ACR",
+					"仓库「%s」已归属镜像仓库「%s」，但强制选择了其他仓库",
 					repoName,
-					affinity.AcrNamespace,
+					affinity.AcrAlias,
 				)
 				result.Conflicts = append(result.Conflicts, item)
 				result.HasAnyConflict = true
@@ -384,6 +397,7 @@ func (s *AcrAffinityService) GetQuotaSummary() ([]AcrQuotaSummary, error) {
 		}
 		summary = append(summary, AcrQuotaSummary{
 			AcrRegistryID:  acr.ID,
+			Alias:          acr.Alias,
 			Namespace:      acr.Namespace,
 			RegistryURL:    acr.RegistryURL,
 			RegistryType:   acr.RegistryType,

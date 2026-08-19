@@ -14,7 +14,7 @@
         <div v-for="item in quotaSummary" :key="item.acr_registry_id" class="quota-item">
           <div class="quota-label">
             <span>
-              {{ item.namespace }}
+              {{ item.alias || item.namespace }}
               <el-tag :type="item.registry_type === 'swr' ? 'warning' : 'primary'" size="small" style="margin-left: 6px;">
                 {{ item.registry_type === 'swr' ? '华为 SWR' : '阿里 ACR' }}
               </el-tag>
@@ -263,11 +263,12 @@ onMounted(() => {
 
 const getAcrLabel = (item) => {
   const typeText = item.registry_type === 'swr' ? ' · SWR' : ''
+  const name = item.alias || item.namespace
   const quota = quotaMap.value[item.id]
   if (quota) {
-    return `${item.namespace} (${formatQuotaCount(quota)})${typeText}`
+    return `${name} (${formatQuotaCount(quota)})${typeText}`
   }
-  return `${item.namespace}${typeText}`
+  return `${name}${typeText}`
 }
 
 const formatQuotaCount = (item) => {
@@ -545,7 +546,7 @@ const handleCleanInvalid = async () => {
     return
   }
 
-  const acrLabel = acrList.value.find(item => item.id === selectedAcrId.value)?.namespace || '当前仓库'
+  const acrLabel = acrList.value.find(item => item.id === selectedAcrId.value)?.alias || acrList.value.find(item => item.id === selectedAcrId.value)?.namespace || '当前仓库'
 
   try {
     await ElMessageBox.confirm(

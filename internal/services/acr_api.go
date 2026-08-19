@@ -349,17 +349,17 @@ func (s *AcrAPIService) ListRepositories(registry, username, password, accessKey
 	return repositories, nil
 }
 
-// TestConnection 测试 ACR 配置连通性（token 获取 + 命名空间读取）
+// TestConnection 测试 ACR 配置连通性（地址 + 账号密码）
 func (s *AcrAPIService) TestConnection(registry, username, password, accessKey, secretKey, namespace, authServer, dockerService string) *RegistryTestResult {
 	result := &RegistryTestResult{RegistryType: "acr"}
 
-	// 用登录凭证对探测仓库做 tags/list：凭证错误在换 token 阶段即报错，
-	// 仓库不存在返回空列表（正常），组织/命名空间无权限也会在此暴露
-	if _, err := s.GetTags(registry, username, password, namespace, "connection-test", authServer, dockerService); err != nil {
+	// ACR 对不存在的仓库 tags/list 可能返回 401，不能用它做连通性验证；
+	// 只做换 token（dockerauth Basic 认证），成功即代表地址/账号密码正确
+	if _, err := s.GetToken(registry, username, password, namespace, "connection-test", authServer, dockerService); err != nil {
 		result.LoginMessage = err.Error()
 	} else {
 		result.LoginOK = true
-		result.LoginMessage = "凭证可用（可推送/拉取镜像，命名空间 " + namespace + " 读取正常）"
+		result.LoginMessage = "凭证可用（仓库地址与账号密码验证通过）"
 	}
 	return result
 }

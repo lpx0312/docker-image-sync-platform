@@ -2,6 +2,8 @@
 
 `dsync` 是 docker-image-sync-platform 的 CLI 客户端，通过平台 REST API（`/api/v1`）完成登录、镜像仓库（阿里云 ACR / 华为云 SWR）/镜像/Tag 查询、镜像同步提交与进度跟踪，适合日常使用与脚本自动化。
 
+> 镜像仓库以**别名（ALIAS）**标识展示与选择（ACR/SWR 命名空间可能同名）；`--acr` 参数优先按别名匹配，也兼容直接传 namespace（同名冲突时会要求改用别名）。
+
 > 平台支持多仓库实例混管：阿里云 ACR 与华为云 SWR 使用同一套 `--acr <namespace>` 引用方式（SWR 的 namespace 即组织名），`dsync acr list` 的 TYPE 列会标注类型。
 
 ## 安装
@@ -37,7 +39,7 @@ sudo make cli-install   # 安装到 /usr/local/bin/dsync
 # 1. 登录（交互输入密码，凭据保存在 ~/.config/dsync/config.json，权限 0600）
 dsync login --server http://localhost:8080
 
-# 2. 查看 ACR 列表（引用 ACR 时使用 NAMESPACE 列的值）
+# 2. 查看仓库列表（引用仓库时优先使用 ALIAS 列的值）
 dsync acr list
 
 # 3. 同步一个镜像（默认阻塞等待，完成后打印目标镜像地址）
@@ -79,7 +81,7 @@ dsync sync k8s.gcr.io/pause:3.9 --target-tag 3.9-amd64 --arch amd64
 dsync sync nginx:1.25 --no-wait       # 只拿 task-id，不等待
 ```
 
-- `--acr <namespace>`：指定目标 ACR。**不指定时按服务端亲和性逻辑自动选择**（与 Web 端一致），CLI 会打印所选 ACR 与理由。
+- `--acr <alias>`：指定目标镜像仓库（别名优先，兼容 namespace）。**不指定时按服务端亲和性逻辑自动选择**（与 Web 端一致），CLI 会打印所选 ACR 与理由。
 - `--target-tag`：目标 Tag，默认沿用源镜像 Tag。
 - `--arch`：目标架构（amd64/arm64）。
 - `--force`：跳过提交前查重拦截。

@@ -187,7 +187,7 @@ const isMultiImage = computed(() => parsedImages.value.length > 1)
 
 const getAcrNamespace = (acrId) => {
   const acr = acrList.value.find(item => item.id === acrId)
-  return acr?.namespace || `ID:${acrId}`
+  return acr?.alias || acr?.namespace || `ID:${acrId}`
 }
 
 const forceOverrideWarning = computed(() => {
@@ -198,17 +198,18 @@ const forceOverrideWarning = computed(() => {
     return ''
   }
   const forcedNamespace = getAcrNamespace(selectedAcrId.value)
-  return `仓库「${currentAffinity.value.repository_name}」已归属 ACR「${currentAffinity.value.acr_namespace}」，但强制选择了 ACR[${forcedNamespace}]`
+  return `仓库「${currentAffinity.value.repository_name}」已归属镜像仓库「${currentAffinity.value.acr_alias || currentAffinity.value.acr_namespace}」，但强制选择了其他仓库[${forcedNamespace}]`
 })
 
 const getAcrLabel = (item) => {
   const typeText = item.registry_type === 'swr' ? ' · SWR' : ''
+  const name = item.alias || item.namespace
   const quota = quotaMap.value[item.id]
   if (quota) {
     const quotaText = quota.repo_quota > 0 ? `${quota.repo_count}/${quota.repo_quota}` : `${quota.repo_count}/不限`
-    return `${item.namespace} (${quotaText})${typeText}`
+    return `${name} (${quotaText})${typeText}`
   }
-  return `${item.namespace}${typeText}`
+  return `${name}${typeText}`
 }
 
 const isAcrOptionDisabled = (acrId) => {

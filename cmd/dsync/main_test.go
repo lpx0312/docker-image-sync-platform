@@ -129,7 +129,7 @@ func TestDecideDedup(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := decideDedup(tt.item, tt.acrID, "registry.example.com", tt.acrNs, tt.tag, tt.tags, tt.known)
+			got := decideDedup(tt.item, tt.acrID, "registry.example.com", "", tt.acrNs, tt.tag, tt.tags, tt.known)
 			if got.Action != tt.action {
 				t.Errorf("action = %q, 期望 %q（消息: %s）", got.Action, tt.action, got.Message)
 			}

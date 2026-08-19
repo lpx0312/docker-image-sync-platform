@@ -75,7 +75,7 @@ const loadAcrInfo = async () => {
     const response = await acrRegistryAPI.getAll()
     if (response && response.status === 'success') {
       const acr = (response.data || []).find(item => item.id === acrId.value)
-      acrNamespace.value = acr?.namespace || ''
+      acrNamespace.value = acr?.alias || acr?.namespace || ''
       acrRegistryUrl.value = acr?.registry_url || ''
     }
   } catch (error) {

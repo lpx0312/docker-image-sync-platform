@@ -22,12 +22,12 @@ type dedupOutcome struct {
 //   - 仓库已存在于目标 ACR 且同名 tag 已存在 → block（纯重复同步，消息含完整可拉取地址）
 //   - 仓库已存在但 tag 是新的 → info（追加 tag，允许）
 //   - 全新仓库 → proceed
-func decideDedup(item checkAcrItem, effectiveAcrID uint, registryURL, effectiveNs, targetTag string, existingTags []string, tagsKnown bool) dedupOutcome {
+func decideDedup(item checkAcrItem, effectiveAcrID uint, registryURL, effectiveAlias, effectiveNs, targetTag string, existingTags []string, tagsKnown bool) dedupOutcome {
 	if item.HasAffinity && item.SuggestedAcrID != effectiveAcrID {
 		return dedupOutcome{
 			Action: "block",
-			Message: fmt.Sprintf("仓库 %s 已归属 ACR「%s」，建议同步到那里；确要写入「%s」请加 --force",
-				item.RepositoryName, item.SuggestedNamespace, effectiveNs),
+			Message: fmt.Sprintf("仓库 %s 已归属镜像仓库「%s」，建议同步到那里；确要写入「%s」请加 --force",
+				item.RepositoryName, aliasOrNamespace(item.SuggestedAlias, item.SuggestedNamespace), aliasOrNamespace(effectiveAlias, effectiveNs)),
 		}
 	}
 	if item.HasAffinity {
@@ -109,7 +109,7 @@ var syncCmd = &cobra.Command{
 			if effective == nil {
 				return fmt.Errorf("服务端推荐的 ACR（id=%d）不存在", sug.SuggestedAcrID)
 			}
-			fmt.Fprintf(os.Stderr, "目标 ACR: %s（%s）\n", effective.Namespace, suggestReasonText(sug.SuggestionReason))
+			fmt.Fprintf(os.Stderr, "目标镜像仓库: %s（%s）\n", aliasOrNamespace(effective.Alias, effective.Namespace), suggestReasonText(sug.SuggestionReason))
 		}
 
 		// 2. 提交前查重
@@ -198,7 +198,7 @@ func runDedupCheck(client *Client, image, targetTag string, effective *AcrRegist
 			existingTags, tagsKnown = tags, true
 		}
 	}
-	return decideDedup(item, effective.ID, effective.RegistryURL, effective.Namespace, finalTag, existingTags, tagsKnown), nil
+	return decideDedup(item, effective.ID, effective.RegistryURL, effective.Alias, effective.Namespace, finalTag, existingTags, tagsKnown), nil
 }
 
 // isTerminalTaskStatus 任务级终态
@@ -292,7 +292,7 @@ func printTaskResult(st *syncStatusResponse) {
 }
 
 func init() {
-	syncCmd.Flags().String("acr", "", "目标 ACR（namespace；不指定则按亲和性自动选择）")
+	syncCmd.Flags().String("acr", "", "目标镜像仓库（别名优先，兼容 namespace；不指定则按亲和性自动选择）")
 	syncCmd.Flags().String("target-tag", "", "目标 Tag（默认沿用源镜像 Tag）")
 	syncCmd.Flags().String("arch", "", "目标架构，如 amd64 / arm64")
 	syncCmd.Flags().String("desc", "", "任务描述")
