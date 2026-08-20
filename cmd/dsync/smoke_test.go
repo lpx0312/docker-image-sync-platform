@@ -111,6 +111,47 @@ func mockPlatform(t *testing.T) *httptest.Server {
 		})
 	})
 
+	mux.HandleFunc("/api/v1/images/list", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]any{
+			"total": 1, "page": 1, "page_size": 20,
+			"data": []map[string]any{{
+				"id": 1, "original_image": "nginx", "tag": "1.26",
+				"acr_image": "registry.cn-hangzhou.aliyuncs.com/ns-a/nginx:1.26",
+				"sync_status": "success", "task_id": "smoke-task-1",
+				"created_at": time.Now(),
+			}},
+		})
+	})
+	mux.HandleFunc("/api/v1/images/stats", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]any{"total": 10, "pending": 1, "syncing": 2, "success": 6, "failed": 1})
+	})
+	mux.HandleFunc("/api/v1/images/", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "DELETE":
+			writeJSON(w, map[string]any{"message": "镜像记录已删除"})
+		case "POST":
+			writeJSON(w, map[string]any{
+				"exists":            true,
+				"target_image":      "registry.cn-hangzhou.aliyuncs.com/ns-a/nginx:1.26",
+				"architectures":     []string{"amd64"},
+				"acr_architectures": "[\"amd64\"]",
+				"message":           "镜像存在，状态已更新为成功",
+			})
+		}
+	})
+	mux.HandleFunc("/api/v1/acr-tags/detail", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]any{"status": "success", "data": map[string]any{
+			"tag":           r.URL.Query().Get("tag"),
+			"architectures": []string{"amd64", "arm64"},
+			"digests":       map[string]string{"amd64": "sha256:aaa", "arm64": "sha256:bbb"},
+			"sizes":         map[string]int64{"amd64": 12345678, "arm64": 22345678},
+			"pushed_at":     map[string]string{"amd64": "2026-08-20T10:00:00Z", "arm64": "2026-08-20T10:00:00Z"},
+		}})
+	})
+	mux.HandleFunc("/api/v1/auth/password", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]any{"message": "密码修改成功，请重新登录"})
+	})
+
 	return httptest.NewServer(mux)
 }
 
@@ -154,6 +195,8 @@ func TestSmokeEndToEnd(t *testing.T) {
 	configDirOverride = tmpDir
 	cfgFile := filepath.Join(tmpDir, "config.json")
 	t.Setenv("DSYNC_PASSWORD", "mock-pass")
+	t.Setenv("DSYNC_OLD_PASSWORD", "mock-pass")
+	t.Setenv("DSYNC_NEW_PASSWORD", "NewPass123!")
 
 	steps := []struct {
 		name    string
@@ -217,6 +260,42 @@ func TestSmokeEndToEnd(t *testing.T) {
 			name:    "search 命中 tag 缓存",
 			args:    []string{"search", "1.25"},
 			wantOut: []string{"nginx", "1.25"},
+		},
+		{
+			name:    "image list",
+			args:    []string{"image", "list", "--long"},
+			wantOut: []string{"nginx", "1.26", "smoke-task-1"},
+		},
+		{
+			name:    "image stats",
+			args:    []string{"image", "stats"},
+			wantOut: []string{"总计", "成功"},
+		},
+		{
+			name:    "image check",
+			args:    []string{"image", "check", "1"},
+			wantOut: []string{"nginx:1.26", "存在"},
+		},
+		{
+			name:    "image delete",
+			args:    []string{"image", "delete", "1", "--yes"},
+			wantOut: []string{"已删除"},
+		},
+		{
+			name:    "tag detail",
+			args:    []string{"tag", "detail", "nginx", "1.25"},
+			wantOut: []string{"amd64", "arm64"},
+		},
+		{
+			name:    "passwd",
+			args:    []string{"passwd"},
+			wantOut: []string{"密码修改成功"},
+		},
+		{
+			// passwd 清除了 token，重新登录恢复，验证改密后仍能登录
+			name:    "relogin after passwd",
+			args:    []string{"login", "--server", server.URL, "--username", "admin"},
+			wantOut: []string{"登录成功", "admin"},
 		},
 	}
 

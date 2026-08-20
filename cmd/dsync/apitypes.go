@@ -58,6 +58,47 @@ type acrTagsResponse struct {
 	} `json:"data"`
 }
 
+// tagDetailResponse GET /acr-tags/detail（data 为单个 Tag 详情）
+type tagDetailResponse struct {
+	Status string     `json:"status"`
+	Data   tagDetailData `json:"data"`
+}
+
+// tagDetailData 与 services.TagDetail 字段一致，显式声明避免耦合 services 包
+type tagDetailData struct {
+	Tag           string            `json:"tag"`
+	Architectures []string          `json:"architectures"`
+	Digests       map[string]string `json:"digests"`
+	Sizes         map[string]int64  `json:"sizes"`
+	PushedAt      map[string]string `json:"pushed_at"`
+}
+
+// imageListResponse GET /images/list
+type imageListResponse struct {
+	Total    int64                    `json:"total"`
+	Data     []models.ImageSyncRecord `json:"data"`
+	Page     int                      `json:"page"`
+	PageSize int                      `json:"page_size"`
+}
+
+// imageStatsResponse GET /images/stats
+type imageStatsResponse struct {
+	Total   int64 `json:"total"`
+	Pending int64 `json:"pending"`
+	Syncing int64 `json:"syncing"`
+	Success int64 `json:"success"`
+	Failed  int64 `json:"failed"`
+}
+
+// imageCheckResponse POST /images/:id/check（handler 直接拼 gin.H，非 envelope 包装）
+type imageCheckResponse struct {
+	Exists           bool     `json:"exists"`
+	TargetImage      string   `json:"target_image"`
+	Architectures    []string `json:"architectures"`
+	AcrArchitectures string   `json:"acr_architectures"`
+	Message          string   `json:"message"`
+}
+
 // submitResponse POST /sync/submit 与 /sync/batch 的成功响应
 type submitResponse struct {
 	TaskID              string `json:"task_id"`

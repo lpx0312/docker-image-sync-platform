@@ -65,13 +65,19 @@ curl -LO https://gh.1102345.xyz/https://github.com/lpx0312/docker-image-sync-pla
 | 只提交不等待（脚本场景） | `bin/dsync sync <镜像> --no-wait` |
 | 查任务状态 | `bin/dsync task status <task-id>` / `task list [--status failed]` |
 | 重试失败记录 | `bin/dsync retry --task <task-id>` |
+| 查镜像同步记录（单条维度，支持过滤/搜索/去重） | `bin/dsync image list [--status failed] [--search kw]` |
+| 查镜像同步状态统计 | `bin/dsync image stats` |
+| 删除镜像同步记录（仅删平台记录，不动远程） | `bin/dsync image delete <id> --yes` |
+| 校验镜像在远程仓库是否存在并更新状态 | `bin/dsync image check <id>` |
 | 列出镜像仓库、配额用量（TYPE 列区分 5 种类型，ALIAS 列为引用标识；除 ACR 外配额「不限」） | `bin/dsync acr list` |
 | 测试仓库配置连通性（登录凭证 + SWR/CCR 管理面凭证） | `bin/dsync acr test [别名]` |
 | 查某仓库的镜像台账 | `bin/dsync repo list [--acr ns] [--filter kw]` |
 | 从远程仓库导入镜像列表 | `bin/dsync repo import --acr <别名>` |
 | 查某仓库的全部 Tag | `bin/dsync tag list <仓库名> [--acr ns]` |
+| 查某 Tag 的详情（架构/digest/大小/推送时间） | `bin/dsync tag detail <仓库名> <tag> [--acr ns]` |
 | 跨仓库搜仓库和 Tag | `bin/dsync search <关键词>` |
 | 查镜像归属/推荐目标仓库 | `bin/dsync check <镜像>` / `bin/dsync suggest <镜像>` |
+| 修改当前用户密码 | `bin/dsync passwd` |
 
 所有命令支持 `--json`（脚本处理时用它，配合 jq）。
 
@@ -125,6 +131,7 @@ Error: 已拦截: 镜像已存在于目标仓库（registry.cn-hangzhou.aliyuncs
 
 ## 查询：数据源差异
 
+- `image list` / `task list` 查平台数据库的同步记录：`task list` 是任务维度（一个任务含多条镜像），`image list` 是单条镜像记录维度（支持状态/架构过滤、关键词搜索、去重）。排查具体某条镜像用 `image list`，看整体任务用 `task list`。
 - `repo list` / `search` 的**仓库匹配**查平台本地库（即时）；本地库与远程仓库实际状态可能漂移，查不到不代表远程没有。对账用 `repo import`（远程拉取补齐）/ `repo sync-records`（同步记录补齐）/ `repo clean --yes`（清理失效记录）。
 - `tag list` 是**实时**查目标仓库（按类型自动适配认证），最准确，查重判断以它为准。核对某个具体 Tag 是否存在时用 `--json` 精确匹配（如 `tag list <repo> --json | jq -r '.[].Tags[]' | grep -x <tag>`），勿凭多列排版目测——相近 Tag（如 `7.2.12` 与 `7.2.12-alpine`）肉眼极易混淆。
 - `tag list` 传裸仓库名即可（自动定位）；仓库在多个 ACR 存在时全部展示；本地库漂移导致定位失败时加 `--acr` 指定。
@@ -136,10 +143,12 @@ Error: 已拦截: 镜像已存在于目标仓库（registry.cn-hangzhou.aliyuncs
 ```bash
 bin/dsync task status <task-id>   # 看错误信息 + GitHub Actions 链接
 bin/dsync task list --status failed   # 最近的失败任务
+bin/dsync image list --status failed  # 失败的镜像记录（单条维度）
 bin/dsync retry --task <task-id>  # 重置该任务全部失败记录
+bin/dsync image check <id>        # 校验某条记录在远程是否真实存在，状态不一致时自动修正
 ```
 
-常见失败原因：源镜像地址/Tag 不存在、GitHub Actions 配额、网络问题。重试后任务由平台重新调度，用 `task status` 跟踪。
+常见失败原因：源镜像地址/Tag 不存在、GitHub Actions 配额、网络问题。重试后任务由平台重新调度，用 `task status` 跟踪。`image check` 用于怀疑状态与远程实际不一致时（如手动删过远程镜像、Actions 异常），它会按远程真实存在性自动更新记录状态。
 
 ## 403 权限错误
 

@@ -83,3 +83,25 @@ func humanDuration(d time.Duration) string {
 	}
 	return d.Truncate(time.Second).String()
 }
+
+// humanBytes 将字节数格式化为人类可读的大小（如 12.3 MB）。
+func humanBytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for n2 := n / unit; n2 >= unit; n2 /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
+}
+
+// shortDigest 将 sha256 摘要截短为前 19 位（sha256: + 前 12 位）便于展示。
+func shortDigest(d string) string {
+	if len(d) > 19 {
+		return d[:19]
+	}
+	return d
+}
