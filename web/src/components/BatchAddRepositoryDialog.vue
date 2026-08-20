@@ -30,14 +30,31 @@
       </div>
     </template>
   </el-dialog>
+
+  <!-- 统一结果报告弹窗 -->
+  <ResultReportDialog
+    :model-value="report.visible"
+    :title="report.title"
+    :tone="report.tone"
+    :summary="report.summary"
+    :sections="report.sections"
+    :confirm-text="report.confirmText"
+    :cancel-text="report.cancelText"
+    :confirm-type="report.confirmType"
+    :empty-text="report.emptyText"
+    :width="report.width"
+    @update:model-value="val => !val && cancelReport()"
+    @confirm="confirmReport"
+    @cancel="cancelReport"
+  />
 </template>
 
 <script setup>
 import { ref, reactive, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { acrRepositoryAPI } from '@/api'
-import { buildBatchAddResultText } from '@/utils/repositoryResult'
-import { showMultilineAlert } from '@/utils/messageBox'
+import ResultReportDialog from '@/components/ResultReportDialog.vue'
+import { useResultReport } from '@/composables/useResultReport'
 
 const props = defineProps({
   modelValue: Boolean,
@@ -58,9 +75,23 @@ const rules = {
   repository_names: [{ required: true, message: '请输入镜像列表', trigger: 'blur' }],
 }
 
+const { report, openReport, confirmReport, cancelReport } = useResultReport()
+
 const showBatchAddResult = (response) => {
   const data = response?.data ?? {}
-  const text = buildBatchAddResultText(data)
+
+  const sections = [
+    { label: '成功添加', tone: 'success', items: data.created_names || [] },
+    { label: '本地已存在，未重复添加', tone: 'info', items: data.already_exist_names || [] },
+    { label: '输入重复，已忽略', tone: 'warning', items: data.duplicate_in_input || [] },
+    { label: '目标仓库中不存在，已跳过', tone: 'warning', items: data.missing_in_acr || [] },
+    { label: '检查失败，已跳过', tone: 'danger', items: data.check_failed_names || [] },
+  ].filter(s => s.items.length > 0)
+
+  if (!sections.length) {
+    ElMessage.info('没有可添加的新镜像')
+    return
+  }
 
   const hasIssue = !!(
     data.already_exist_names?.length
@@ -69,15 +100,11 @@ const showBatchAddResult = (response) => {
     || data.check_failed_names?.length
   )
 
-  if (text) {
-    showMultilineAlert(text, '批量添加结果', {
-      type: hasIssue ? 'warning' : 'success',
-      confirmButtonText: '知道了',
-    })
-    return
-  }
-
-  ElMessage.info('没有可添加的新镜像')
+  openReport({
+    title: '批量添加结果',
+    tone: hasIssue ? 'warning' : 'success',
+    sections,
+  })
 }
 
 watch(() => props.modelValue, (val) => {

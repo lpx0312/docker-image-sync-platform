@@ -110,7 +110,18 @@ type DuplicateRepositoryReport struct {
 	RepositoryName string `json:"repository_name"`
 	AcrCount       int    `json:"acr_count"`
 	AcrRegistryIDs []uint `json:"acr_registry_ids"`
-	Namespaces     []string `json:"namespaces"`
+	// 展示用别名列表（旧字段，保留兼容）；推荐前端使用 Registries 渲染
+	Aliases    []string               `json:"aliases"`
+	Namespaces []string               `json:"namespaces"`
+	Registries []DuplicateRegistryRef `json:"registries"`
+}
+
+// DuplicateRegistryRef 重复仓库所在镜像仓库的标识信息
+type DuplicateRegistryRef struct {
+	AcrRegistryID uint   `json:"acr_registry_id"`
+	Alias         string `json:"alias"`
+	Namespace     string `json:"namespace"`
+	RegistryType  string `json:"registry_type"`
 }
 
 // FindAffinity 按仓库名查找跨 ACR 归属
@@ -418,12 +429,14 @@ func (s *AcrAffinityService) GetDuplicateRepositories() ([]DuplicateRepositoryRe
 	type row struct {
 		RepositoryName string
 		AcrRegistryID  uint
+		Alias          string
 		Namespace      string
+		RegistryType   string
 	}
 
 	var rows []row
 	if err := s.db.Table("acr_repositories AS r").
-		Select("r.repository_name, r.acr_registry_id, a.namespace").
+		Select("r.repository_name, r.acr_registry_id, a.alias, a.namespace, a.registry_type").
 		Joins("JOIN acr_registries AS a ON a.id = r.acr_registry_id AND a.deleted_at IS NULL").
 		Where("r.deleted_at IS NULL").
 		Order("r.repository_name ASC, r.acr_registry_id ASC").
@@ -438,12 +451,21 @@ func (s *AcrAffinityService) GetDuplicateRepositories() ([]DuplicateRepositoryRe
 			report = &DuplicateRepositoryReport{
 				RepositoryName: item.RepositoryName,
 				AcrRegistryIDs: []uint{},
+				Aliases:        []string{},
 				Namespaces:     []string{},
+				Registries:     []DuplicateRegistryRef{},
 			}
 			grouped[item.RepositoryName] = report
 		}
 		report.AcrRegistryIDs = append(report.AcrRegistryIDs, item.AcrRegistryID)
+		report.Aliases = append(report.Aliases, item.Alias)
 		report.Namespaces = append(report.Namespaces, item.Namespace)
+		report.Registries = append(report.Registries, DuplicateRegistryRef{
+			AcrRegistryID: item.AcrRegistryID,
+			Alias:         item.Alias,
+			Namespace:     item.Namespace,
+			RegistryType:  item.RegistryType,
+		})
 	}
 
 	result := make([]DuplicateRepositoryReport, 0)

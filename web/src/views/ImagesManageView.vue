@@ -179,6 +179,23 @@
       :acr-registry-id="selectedAcrId"
       @success="loadRepositories"
     />
+
+    <!-- 统一结果报告弹窗 -->
+    <ResultReportDialog
+      :model-value="report.visible"
+      :title="report.title"
+      :tone="report.tone"
+      :summary="report.summary"
+      :sections="report.sections"
+      :confirm-text="report.confirmText"
+      :cancel-text="report.cancelText"
+      :confirm-type="report.confirmType"
+      :empty-text="report.emptyText"
+      :width="report.width"
+      @update:model-value="val => !val && cancelReport()"
+      @confirm="confirmReport"
+      @cancel="cancelReport"
+    />
   </div>
 </template>
 
@@ -189,10 +206,10 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Search } from '@element-plus/icons-vue'
 import { acrRegistryAPI, acrRepositoryAPI } from '@/api'
 import { formatTime } from '@/utils/format'
-import { buildCleanInvalidResultText } from '@/utils/repositoryResult'
-import { showMultilineAlert, showMultilineConfirm } from '@/utils/messageBox'
 import AddRepositoryDialog from '@/components/AddRepositoryDialog.vue'
 import BatchAddRepositoryDialog from '@/components/BatchAddRepositoryDialog.vue'
+import ResultReportDialog from '@/components/ResultReportDialog.vue'
+import { useResultReport } from '@/composables/useResultReport'
 
 const router = useRouter()
 const route = useRoute()
@@ -211,6 +228,14 @@ const tableRef = ref(null)
 const addDialogVisible = ref(false)
 const batchAddDialogVisible = ref(false)
 const importing = ref(false)
+
+const { report, openReport, confirmReport, cancelReport } = useResultReport()
+
+const registryTypeBadge = (t) => ({
+  acr: 'ACR', swr: 'SWR', ccr: 'CCR', harbor: 'Harbor', generic: 'Registry',
+}[t] || (t ? t.toUpperCase() : 'ACR'))
+
+const registryTagTone = (t) => ({ swr: 'warning', harbor: 'info', generic: 'info' }[t] || 'primary')
 const searchText = ref('')
 const currentPage = ref(1)
 const pageSize = ref(20)
@@ -315,12 +340,22 @@ const showDuplicateReport = async () => {
       return
     }
 
-    const lines = duplicates.map(item =>
-      `${item.repository_name}：出现在 ${item.namespaces.join('、')}（${item.acr_count} 个仓库）`
-    )
-    ElMessageBox.alert(lines.join('\n'), '跨仓库重复仓库', {
-      type: 'warning',
-      confirmButtonText: '知道了',
+    openReport({
+      title: '跨仓库重复仓库',
+      tone: 'warning',
+      summary: `共 ${duplicates.length} 个仓库名同时存在于多个镜像仓库，同步时注意按别名区分`,
+      width: '600px',
+      sections: [{
+        label: '重复仓库',
+        tone: 'warning',
+        items: duplicates.map(item => ({
+          title: item.repository_name,
+          tags: (item.registries?.length ? item.registries : []).map(r => ({
+            label: `${r.alias || r.namespace} · ${registryTypeBadge(r.registry_type)}`,
+            tone: registryTagTone(r.registry_type),
+          })),
+        })),
+      }],
     })
   } catch (error) {
     console.error('查询重复仓库失败:', error)
@@ -421,33 +456,24 @@ const goToTags = (row) => {
   })
 }
 
-const formatNameList = (names) => (names && names.length ? names.join('、') : '无')
-
 const showSyncImportResult = (data) => {
-  const sections = []
+  const sections = [
+    { label: '成功导入', tone: 'success', items: data.created_names || [] },
+    { label: '目标仓库中不存在，已跳过', tone: 'warning', items: data.missing_in_acr || [] },
+    { label: '检查失败，已跳过', tone: 'danger', items: data.check_failed_names || [] },
+    { label: '本地已存在，未重复导入', tone: 'info', items: data.already_exist_names || [] },
+  ].filter(s => s.items.length > 0)
 
-  if (data.created_names?.length) {
-    sections.push(`成功导入 ${data.created_names.length} 个：\n${formatNameList(data.created_names)}`)
-  }
-  if (data.missing_in_acr?.length) {
-    sections.push(`目标仓库中不存在，已跳过 ${data.missing_in_acr.length} 个：\n${formatNameList(data.missing_in_acr)}`)
-  }
-  if (data.check_failed_names?.length) {
-    sections.push(`检查失败，已跳过 ${data.check_failed_names.length} 个：\n${formatNameList(data.check_failed_names)}`)
-  }
-  if (data.already_exist_names?.length) {
-    sections.push(`本地已存在，未重复导入 ${data.already_exist_names.length} 个：\n${formatNameList(data.already_exist_names)}`)
-  }
-
-  if (sections.length === 0) {
+  if (!sections.length) {
     ElMessage.info('没有可导入的新镜像')
     return
   }
 
   const hasIssue = data.missing_in_acr?.length || data.check_failed_names?.length
-  ElMessageBox.alert(sections.join('\n\n'), '导入结果', {
-    type: hasIssue ? 'warning' : 'success',
-    confirmButtonText: '知道了',
+  openReport({
+    title: '导入结果',
+    tone: hasIssue ? 'warning' : 'success',
+    sections,
   })
 }
 
@@ -483,19 +509,18 @@ const handleImportFromRegistry = async () => {
     const response = await acrRepositoryAPI.importFromRegistry(selectedAcrId.value)
     if (response && response.status === 'success') {
       const data = response.data || {}
-      const sections = []
-      if (data.created_names?.length) {
-        sections.push(`成功导入 ${data.created_names.length} 个：\n${formatNameList(data.created_names)}`)
-      }
-      if (data.already_exist_names?.length) {
-        sections.push(`本地已存在，未重复导入 ${data.already_exist_names.length} 个`)
-      }
+      const sections = [
+        { label: '成功导入', tone: 'success', items: data.created_names || [] },
+        { label: '本地已存在，未重复导入', tone: 'info', items: data.already_exist_names || [] },
+      ].filter(s => s.items.length > 0)
+
       if (!sections.length) {
         ElMessage.info('远程仓库中没有可导入的新镜像')
       } else {
-        ElMessageBox.alert(sections.join('\n\n'), '导入结果', {
-          type: 'success',
-          confirmButtonText: '知道了',
+        openReport({
+          title: '从仓库导入结果',
+          tone: 'success',
+          sections,
         })
       }
       await Promise.all([loadRepositories(), loadQuotaSummary()])
@@ -524,17 +549,21 @@ const handleBatchDelete = async () => {
     return
   }
 
-  const names = selectedRows.value.map(row => row.repository_name).join('\n')
   try {
-    await showMultilineConfirm(
-      `确定要删除以下 ${selectedRows.value.length} 个镜像吗？\n\n${names}`,
-      '批量删除确认',
-      {
-        type: 'warning',
-        confirmButtonText: '确定删除',
-        cancelButtonText: '取消',
-      }
-    )
+    const confirmed = await openReport({
+      title: '批量删除确认',
+      tone: 'warning',
+      summary: `确定要删除以下 ${selectedRows.value.length} 个镜像记录吗？此操作不会删除远程仓库中的实际镜像。`,
+      cancelText: '取消',
+      confirmText: '确定删除',
+      confirmType: 'danger',
+      sections: [{
+        label: '待删除镜像',
+        tone: 'warning',
+        items: selectedRows.value.map(row => row.repository_name),
+      }],
+    })
+    if (!confirmed) return
 
     const ids = selectedRows.value.map(row => row.id)
     const response = await acrRepositoryAPI.batchDelete(ids)
@@ -543,9 +572,8 @@ const handleBatchDelete = async () => {
       await Promise.all([loadRepositories(), loadQuotaSummary()])
     }
   } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error('批量删除失败')
-    }
+    console.error('批量删除失败:', error)
+    ElMessage.error('批量删除失败')
   }
 }
 
@@ -571,11 +599,21 @@ const handleCleanInvalid = async () => {
     cleaning.value = true
     const response = await acrRepositoryAPI.cleanInvalid(selectedAcrId.value)
     if (response?.status === 'success') {
-      const text = buildCleanInvalidResultText(response.data || {})
-      showMultilineAlert(text, '清理结果', {
-        type: response.data?.check_failed_names?.length ? 'warning' : 'success',
-        confirmButtonText: '知道了',
-      })
+      const data = response.data || {}
+      const sections = [
+        { label: '已清理无效记录', tone: 'success', items: data.cleaned_names || [] },
+        { label: '检查失败，未清理', tone: 'danger', items: data.check_failed_names || [] },
+      ].filter(s => s.items.length > 0)
+
+      if (!sections.length) {
+        ElMessage.success('未发现无效镜像，无需清理')
+      } else {
+        openReport({
+          title: '清理结果',
+          tone: data.check_failed_names?.length ? 'warning' : 'success',
+          sections,
+        })
+      }
       await Promise.all([loadRepositories(), loadQuotaSummary()])
     }
   } catch (error) {
