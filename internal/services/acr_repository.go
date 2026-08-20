@@ -77,15 +77,48 @@ func (s *AcrRepositoryService) GetByID(id uint) (*models.AcrRepository, error) {
 	return &repo, nil
 }
 
-// Create 创建镜像
-func (s *AcrRepositoryService) Create(req *models.AcrRepositoryRequest) (*models.AcrRepository, error) {
-	// 检查是否已存在
+// CreateResult 单个添加镜像的结果（与批量添加语义一致，已存在/远程不存在
+// 不再作为错误抛出，由前端以分区提示展示）
+type CreateResult struct {
+	Created    bool                   `json:"created"`
+	Reason     string                 `json:"reason"` // "" | already_exist | missing_in_registry | check_failed
+	Repository *models.AcrRepository `json:"repository"`
+}
+
+// Create 添加单个镜像：本地查重 + 远程存在性校验（与 BatchCreate 逻辑一致）
+func (s *AcrRepositoryService) Create(req *models.AcrRepositoryRequest) (*CreateResult, error) {
+	var acr models.AcrRegistry
+	if err := s.db.First(&acr, req.AcrRegistryID).Error; err != nil {
+		return nil, fmt.Errorf("镜像仓库配置不存在: %w", err)
+	}
+
+	// 本地台账查重
 	var count int64
 	s.db.Model(&models.AcrRepository{}).
 		Where("acr_registry_id = ? AND repository_name = ?", req.AcrRegistryID, req.RepositoryName).
 		Count(&count)
 	if count > 0 {
-		return nil, fmt.Errorf("镜像已存在: %s", req.RepositoryName)
+		return &CreateResult{Created: false, Reason: "already_exist"}, nil
+	}
+
+	// 远程存在性校验（与批量添加一致）
+	password, err := s.encryptionSvc.Decrypt(acr.Password)
+	if err != nil {
+		return nil, fmt.Errorf("解密仓库密码失败: %w", err)
+	}
+	client := s.apiClientFor(&acr)
+	exists, err := client.RepositoryExists(
+		acr.RegistryURL, acr.Username, password, acr.Namespace, req.RepositoryName,
+		acr.AuthServer, acr.DockerService,
+	)
+	if err != nil {
+		if client.IsRepositoryNotFound(err) {
+			return &CreateResult{Created: false, Reason: "missing_in_registry"}, nil
+		}
+		return &CreateResult{Created: false, Reason: "check_failed"}, nil
+	}
+	if !exists {
+		return &CreateResult{Created: false, Reason: "missing_in_registry"}, nil
 	}
 
 	repo := &models.AcrRepository{
@@ -97,7 +130,7 @@ func (s *AcrRepositoryService) Create(req *models.AcrRepositoryRequest) (*models
 		return nil, fmt.Errorf("创建镜像失败: %w", err)
 	}
 
-	return repo, nil
+	return &CreateResult{Created: true, Repository: repo}, nil
 }
 
 // BatchCreate 批量创建镜像，校验本地重复与 ACR 是否存在

@@ -33,7 +33,7 @@
 
   <!-- 统一结果报告弹窗 -->
   <ResultReportDialog
-    :model-value="report.visible"
+    v-model="report.visible"
     :title="report.title"
     :tone="report.tone"
     :summary="report.summary"

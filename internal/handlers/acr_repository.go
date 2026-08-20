@@ -49,7 +49,8 @@ func (h *AcrRepositoryHandler) GetAll(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "success", "data": repos})
 }
 
-// Create 创建镜像
+// Create 添加镜像（本地查重 + 远程校验，与批量添加语义一致：
+// 已存在/远程不存在返回 200 与 reason，不再抛 500）
 func (h *AcrRepositoryHandler) Create(c *gin.Context) {
 	var req models.AcrRepositoryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -57,14 +58,30 @@ func (h *AcrRepositoryHandler) Create(c *gin.Context) {
 		return
 	}
 
-	repo, err := h.service.Create(&req)
+	result, err := h.service.Create(&req)
 	if err != nil {
 		logger.Logger.Error("创建镜像失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{"status": "success", "data": repo})
+	var message string
+	switch result.Reason {
+	case "already_exist":
+		message = "镜像本地台账已存在，未重复添加"
+	case "missing_in_registry":
+		message = "目标仓库中不存在该镜像，已跳过"
+	case "check_failed":
+		message = "检查目标仓库失败，未添加"
+	default:
+		message = "成功添加镜像"
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": message,
+		"data":    result,
+	})
 }
 
 // BatchCreate 批量创建镜像

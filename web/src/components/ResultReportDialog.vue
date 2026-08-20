@@ -4,7 +4,7 @@
     :title="title"
     :width="width"
     class="result-report-dialog"
-    @close="handleClose"
+    @close="handleDialogClose"
   >
     <div class="report-summary" :class="tone">
       <el-icon class="summary-icon"><component :is="summaryIcon" /></el-icon>
@@ -104,18 +104,24 @@ const defaultSummary = computed(() => {
 
 const countOf = (section) => (section.items || []).length
 
+// 关闭动作来源：按钮点击时先记录，待 el-dialog 的 close 事件统一分发，
+// 保证 confirm/cancel 只触发一次且不会互相覆盖
+let closingAction = null
+
 const handleConfirm = () => {
+  closingAction = 'confirm'
   visible.value = false
-  emit('confirm')
 }
 
 const handleCancel = () => {
+  closingAction = 'cancel'
   visible.value = false
-  emit('cancel')
 }
 
-const handleClose = () => {
-  emit('cancel')
+const handleDialogClose = () => {
+  const action = closingAction || 'cancel'
+  closingAction = null
+  emit(action)
 }
 </script>
 

@@ -182,7 +182,7 @@
 
     <!-- 统一结果报告弹窗 -->
     <ResultReportDialog
-      :model-value="report.visible"
+      v-model="report.visible"
       :title="report.title"
       :tone="report.tone"
       :summary="report.summary"
@@ -192,7 +192,6 @@
       :confirm-type="report.confirmType"
       :empty-text="report.emptyText"
       :width="report.width"
-      @update:model-value="val => !val && cancelReport()"
       @confirm="confirmReport"
       @cancel="cancelReport"
     />

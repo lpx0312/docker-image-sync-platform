@@ -8,24 +8,27 @@ import { reactive } from 'vue'
  * 点确认 resolve(true)，点取消/关闭 resolve(false)）、
  * confirmReport / cancelReport（绑定给组件的 confirm/cancel 事件）。
  */
+const BASE_REPORT = {
+  title: '',
+  tone: 'info',
+  summary: '',
+  sections: [],
+  confirmText: '知道了',
+  cancelText: '',
+  confirmType: 'primary',
+  emptyText: '',
+  width: '520px',
+}
+
 export function useResultReport(defaults = {}) {
-  const report = reactive({
-    visible: false,
-    title: '',
-    tone: 'info',
-    summary: '',
-    sections: [],
-    confirmText: '知道了',
-    cancelText: '',
-    confirmType: 'primary',
-    emptyText: '',
-    width: '520px',
-  })
+  const report = reactive({ ...BASE_REPORT, visible: false })
 
   let resolver = null
 
+  // 每次打开都先重置到基础默认值，再叠加 defaults 与本次 opts，
+  // 避免上一次弹窗（如确认模式）的按钮配置残留到下一次
   const openReport = (opts = {}) => {
-    Object.assign(report, defaults, opts, { visible: true })
+    Object.assign(report, BASE_REPORT, defaults, opts, { visible: true })
     if (opts.cancelText) {
       return new Promise((resolve) => { resolver = resolve })
     }
