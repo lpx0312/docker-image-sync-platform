@@ -10,15 +10,15 @@ import (
 // tagCmd dsync tag 命令组
 var tagCmd = &cobra.Command{
 	Use:   "tag",
-	Short: "镜像 Tag 查询（实时查 ACR）",
+	Short: "镜像 Tag 查询（实时查目标仓库）",
 }
 
 // tagListCmd dsync tag list <repo> [--acr ns]
 var tagListCmd = &cobra.Command{
 	Use:   "list <repo>",
 	Short: "查看某仓库的全部 Tag（实时）",
-	Long: `实时查询指定仓库在 ACR 中的全部 Tag。
---acr 未指定时先在所有 ACR 的本地库中定位仓库：
+	Long: `实时查询指定仓库的全部 Tag（按目标仓库类型自动适配认证）。
+--acr 未指定时先在所有仓库的本地库中定位仓库：
 唯一命中直接查询；多处命中则全部展示；未命中则报错。`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {

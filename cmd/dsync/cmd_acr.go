@@ -9,7 +9,7 @@ import (
 // acrCmd dsync acr 命令组
 var acrCmd = &cobra.Command{
 	Use:   "acr",
-	Short: "镜像仓库实例管理（阿里云 ACR / 华为云 SWR）",
+	Short: "镜像仓库实例管理（阿里云 ACR / 华为云 SWR / 腾讯云 CCR / Harbor / 通用 Registry）",
 }
 
 // acrListCmd dsync acr list：仓库列表 + 配额用量

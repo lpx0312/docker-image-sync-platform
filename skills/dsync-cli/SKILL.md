@@ -18,9 +18,36 @@ description: >-
 
 通过 `dsync` 命令行客户端操作镜像同步平台。平台负责把海外镜像经 GitHub Actions 同步到绑定的镜像仓库（阿里云 ACR / 华为云 SWR / 腾讯云 CCR / Harbor / 通用 Registry，`acr list` 的 TYPE 列区分类型），返回国内可直接 `docker pull` 的地址。仓库以**别名（ALIAS）**标识展示与选择（各厂商命名空间可能同名），`--acr` 优先按别名匹配、兼容 namespace。
 
-## 前提与登录态
+## 前置检查与登录态
 
-- CLI 位置：本仓库 `bin/dsync`（不存在则 `make cli` 构建）；若已 `sudo make cli-install` 则直接用 `dsync`。
+**执行任何 dsync 命令前，先确认二进制可用**。按顺序检查，取第一个可用的：
+
+```bash
+command -v dsync    # ① 全局安装的 dsync（make cli-install 或 Release 安装）
+ls bin/dsync        # ② 仓库内构建产物
+```
+
+两者都没有时**必须先安装，不要直接执行 dsync 命令**。在仓库根目录任选一种方式：
+
+```bash
+# 方式一：仓库内构建（需要 Go 1.21+，无需 root，产物 bin/dsync）
+make cli
+
+# 方式二：构建并安装全局命令（需要 root，之后可直接用 dsync）
+make cli && sudo make cli-install
+
+# 方式三：下载预编译二进制（无 Go 环境时；linux/darwin × amd64/arm64，按平台替换文件名）
+curl -LO https://github.com/lpx0312/docker-image-sync-platform/releases/latest/download/dsync-linux-amd64.tar.gz
+tar -xzf dsync-linux-amd64.tar.gz && sudo install -m 0755 dsync /usr/local/bin/dsync
+
+# GitHub 直连超时/失败时，在原 URL 前加代理前缀 https://gh.1102345.xyz/ 重试：
+curl -LO https://gh.1102345.xyz/https://github.com/lpx0312/docker-image-sync-platform/releases/latest/download/dsync-linux-amd64.tar.gz
+```
+
+安装后用 `dsync --version`（或 `bin/dsync --version`）验证。本文后续命令统一写作 `bin/dsync`；若①/方式二/方式三已全局可用，把 `bin/dsync` 换成 `dsync` 即可。
+
+**登录态**：
+
 - 本机通常已在 `~/.config/dsync/config.json` 保存登录态（服务器 `https://sync.sktill.top:7000`，token 过期会自动续登）。
 - 遇到 401/未登录：让用户提供密码并通过环境变量登录（密码不落命令行参数）：
   ```bash

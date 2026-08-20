@@ -13,7 +13,7 @@ import (
 var searchCmd = &cobra.Command{
 	Use:   "search <关键词>",
 	Short: "跨仓库搜索镜像仓库与 Tag",
-	Long: `在所有 ACR（或 --acr 指定的 ACR）中按关键词子串搜索仓库名与 Tag。
+	Long: `在所有目标仓库（或 --acr 指定的仓库）中按关键词子串搜索仓库名与 Tag。
 
 仓库匹配来自平台本地库（即时）；Tag 匹配来自本地 tag 缓存，
 缓存缺失或超过 24 小时会自动增量拉取（可 --refresh 强制全量刷新）。
@@ -129,7 +129,7 @@ var searchCmd = &cobra.Command{
 }
 
 func init() {
-	searchCmd.Flags().String("acr", "", "限定 ACR（namespace，默认全部）")
+	searchCmd.Flags().String("acr", "", "限定目标仓库（别名优先，兼容 namespace；默认全部）")
 	searchCmd.Flags().Bool("refresh", false, "强制全量刷新 tag 缓存")
 	rootCmd.AddCommand(searchCmd)
 }

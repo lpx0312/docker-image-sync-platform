@@ -123,7 +123,7 @@ var batchCmd = &cobra.Command{
 
 func init() {
 	batchCmd.Flags().StringP("file", "f", "", "镜像列表文件路径（每行一个镜像）")
-	batchCmd.Flags().String("acr", "", "首选 ACR（namespace；多镜像时服务端仍按亲和性分配）")
+	batchCmd.Flags().String("acr", "", "首选目标仓库（别名优先，兼容 namespace；多镜像时服务端仍按亲和性分配）")
 	batchCmd.Flags().String("arch", "", "目标架构，如 amd64 / arm64")
 	batchCmd.Flags().Int("concurrency", 0, "最大并发数（0 表示使用服务端配置）")
 	batchCmd.Flags().Bool("auto-retry", false, "失败自动重试")

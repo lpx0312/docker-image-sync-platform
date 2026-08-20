@@ -10,7 +10,7 @@
 
 ### 🚀 自动化同步
 - **一键同步**: 简单输入镜像名称即可启动同步流程
-- **智能流程**: Gitee → GitHub → Actions → 目标镜像仓库全自动化（可选配置 SWR 附加推送，每次同步自动双写备份）
+- **智能流程**: 后端 → workflow_dispatch → Actions → 目标镜像仓库全自动化（目标仓库地址/命名空间/凭据全部由后端随任务下发，Action 仓库不保存任何目标侧配置）
 - **多源支持**: DockerHub、gcr.io、k8s.io、ghcr.io、quay.io等主流镜像仓库
 - **架构兼容**: 支持AMD64、ARM64等多种CPU架构
 
@@ -357,9 +357,9 @@ mysql:8.0
 - 查看详细的运行日志和错误信息
 
 #### 自动化流程
-1. **代码提交**：系统自动更新`images.txt`文件
-2. **仓库同步**：Gitee自动同步到GitHub
-3. **Actions触发**：GitHub Actions自动执行镜像构建
+1. **代码提交**：系统通过 Git API 更新 Action 仓库的`images.txt`文件
+2. **任务分发**：系统调用 workflow_dispatch 触发 GitHub Actions，目标仓库地址、命名空间、用户名、密码作为 inputs 一并下发
+3. **镜像同步**：GitHub Actions 按 dispatch 下发的目标执行镜像同步（仅推送到该目标，Action 仓库仅保留源仓库拉取凭据）
 4. **状态回调**：同步完成后更新数据库状态
 
 ## 运维管理
@@ -541,6 +541,11 @@ A: 目标仓库支持私有——Harbor 与通用 Registry 类型可对接自建
 A: 镜像管理页支持「从仓库导入」（远程拉取已有仓库列表）、「批量添加」（逐个远程校验存在性）、「从同步记录导入」三种方式建立台账；CLI 侧可用 `dsync repo import --acr <别名>`（从仓库导入）与 `dsync repo sync-records --acr <别名>`；同步侧可使用批量同步功能或 `dsync batch -f images.txt`。
 
 ## 🔄 更新日志
+
+### v2.1.1 (2026-08)
+- 🔄 Action 流水线目标配置全量改为后端 dispatch 下发：删除 Action 仓库目标侧 vars/secrets（原 HUAWEI_*）及 inputs 默认值
+- 🔄 移除固定 SWR 附加推送（双写备份），同步仅推送到任务指定的目标仓库
+- 🔄 Action 仓库保留/新增源镜像拉取凭据（Docker Hub / ghcr.io / quay.io，可选）
 
 ### v2.1.0 (2026-08)
 - ✨ 多类型目标仓库：华为云 SWR（双凭证：登录凭证 + 管理面 AK/SK）、腾讯云 CCR、Harbor、通用 Registry
