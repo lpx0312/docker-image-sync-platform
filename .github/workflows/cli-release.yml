@@ -10,10 +10,10 @@
 # 以及每个文件的 sha256 校验值。
 #
 # 触发方式：
-#   - 手动触发（workflow_dispatch）：仅构建并上传 artifact，不创建 Release，
-#     用于测试构建流程；
-#   - 推送 cli-v* 标签（如 cli-v1.0.0）：构建并创建 GitHub Release，
-#     附件包含全部平台的 tar.gz 与 SHA256SUMS。
+#   - 手动触发（workflow_dispatch）或推送 cli-v* 标签：构建后覆盖发布到
+#     固定 Release「cli-latest」（附件 clobber 覆盖），并标为 GitHub latest，
+#     这样 skill 的 /releases/latest/download/ 地址始终拿到当前构建。
+#   - TODO(稳定后恢复)：仅 cli-v* 标签创建版本 Release；手动触发只留 artifact。
 #
 # 本地等价命令：
 #   CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
@@ -100,8 +100,8 @@ jobs:
   release:
     name: 发布 Release
     needs: build
-    # 仅标签推送时创建 Release；手动触发只保留 artifact
-    if: startsWith(github.ref, 'refs/tags/cli-v')
+    # 现阶段每次构建都覆盖 cli-latest。稳定后改回：
+    #   if: startsWith(github.ref, 'refs/tags/cli-v')
     runs-on: ubuntu-latest
     steps:
       - name: 下载全部构建产物
@@ -116,30 +116,34 @@ jobs:
           cat *.sha256 > SHA256SUMS
           ls -lh
 
-      - name: 创建 Release 并上传附件
+      - name: 覆盖发布到 cli-latest
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          TAG: cli-latest
         run: |
-          # Release 已存在（如重跑流水线）时改为覆盖上传附件
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/*.tar.gz dist/*.sha256 dist/SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
-          else
-            gh release create "$TAG" \
-              --title "dsync $TAG" \
-              --notes "dsync CLI 多平台构建产物。
+          NOTES="dsync CLI 多平台构建产物（滚动覆盖发布）。
+
+          来源：${GITHUB_SHA:0:7} / ${GITHUB_REF_NAME}
 
           ## 安装
 
           \`\`\`bash
-          # Linux ARM64 示例
-          curl -LO https://github.com/${GITHUB_REPOSITORY}/releases/download/$TAG/dsync-linux-arm64.tar.gz
-          tar -xzf dsync-linux-arm64.tar.gz
-          sudo install -m 0755 dsync-linux-arm64 /usr/local/bin/dsync
+          curl -LO https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/dsync-linux-amd64.tar.gz
+          tar -xzf dsync-linux-amd64.tar.gz
+          sudo install -m 0755 dsync-linux-amd64 /usr/local/bin/dsync
           dsync --help
           \`\`\`
 
-          完整使用说明见仓库 \`docs/dsync-cli.md\`。" \
+          完整使用说明见仓库 \`docs/dsync-cli.md\`。"
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/*.tar.gz dist/*.sha256 dist/SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit "$TAG" --latest --notes "$NOTES" --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" \
+              --title "dsync $TAG" \
+              --notes "$NOTES" \
+              --latest \
               dist/*.tar.gz dist/*.sha256 dist/SHA256SUMS \
               --repo "$GITHUB_REPOSITORY"
           fi
