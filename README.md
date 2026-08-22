@@ -354,6 +354,7 @@ mysql:8.0
 #### 工作流监控
 - 查看GitHub Actions工作流运行状态
 - 监控API使用限制和配额
+- 查看账号 Actions 分钟数用量（已用/套餐包含/剩余估算）及仓库耗时排行（默认收起，展开后显示前 10，其余可继续展开）
 - 查看详细的运行日志和错误信息
 
 #### 自动化流程
@@ -361,6 +362,15 @@ mysql:8.0
 2. **任务分发**：系统调用 workflow_dispatch 触发 GitHub Actions，目标仓库地址、命名空间、用户名、密码作为 inputs 一并下发
 3. **镜像同步**：GitHub Actions 按 dispatch 下发的目标执行镜像同步（仅推送到该目标，Action 仓库仅保留源仓库拉取凭据）
 4. **状态回调**：同步完成后更新数据库状态
+
+#### 在 GitHub 网页端查看
+除本平台的 GitHub Actions 页面外，也可以直接在 GitHub 网页端查看运行状态与用量：
+
+- **平台自身流水线**（镜像构建 docker-all / CLI 发布 cli-release）：`https://github.com/lpx0312/docker-image-sync-platform/actions`
+- **镜像同步流水线**（Action 仓库）：`https://github.com/lpx0312/acr-images-sync-action/actions`
+- **单次运行详情**：`https://github.com/<owner>/<repo>/actions/runs/<run_id>`——平台「运行详情」弹层中的 GitHub 链接即此地址，可查看每一步日志与耗时；运行列表页支持按 workflow/分支/状态筛选
+- **账号用量与账单**：`https://github.com/settings/billing`（Settings → Billing & plans，Actions 分钟数明细按月按仓库列出；平台用量卡片的数据口径与此一致）
+- **CLI 方式**：`gh run list --repo <owner>/<repo>` 查看运行列表，`gh run watch <run-id>` 实时跟踪，`gh api users/<user>/settings/billing/usage` 查询用量明细
 
 ## 运维管理
 

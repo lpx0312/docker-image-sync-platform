@@ -74,6 +74,7 @@
 | GET | `/api/v1/github/runs` | 获取工作流运行列表 |
 | GET | `/api/v1/github/runs/{runId}` | 获取工作流运行详情 |
 | GET | `/api/v1/github/rate-limit` | 查询 GitHub API 速率限制 |
+| GET | `/api/v1/github/actions-usage` | 查询账号当月 GitHub Actions 分钟数用量 |
 
 ### 系统配置 (Config)
 | 方法 | 路径 | 说明 |

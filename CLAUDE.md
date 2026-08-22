@@ -224,6 +224,7 @@ docker-image-sync-platform/
 - `GET /github/runs` — 工作流运行列表
 - `GET /github/runs/:runId` — 运行详情
 - `GET /github/rate-limit` — API 速率限制
+- `GET /github/actions-usage` — 账号当月 Actions 分钟数用量（计费加权，按 SKU/仓库细分，套餐额度按 plan 估算）
 
 ### 健康检查 — 公开
 - `GET /health` — 系统健康检查
