@@ -413,11 +413,12 @@ chrome-devtools click "<关闭按钮UID>"
 ```bash
 chrome-devtools click "<检查用量按钮UID>"
 # 预期：「GitHub Actions 用量」卡片显示四格数据：
-#   已用分钟（当月·计费加权）/ 套餐包含分钟 / 剩余分钟（估算）/ 使用率（估算），
-#   下方「按系统」显示 Actions Linux / Actions Linux ARM 等标签
+#   已用分钟（当月·全部仓库）/ 私有仓库分钟（占额度）/ 公共仓库分钟（免费）/ 套餐包含分钟，
+#   下方附「准确额度以 GitHub 账单页为准」说明及跳转链接，
+#   「按系统」显示 Actions Linux / Actions Linux ARM 等标签
 
 chrome-devtools click "<仓库耗时排行折叠条UID>"
-# 预期：展开排行面板，默认显示前 10 个仓库（序号/名称/占比条/分钟数/百分比）；
+# 预期：展开排行面板，默认显示前 10 个仓库（序号/名称+可见性标签/占比条/分钟数/百分比）；
 #   页面加载时该面板默认收起，需手动点击才展开
 
 chrome-devtools click "<展开其余 N 个仓库按钮UID>"

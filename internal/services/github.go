@@ -571,14 +571,18 @@ func (s *GitHubService) CheckRateLimit() (map[string]interface{}, error) {
 //
 // 数据来源为新版账单接口 GET /users/{username}/settings/billing/usage
 // （旧版 /settings/billing/actions 已于 2025 年下线，调用返回 410）。
-// 该接口只提供用量明细，不含套餐额度，因此包含分钟数按账号 plan 估算。
+// 注意口径差异：该接口返回全部仓库（含公共仓库）的分钟数，且不携带运行时可见性，
+// 与 GitHub 账单网页的"已用分钟"（仅计费部分）无法精确对齐，网页账单为准确口径。
 type ActionsUsage struct {
-	Period           string         `json:"period"`             // 计费月，格式 YYYY-MM
-	Plan             string         `json:"plan"`               // 账号套餐（free/pro 等，空为未知）
-	IncludedMinutes  int            `json:"included_minutes"`   // 套餐包含分钟数/月（未知套餐为 0）
-	TotalMinutesUsed int            `json:"total_minutes_used"` // 本月已用分钟数（按计费倍率加权）
-	RawMinutesBySKU  map[string]int `json:"raw_minutes_by_sku"` // 各 SKU 实际分钟数（未加权）
-	MinutesByRepo    map[string]int `json:"minutes_by_repo"`    // 各仓库分钟数（未加权）
+	Period           string            `json:"period"`             // 计费月，格式 YYYY-MM
+	Plan             string            `json:"plan"`               // 账号套餐（free/pro 等，空为未知）
+	IncludedMinutes  int               `json:"included_minutes"`   // 套餐包含分钟数/月（未知套餐为 0）
+	TotalMinutesUsed int               `json:"total_minutes_used"` // 本月已用分钟数（全部仓库合计，按计费倍率加权）
+	PrivateMinutes   int               `json:"private_minutes"`    // 当前私有仓库分钟数（计费风险部分）
+	PublicMinutes    int               `json:"public_minutes"`     // 当前公共仓库分钟数（免费不占额度）
+	RawMinutesBySKU  map[string]int    `json:"raw_minutes_by_sku"` // 各 SKU 实际分钟数（未加权）
+	MinutesByRepo    map[string]int    `json:"minutes_by_repo"`    // 各仓库分钟数（未加权）
+	RepoVisibility   map[string]string `json:"repo_visibility"`    // 仓库名 -> public/private
 }
 
 // planIncludedMinutes 按个人账号套餐返回每月包含的 Actions 分钟数
@@ -646,6 +650,7 @@ func (s *GitHubService) GetActionsUsage() (*ActionsUsage, error) {
 		Period:          fmt.Sprintf("%04d-%02d", year, int(month)),
 		RawMinutesBySKU: map[string]int{},
 		MinutesByRepo:   map[string]int{},
+		RepoVisibility:  map[string]string{},
 	}
 	for _, item := range billingResp.UsageItems {
 		if item.Product != "actions" || item.UnitType != "Minutes" {
@@ -655,6 +660,17 @@ func (s *GitHubService) GetActionsUsage() (*ActionsUsage, error) {
 		usage.RawMinutesBySKU[item.SKU] += minutes
 		usage.MinutesByRepo[item.Repository] += minutes
 		usage.TotalMinutesUsed += minutes * skuBillingMultiplier(item.SKU)
+	}
+
+	// 公共仓库的 Actions 免费不占额度；标注可见性并把私有/公共分钟分开统计。
+	// 注意：仓库中途切换可见性时，接口无法还原运行时状态，仅按当前可见性归类。
+	usage.RepoVisibility = s.fetchRepoVisibility()
+	for repo, minutes := range usage.MinutesByRepo {
+		if usage.RepoVisibility[repo] == "public" {
+			usage.PublicMinutes += minutes
+		} else {
+			usage.PrivateMinutes += minutes
+		}
 	}
 
 	// 套餐信息用于估算包含分钟数；获取失败不影响用量数据返回
@@ -672,6 +688,39 @@ func (s *GitHubService) GetActionsUsage() (*ActionsUsage, error) {
 	}
 
 	return usage, nil
+}
+
+// fetchRepoVisibility 拉取 token 所属账号全部仓库的可见性映射（分页，100/页）
+//
+// 功能说明:
+//   - 调用 GET /user/repos（返回认证账号的公共+私有仓库；
+//     GET /users/{username}/repos 只返回公共仓库，拿不到私有仓库的可见性）
+//   - 任一页失败或整体失败时返回空映射，调用方按"未知可见性"处理（计入私有侧）
+func (s *GitHubService) fetchRepoVisibility() map[string]string {
+	visibility := map[string]string{}
+	for page := 1; page <= 10; page++ {
+		resp, err := s.client.R().
+			SetQueryParam("per_page", "100").
+			SetQueryParam("page", fmt.Sprintf("%d", page)).
+			Get(fmt.Sprintf("%s/user/repos", s.baseURL))
+		if err != nil || resp.StatusCode() != http.StatusOK {
+			return visibility
+		}
+		var repos []struct {
+			Name string `json:"name"`
+			Vis  string `json:"visibility"`
+		}
+		if json.Unmarshal(resp.Body(), &repos) != nil {
+			return visibility
+		}
+		for _, r := range repos {
+			visibility[r.Name] = r.Vis
+		}
+		if len(repos) < 100 {
+			break
+		}
+	}
+	return visibility
 }
 
 // parseGitHubRepo 解析GitHub仓库URL

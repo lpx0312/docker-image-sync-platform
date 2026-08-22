@@ -369,7 +369,7 @@ mysql:8.0
 - **平台自身流水线**（镜像构建 docker-all / CLI 发布 cli-release）：`https://github.com/lpx0312/docker-image-sync-platform/actions`
 - **镜像同步流水线**（Action 仓库）：`https://github.com/lpx0312/acr-images-sync-action/actions`
 - **单次运行详情**：`https://github.com/<owner>/<repo>/actions/runs/<run_id>`——平台「运行详情」弹层中的 GitHub 链接即此地址，可查看每一步日志与耗时；运行列表页支持按 workflow/分支/状态筛选
-- **账号用量与账单**：`https://github.com/settings/billing`（Settings → Billing & plans，Actions 分钟数明细按月按仓库列出；平台用量卡片的数据口径与此一致）
+- **账号用量与账单**：`https://github.com/settings/billing`（Settings → Billing & plans，Actions 分钟数明细按月按仓库列出）。注意口径：平台用量卡片基于新版账单 API 汇总**全部仓库**分钟数（含公共仓库）并区分私有/公共，而 GitHub 账单页只统计消耗额度的计费分钟——公共仓库免费、仓库可见性中途变更等因素会造成两者差异，**准确额度以账单页为准**
 - **CLI 方式**：`gh run list --repo <owner>/<repo>` 查看运行列表，`gh run watch <run-id>` 实时跟踪，`gh api users/<user>/settings/billing/usage` 查询用量明细
 
 ## 运维管理

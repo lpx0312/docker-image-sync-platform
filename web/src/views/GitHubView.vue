@@ -60,22 +60,30 @@
       <div class="rate-grid" v-if="actionsUsage">
         <div class="rate-item">
           <span class="rate-value">{{ actionsUsage.total_minutes_used }}</span>
-          <span class="rate-label">已用分钟（{{ actionsUsage.period }}·计费加权）</span>
+          <span class="rate-label">已用分钟（{{ actionsUsage.period }}·全部仓库）</span>
+        </div>
+        <div class="rate-item">
+          <span class="rate-value">{{ actionsUsage.private_minutes }}</span>
+          <span class="rate-label">私有仓库分钟（占额度）</span>
+        </div>
+        <div class="rate-item">
+          <span class="rate-value">{{ actionsUsage.public_minutes }}</span>
+          <span class="rate-label">公共仓库分钟（免费）</span>
         </div>
         <div class="rate-item">
           <span class="rate-value">{{ actionsUsage.included_minutes || '-' }}</span>
           <span class="rate-label">套餐包含分钟（{{ actionsUsage.plan || '未知套餐' }}）</span>
         </div>
-        <div class="rate-item">
-          <span class="rate-value">{{ getActionsRemaining() }}</span>
-          <span class="rate-label">剩余分钟（估算）</span>
-        </div>
-        <div class="rate-item">
-          <span class="rate-value" :class="getActionsUsageStatus()">
-            {{ getActionsUsagePercentage() }}%
-          </span>
-          <span class="rate-label">使用率（估算）</span>
-        </div>
+      </div>
+
+      <div class="usage-note" v-if="actionsUsage">
+        <span class="text-muted">
+          私有仓库分钟消耗套餐额度，公共仓库免费；仓库可见性中途变更、计费倍率等因素会导致与 GitHub 账单存在偏差，准确额度以
+        </span>
+        <el-link type="primary" :underline="false" href="https://github.com/settings/billing" target="_blank">
+          GitHub 账单页 <el-icon><Link /></el-icon>
+        </el-link>
+        <span class="text-muted">为准</span>
       </div>
 
       <div class="usage-breakdown" v-if="actionsUsage && skuEntries.length">
@@ -96,7 +104,12 @@
         <div v-show="rankingExpanded" class="ranking-panel">
           <div v-for="([repo, v], i) in displayedRepoEntries" :key="repo" class="ranking-row">
             <span class="ranking-index" :class="{ top: i < 3 }">{{ i + 1 }}</span>
-            <span class="ranking-name" :title="repo">{{ repo }}</span>
+            <span class="ranking-name" :title="repo">
+              {{ repo }}
+              <span class="repo-vis" :class="{ public: isPublicRepo(repo) }">
+                {{ isPublicRepo(repo) ? '公共·不计费' : '私有' }}
+              </span>
+            </span>
             <div class="ranking-bar">
               <div class="ranking-bar-fill" :style="{ width: barWidth(v) }"></div>
             </div>
@@ -286,7 +299,7 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Refresh, ArrowDown } from '@element-plus/icons-vue'
+import { Refresh, ArrowDown, Link } from '@element-plus/icons-vue'
 import { githubAPI } from '@/api'
 import { formatTime } from '@/utils/format'
 import { getGitHubStatusType, getGitHubStatusText, getGitHubConclusionType, getGitHubConclusionText } from '@/utils/status'
@@ -362,24 +375,7 @@ const totalRepoMinutes = computed(() => repoEntries.value.reduce((sum, [, v]) =>
 const barWidth = (v) => (totalRepoMinutes.value ? `${Math.max((v / totalRepoMinutes.value) * 100, 2)}%` : '0%')
 const percent = (v) => (totalRepoMinutes.value ? Math.round((v / totalRepoMinutes.value) * 100) : 0)
 
-const getActionsRemaining = () => {
-  const u = actionsUsage.value
-  if (!u || !u.included_minutes) return '-'
-  return Math.max(u.included_minutes - u.total_minutes_used, 0)
-}
-
-const getActionsUsagePercentage = () => {
-  const u = actionsUsage.value
-  if (!u || !u.included_minutes) return 0
-  return Math.round((u.total_minutes_used / u.included_minutes) * 100)
-}
-
-const getActionsUsageStatus = () => {
-  const p = getActionsUsagePercentage()
-  if (p >= 80) return 'danger'
-  if (p >= 60) return 'warning'
-  return 'success'
-}
+const isPublicRepo = (repo) => actionsUsage.value?.repo_visibility?.[repo] === 'public'
 
 const loadWorkflowRuns = async () => {
   runsLoading.value = true
@@ -535,6 +531,15 @@ onMounted(() => {
 }
 
 /* ── Actions Usage Breakdown ── */
+.usage-note {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: var(--space-md);
+  font-size: 12.5px;
+}
+
 .usage-breakdown {
   display: flex;
   align-items: center;
@@ -623,6 +628,22 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.repo-vis {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  background: var(--color-bg-muted);
+  vertical-align: 1px;
+}
+
+.repo-vis.public {
+  color: var(--color-success);
 }
 
 .ranking-bar {
