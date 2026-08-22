@@ -326,6 +326,16 @@ func main() {
 					}
 					c.JSON(http.StatusOK, rateLimit)
 				})
+
+				github.GET("/actions-usage", func(c *gin.Context) {
+					githubAPIService := gitServiceFactory.GetGitHubAPIService()
+					usage, err := githubAPIService.GetActionsUsage()
+					if err != nil {
+						c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+						return
+					}
+					c.JSON(http.StatusOK, usage)
+				})
 			}
 
 			configGroup := protected.Group("/config")

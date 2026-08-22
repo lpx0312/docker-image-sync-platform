@@ -295,7 +295,12 @@ export const githubAPI = {
    * @returns {Object} result.remaining - 剩余可用次数
    * @returns {Object} result.reset - 重置时间戳
    */
-  getRateLimit: () => api.get('/github/rate-limit')
+  getRateLimit: () => api.get('/github/rate-limit'),
+
+  /**
+   * 获取GitHub Actions分钟数用量（本月已用/套餐包含/剩余估算）
+   */
+  getActionsUsage: () => api.get('/github/actions-usage')
 }
 
 /**

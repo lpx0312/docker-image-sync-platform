@@ -567,6 +567,113 @@ func (s *GitHubService) CheckRateLimit() (map[string]interface{}, error) {
 	return rateLimit, nil
 }
 
+// ActionsUsage GitHub Actions 分钟数用量统计（当前计费月）
+//
+// 数据来源为新版账单接口 GET /users/{username}/settings/billing/usage
+// （旧版 /settings/billing/actions 已于 2025 年下线，调用返回 410）。
+// 该接口只提供用量明细，不含套餐额度，因此包含分钟数按账号 plan 估算。
+type ActionsUsage struct {
+	Period           string         `json:"period"`             // 计费月，格式 YYYY-MM
+	Plan             string         `json:"plan"`               // 账号套餐（free/pro 等，空为未知）
+	IncludedMinutes  int            `json:"included_minutes"`   // 套餐包含分钟数/月（未知套餐为 0）
+	TotalMinutesUsed int            `json:"total_minutes_used"` // 本月已用分钟数（按计费倍率加权）
+	RawMinutesBySKU  map[string]int `json:"raw_minutes_by_sku"` // 各 SKU 实际分钟数（未加权）
+	MinutesByRepo    map[string]int `json:"minutes_by_repo"`    // 各仓库分钟数（未加权）
+}
+
+// planIncludedMinutes 按个人账号套餐返回每月包含的 Actions 分钟数
+func planIncludedMinutes(plan string) int {
+	switch plan {
+	case "pro":
+		return 3000
+	case "free":
+		return 2000
+	default:
+		return 0 // 未知套餐，前端显示为 "-"
+	}
+}
+
+// skuBillingMultiplier Actions 计费倍率：Linux 1x / Windows 2x / macOS 10x
+func skuBillingMultiplier(sku string) int {
+	switch {
+	case strings.Contains(sku, "macOS"):
+		return 10
+	case strings.Contains(sku, "Windows"):
+		return 2
+	default:
+		return 1
+	}
+}
+
+// GetActionsUsage 获取账号本月 GitHub Actions 分钟数用量
+//
+// 功能说明:
+//   - 调用新版账单接口拉取当月用量明细，聚合 product=actions 且 unitType=Minutes 的条目
+//   - 已用分钟按计费倍率加权（与套餐额度可比），并按 SKU / 仓库维度细分
+//   - 套餐包含分钟数按账号 plan 估算（free=2000/月，pro=3000/月）
+//
+// 使用场景:
+//   - GitHub Actions 页面展示账号剩余可用时间
+//   - 评估本平台同步流水线是否接近套餐额度
+func (s *GitHubService) GetActionsUsage() (*ActionsUsage, error) {
+	now := time.Now()
+	year, month, _ := now.Date()
+	usageURL := fmt.Sprintf("%s/users/%s/settings/billing/usage?year=%d&month=%d",
+		s.baseURL, s.owner, year, int(month))
+
+	resp, err := s.client.R().Get(usageURL)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode() != http.StatusOK {
+		return nil, fmt.Errorf("GitHub API响应错误: %d, %s", resp.StatusCode(), string(resp.Body()))
+	}
+
+	var billingResp struct {
+		UsageItems []struct {
+			Product    string  `json:"product"`
+			SKU        string  `json:"sku"`
+			Quantity   float64 `json:"quantity"`
+			UnitType   string  `json:"unitType"`
+			Repository string  `json:"repositoryName"`
+		} `json:"usageItems"`
+	}
+	if err := json.Unmarshal(resp.Body(), &billingResp); err != nil {
+		return nil, fmt.Errorf("解析响应失败: %w", err)
+	}
+
+	usage := &ActionsUsage{
+		Period:          fmt.Sprintf("%04d-%02d", year, int(month)),
+		RawMinutesBySKU: map[string]int{},
+		MinutesByRepo:   map[string]int{},
+	}
+	for _, item := range billingResp.UsageItems {
+		if item.Product != "actions" || item.UnitType != "Minutes" {
+			continue
+		}
+		minutes := int(item.Quantity + 0.5)
+		usage.RawMinutesBySKU[item.SKU] += minutes
+		usage.MinutesByRepo[item.Repository] += minutes
+		usage.TotalMinutesUsed += minutes * skuBillingMultiplier(item.SKU)
+	}
+
+	// 套餐信息用于估算包含分钟数；获取失败不影响用量数据返回
+	userResp, err := s.client.R().Get(fmt.Sprintf("%s/users/%s", s.baseURL, s.owner))
+	if err == nil && userResp.StatusCode() == http.StatusOK {
+		var user struct {
+			Plan struct {
+				Name string `json:"name"`
+			} `json:"plan"`
+		}
+		if json.Unmarshal(userResp.Body(), &user) == nil {
+			usage.Plan = user.Plan.Name
+			usage.IncludedMinutes = planIncludedMinutes(user.Plan.Name)
+		}
+	}
+
+	return usage, nil
+}
+
 // parseGitHubRepo 解析GitHub仓库URL
 //
 // 功能说明:

@@ -41,6 +41,84 @@
       </div>
     </div>
 
+    <!-- Actions 用量卡片 -->
+    <div class="section-card">
+      <div class="section-header">
+        <h3 class="section-title">GitHub Actions 用量</h3>
+        <el-button
+          type="primary"
+          :icon="Refresh"
+          @click="checkActionsUsage"
+          :loading="actionsUsageLoading"
+          size="small"
+          round
+        >
+          检查用量
+        </el-button>
+      </div>
+
+      <div class="rate-grid" v-if="actionsUsage">
+        <div class="rate-item">
+          <span class="rate-value">{{ actionsUsage.total_minutes_used }}</span>
+          <span class="rate-label">已用分钟（{{ actionsUsage.period }}·计费加权）</span>
+        </div>
+        <div class="rate-item">
+          <span class="rate-value">{{ actionsUsage.included_minutes || '-' }}</span>
+          <span class="rate-label">套餐包含分钟（{{ actionsUsage.plan || '未知套餐' }}）</span>
+        </div>
+        <div class="rate-item">
+          <span class="rate-value">{{ getActionsRemaining() }}</span>
+          <span class="rate-label">剩余分钟（估算）</span>
+        </div>
+        <div class="rate-item">
+          <span class="rate-value" :class="getActionsUsageStatus()">
+            {{ getActionsUsagePercentage() }}%
+          </span>
+          <span class="rate-label">使用率（估算）</span>
+        </div>
+      </div>
+
+      <div class="usage-breakdown" v-if="actionsUsage && skuEntries.length">
+        <span class="breakdown-title">按系统：</span>
+        <el-tag v-for="[sku, v] in skuEntries" :key="sku" size="small" round type="info">
+          {{ sku }}: {{ v }} 分钟
+        </el-tag>
+      </div>
+
+      <!-- 仓库耗时排行（默认收起，手动展开；展开后默认前 10，其余可继续展开） -->
+      <div class="repo-ranking" v-if="actionsUsage && repoEntries.length">
+        <button class="ranking-toggle" type="button" @click="rankingExpanded = !rankingExpanded">
+          <el-icon class="toggle-icon" :class="{ expanded: rankingExpanded }"><ArrowDown /></el-icon>
+          <span>仓库耗时排行</span>
+          <span class="toggle-summary">{{ repoEntries.length }} 个仓库 · 合计 {{ totalRepoMinutes }} 分钟</span>
+        </button>
+
+        <div v-show="rankingExpanded" class="ranking-panel">
+          <div v-for="([repo, v], i) in displayedRepoEntries" :key="repo" class="ranking-row">
+            <span class="ranking-index" :class="{ top: i < 3 }">{{ i + 1 }}</span>
+            <span class="ranking-name" :title="repo">{{ repo }}</span>
+            <div class="ranking-bar">
+              <div class="ranking-bar-fill" :style="{ width: barWidth(v) }"></div>
+            </div>
+            <span class="ranking-minutes">{{ v }} 分钟</span>
+            <span class="ranking-percent">{{ percent(v) }}%</span>
+          </div>
+          <button
+            v-if="repoEntries.length > 10"
+            class="ranking-more"
+            type="button"
+            @click="showAllRepos = !showAllRepos"
+          >
+            {{ showAllRepos ? '收起其余仓库' : `展开其余 ${repoEntries.length - 10} 个仓库` }}
+          </button>
+        </div>
+      </div>
+
+      <div v-if="!actionsUsage" class="rate-empty">
+        <span class="text-muted">点击「检查用量」获取本月 Actions 分钟数（公共仓库运行不消耗分钟数）</span>
+      </div>
+    </div>
+
     <!-- 运行记录 -->
     <div class="section-card">
       <div class="section-header">
@@ -208,7 +286,7 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Refresh } from '@element-plus/icons-vue'
+import { Refresh, ArrowDown } from '@element-plus/icons-vue'
 import { githubAPI } from '@/api'
 import { formatTime } from '@/utils/format'
 import { getGitHubStatusType, getGitHubStatusText, getGitHubConclusionType, getGitHubConclusionText } from '@/utils/status'
@@ -219,6 +297,8 @@ dayjs.extend(duration)
 
 const rateLimit = ref(null)
 const rateLimitLoading = ref(false)
+const actionsUsage = ref(null)
+const actionsUsageLoading = ref(false)
 const workflowRuns = ref([])
 const runsLoading = ref(false)
 const statusFilter = ref('')
@@ -253,6 +333,52 @@ const checkRateLimit = async () => {
   } finally {
     rateLimitLoading.value = false
   }
+}
+
+const checkActionsUsage = async () => {
+  actionsUsageLoading.value = true
+  try {
+    actionsUsage.value = await githubAPI.getActionsUsage()
+    ElMessage.success('Actions 用量信息已更新')
+  } catch {
+    // 错误提示由 api 拦截器统一弹出
+  } finally {
+    actionsUsageLoading.value = false
+  }
+}
+
+const skuEntries = computed(() => Object.entries(actionsUsage.value?.raw_minutes_by_sku || {}))
+
+// 仓库耗时排行：默认收起；展开后默认显示前 10，其余通过按钮继续展开
+const rankingExpanded = ref(false)
+const showAllRepos = ref(false)
+const repoEntries = computed(() =>
+  Object.entries(actionsUsage.value?.minutes_by_repo || {}).sort((a, b) => b[1] - a[1])
+)
+const displayedRepoEntries = computed(() =>
+  showAllRepos.value ? repoEntries.value : repoEntries.value.slice(0, 10)
+)
+const totalRepoMinutes = computed(() => repoEntries.value.reduce((sum, [, v]) => sum + v, 0))
+const barWidth = (v) => (totalRepoMinutes.value ? `${Math.max((v / totalRepoMinutes.value) * 100, 2)}%` : '0%')
+const percent = (v) => (totalRepoMinutes.value ? Math.round((v / totalRepoMinutes.value) * 100) : 0)
+
+const getActionsRemaining = () => {
+  const u = actionsUsage.value
+  if (!u || !u.included_minutes) return '-'
+  return Math.max(u.included_minutes - u.total_minutes_used, 0)
+}
+
+const getActionsUsagePercentage = () => {
+  const u = actionsUsage.value
+  if (!u || !u.included_minutes) return 0
+  return Math.round((u.total_minutes_used / u.included_minutes) * 100)
+}
+
+const getActionsUsageStatus = () => {
+  const p = getActionsUsagePercentage()
+  if (p >= 80) return 'danger'
+  if (p >= 60) return 'warning'
+  return 'success'
 }
 
 const loadWorkflowRuns = async () => {
@@ -336,6 +462,7 @@ const getRateLimitStatus = () => {
 onMounted(() => {
   loadWorkflowRuns().catch(() => {})
   checkRateLimit().catch(() => {})
+  checkActionsUsage().catch(() => {})
 })
 </script>
 
@@ -407,6 +534,139 @@ onMounted(() => {
   text-align: center;
 }
 
+/* ── Actions Usage Breakdown ── */
+.usage-breakdown {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-top: var(--space-md);
+}
+
+.breakdown-title {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  font-weight: 500;
+  margin-right: var(--space-xs);
+}
+
+/* ── Repo Ranking ── */
+.repo-ranking {
+  margin-top: var(--space-md);
+}
+
+.ranking-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  width: 100%;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-bg-muted);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.ranking-toggle:hover {
+  background: var(--color-bg-card);
+}
+
+.toggle-icon {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  transition: transform 0.2s;
+}
+
+.toggle-icon.expanded {
+  transform: rotate(180deg);
+}
+
+.toggle-summary {
+  margin-left: auto;
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.ranking-panel {
+  margin-top: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+}
+
+.ranking-row {
+  display: grid;
+  grid-template-columns: 24px minmax(140px, 220px) 1fr 76px 44px;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 6px 0;
+}
+
+.ranking-index {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.ranking-index.top {
+  color: var(--color-warning);
+}
+
+.ranking-name {
+  font-size: 13px;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ranking-bar {
+  height: 8px;
+  background: var(--color-bg-muted);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.ranking-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--el-color-primary);
+  opacity: 0.75;
+}
+
+.ranking-minutes {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.ranking-percent {
+  font-size: 12.5px;
+  color: var(--color-text-muted);
+  text-align: right;
+}
+
+.ranking-more {
+  display: block;
+  margin: var(--space-sm) auto 0;
+  padding: 2px 12px;
+  background: none;
+  border: none;
+  color: var(--el-color-primary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ranking-more:hover {
+  text-decoration: underline;
+}
+
 /* ── Filters ── */
 .filter-bar {
   display: flex;
@@ -458,6 +718,18 @@ onMounted(() => {
 @media (max-width: 768px) {
   .rate-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .ranking-row {
+    grid-template-columns: 24px minmax(90px, 1fr) 70px;
+  }
+
+  .ranking-row .ranking-bar {
+    display: none;
+  }
+
+  .ranking-row .ranking-percent {
+    display: none;
   }
 }
 </style>
