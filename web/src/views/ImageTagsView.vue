@@ -3,7 +3,7 @@
     <el-breadcrumb separator="/" class="page-breadcrumb">
       <el-breadcrumb-item :to="{ path: '/images' }">镜像管理</el-breadcrumb-item>
       <el-breadcrumb-item :to="{ path: '/images', query: { acrId: acrId } }">
-        {{ acrNamespace || '-' }}
+        {{ acrAlias || acrNamespace || '-' }}
       </el-breadcrumb-item>
       <el-breadcrumb-item :to="currentTagsRoute">{{ repoName }}</el-breadcrumb-item>
       <el-breadcrumb-item>Tag 列表</el-breadcrumb-item>
@@ -46,6 +46,9 @@ import AcrTagListPanel from '@/components/AcrTagListPanel.vue'
 const router = useRouter()
 const route = useRoute()
 const panelRef = ref(null)
+// acrAlias 仅用于面包屑展示；acrNamespace 是真实命名空间，
+// 供 AcrTagListPanel 拼接可拉取地址（复制功能），不可用别名
+const acrAlias = ref('')
 const acrNamespace = ref('')
 const acrRegistryUrl = ref('')
 const refreshing = ref(false)
@@ -75,7 +78,8 @@ const loadAcrInfo = async () => {
     const response = await acrRegistryAPI.getAll()
     if (response && response.status === 'success') {
       const acr = (response.data || []).find(item => item.id === acrId.value)
-      acrNamespace.value = acr?.alias || acr?.namespace || ''
+      acrAlias.value = acr?.alias || acr?.namespace || ''
+      acrNamespace.value = acr?.namespace || ''
       acrRegistryUrl.value = acr?.registry_url || ''
     }
   } catch (error) {
