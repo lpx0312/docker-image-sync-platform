@@ -1504,6 +1504,61 @@ func (h *SyncHandler) handlePartialSyncFailure(taskID, workflowErrorMessage stri
 		zap.Int("total_count", len(records)))
 }
 
+// RetrySync 重试指定镜像的同步。
+//
+// HTTP方法: POST
+// 路径: /api/v1/images/:id/retry
+//
+// 重置记录状态后异步重跑原任务的执行链路：processSyncTask 按
+// task_id + pending 选取记录，只会重新处理被重置的这一条，
+// 完整走「写 images.txt → 触发 GitHub Actions → 监控 → 验证入库」。
+// 此前该接口仅重置数据库状态，没有任何执行器接手 pending 记录，
+// 界面显示重试中而远端 workflow 永远不会启动。
+func (h *SyncHandler) RetrySync(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的镜像ID"})
+		return
+	}
+
+	var image models.ImageSyncRecord
+	if err := database.DB.First(&image, uint(id)).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "镜像不存在"})
+		return
+	}
+
+	// 只有失败的镜像才能重试，避免干扰进行中或已成功的任务
+	if image.SyncStatus != models.SyncStatusFailed {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "只有失败的镜像才能重试"})
+		return
+	}
+
+	// 重置为待同步并清空上次的失败痕迹
+	if err := database.DB.Model(&image).Updates(map[string]interface{}{
+		"sync_status":   models.SyncStatusPending,
+		"error_message": "",
+		"acr_image":     "",
+	}).Error; err != nil {
+		logger.Logger.Error("重置镜像状态失败", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "重置镜像状态失败"})
+		return
+	}
+
+	logger.Logger.Info("镜像重试同步",
+		zap.Uint("record_id", image.ID),
+		zap.String("task_id", image.TaskID),
+		zap.String("image", image.OriginalImage))
+
+	h.wg.Add(1)
+	go func() {
+		defer h.wg.Done()
+		h.processSyncTask(image.TaskID)
+	}()
+
+	c.JSON(http.StatusOK, gin.H{"message": "重试已启动"})
+}
+
 // splitImageAndTag 从镜像字符串中分离镜像名和 tag。
 // 正确处理带端口号的 registry（如 registry:5000/repo:tag）：
 // 仅当最后一个 ':' 之后不含 '/' 时才视为 tag 分隔符。

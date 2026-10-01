@@ -292,7 +292,7 @@ func main() {
 				images.POST("/batch-check", imageHandler.BatchCheckImages)
 				images.GET("/:id", imageHandler.GetImage)
 				images.DELETE("/:id", imageHandler.DeleteImage)
-				images.POST("/:id/retry", imageHandler.RetrySync)
+				images.POST("/:id/retry", syncHandler.RetrySync)
 				images.POST("/:id/check", imageHandler.CheckImageExists)
 			}
 

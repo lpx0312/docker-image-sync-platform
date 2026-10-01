@@ -615,79 +615,10 @@ func (h *ImageHandler) GetImageStats(c *gin.Context) {
 	c.JSON(http.StatusOK, stats)
 }
 
-// RetrySync 重试指定镜像的同步操作
-//
-// HTTP方法: POST
-// 路径: /api/images/:id/retry
-//
-// 路径参数:
-//   - id: 要重试同步的镜像记录ID
-//
-// 响应码:
-//   - 200: 成功启动重试操作
-//   - 400: 无效的镜像ID或镜像状态不允许重试
-//   - 404: 镜像记录不存在
-//   - 500: 服务器内部错误
-//
-// 响应数据:
-//   - message: 重试操作的确认消息
-//
-// 重试条件:
-//   - 只有失败状态的镜像才能重试
-//   - 重试会重置镜像状态为待同步
-//   - 重试会清除之前的错误信息
-//
-// 注意事项:
-//   - 重试操作会创建新的同步任务
-//   - 重试不会影响其他镜像的同步状态
-func (h *ImageHandler) RetrySync(c *gin.Context) {
-	// ====================================================================
-	// 解析和验证路径参数
-	// ====================================================================
-
-	// 获取镜像ID参数
-	idStr := c.Param("id")
-
-	// 将字符串ID转换为数字ID
-	id, err := strconv.ParseUint(idStr, 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的镜像ID"})
-		return
-	}
-
-	// 检查镜像是否存在
-	var image models.ImageSyncRecord
-	if err := database.DB.First(&image, uint(id)).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "镜像不存在"})
-		return
-	}
-
-	// 业务逻辑验证：只有失败的镜像才能重试
-	// 确保重试操作的合理性，避免对正在进行或已成功的任务进行重试
-	if image.SyncStatus != models.SyncStatusFailed {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "只有失败的镜像才能重试"})
-		return
-	}
-
-	// 状态重置：将镜像状态重置为待同步状态
-	// 清空错误信息和ACR镜像地址，为重新同步做准备
-	if err := database.DB.Model(&image).Updates(map[string]interface{}{
-		"sync_status":   models.SyncStatusPending, // 重置为待同步状态
-		"error_message": "",                       // 清空错误信息
-		"acr_image":     "",                       // 清空ACR镜像地址
-	}).Error; err != nil {
-		logger.Logger.Error("重置镜像状态失败", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "重置镜像状态失败"})
-		return
-	}
-
-	// 操作日志记录
-	logger.Logger.Info("镜像重试同步",
-		zap.Uint64("id", id),
-		zap.String("image", image.OriginalImage))
-
-	c.JSON(http.StatusOK, gin.H{"message": "镜像已重置为待同步状态"})
-}
+// RetrySync 已迁移至 SyncHandler（/api/v1/images/:id/retry）：
+// 重试需要触发 GitHub Actions 执行链路，属于同步域职责。
+// 此前在 ImageHandler 中的实现只重置数据库状态，没有执行器接手，
+// 属于假重试；新实现见 SyncHandler.RetrySync。
 
 // CheckImageExists 检测镜像是否存在
 // HTTP方法: GET
