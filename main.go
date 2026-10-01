@@ -41,6 +41,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -194,6 +195,17 @@ func main() {
 	router.Static("/static", "./web/dist/static")               // CSS、JS、图片等静态资源
 	router.StaticFile("/", "./web/dist/index.html")             // 前端应用入口页面
 	router.StaticFile("/favicon.ico", "./web/dist/favicon.ico") // 网站图标
+
+	// SPA history 路由兜底：非 API 的未匹配路径返回前端入口页，
+	// 否则刷新或深链接 /sync、/images/2/argocd/tags 等前端路由会得到后端 404；
+	// API 未知路径保持 JSON 404，不混入 HTML
+	router.NoRoute(func(c *gin.Context) {
+		if strings.HasPrefix(c.Request.URL.Path, "/api/") {
+			c.JSON(http.StatusNotFound, gin.H{"error": "接口不存在"})
+			return
+		}
+		c.File("./web/dist/index.html")
+	})
 
 	// ========================================================================
 	// API路由配置
