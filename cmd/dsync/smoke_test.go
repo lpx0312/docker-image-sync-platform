@@ -278,6 +278,12 @@ func TestSmokeEndToEnd(t *testing.T) {
 			wantOut: []string{"nginx:1.26", "存在"},
 		},
 		{
+			// 重试触发同步（后端真实启动 GitHub Actions），CLI 仅确认提交并提示跟踪方式
+			name:    "retry record",
+			args:    []string{"retry", "1"},
+			wantOut: []string{"重试已提交", "重新触发同步"},
+		},
+		{
 			name:    "image delete",
 			args:    []string{"image", "delete", "1", "--yes"},
 			wantOut: []string{"已删除"},

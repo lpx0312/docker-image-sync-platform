@@ -137,11 +137,11 @@ Error: 已拦截: 镜像已存在于目标仓库（registry.cn-hangzhou.aliyuncs
 dsync task status <task-id>       # 错误信息 + GitHub Actions 链接
 dsync task list --status failed   # 最近的失败任务
 dsync image list --status failed  # 失败的镜像记录（单条维度）
-dsync retry --task <task-id>      # 重置该任务全部失败记录
+dsync retry --task <task-id>      # 重试该任务下全部失败记录
 dsync image check <id>            # 校验远程是否真实存在，状态不一致时自动修正
 ```
 
-常见失败原因：源镜像地址/Tag 不存在、GitHub Actions 配额、网络问题。重试后由平台重新调度，用 `task status` 跟踪。`image check` 用于怀疑状态与远程不一致时（手动删过远程镜像、Actions 异常）。
+常见失败原因：源镜像地址/Tag 不存在、GitHub Actions 配额、网络问题。重试会立即重新触发同步（启动新的 GitHub Actions run），用 `task status <task-id> --watch` 跟踪；同任务多次重试由平台串行调度，不会重复同步。`image check` 用于怀疑状态与远程不一致时（手动删过远程镜像、Actions 异常）。
 
 ## 403 权限错误
 

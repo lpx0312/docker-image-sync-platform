@@ -60,6 +60,11 @@ type SyncHandler struct {
 	ctx               context.Context             // 用于通知后台协程关闭
 	cancel            context.CancelFunc          // 取消函数
 	wg                sync.WaitGroup              // 等待后台协程完成
+	// taskLocks 使同一任务的 processSyncTask 串行执行（key=taskID）。
+	// 手动重试可能对同任务连发多次（CLI retry --task 循环调用），
+	// 并发的 processSyncTask 会重复领取 pending 记录并并发提交
+	// images.txt 造成 SHA 冲突。锁对象随任务常驻（每个几十字节，不清理）
+	taskLocks sync.Map
 }
 
 // NewSyncHandler 创建新的同步处理器实例
@@ -707,10 +712,11 @@ func (h *SyncHandler) processSyncTask(taskID string) {
 		return
 	}
 
-	// 检查是否有镜像需要处理
+	// 检查是否有镜像需要处理。
+	// 重试串行执行时后续轮次可能已无可处理记录（前一轮已全部领取），
+	// 空集是正常情况，安静返回而非将任务标记为失败
 	if len(records) == 0 {
-		logger.Logger.Warn("没有找到待同步的镜像记录", zap.String("task_id", taskID))
-		h.handleSyncError(taskID, "没有找到待同步的镜像记录")
+		logger.Logger.Info("任务下没有待同步的镜像记录", zap.String("task_id", taskID))
 		return
 	}
 
@@ -1533,6 +1539,12 @@ func (h *SyncHandler) RetrySync(c *gin.Context) {
 	h.wg.Add(1)
 	go func() {
 		defer h.wg.Done()
+		// 同任务串行执行：CLI retry --task 等场景会连发多次重试，
+		// 后续轮次自然接手仍为 pending 的记录，已处理的空集安静跳过
+		muAny, _ := h.taskLocks.LoadOrStore(image.TaskID, &sync.Mutex{})
+		mu := muAny.(*sync.Mutex)
+		mu.Lock()
+		defer mu.Unlock()
 		h.processSyncTask(image.TaskID)
 	}()
 

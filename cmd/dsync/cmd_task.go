@@ -123,9 +123,13 @@ var retryCmd = &cobra.Command{
 			if err := client.do("POST", "/images/"+id+"/retry", nil, &resp); err != nil {
 				return fmt.Errorf("重试记录 %s 失败: %w", id, err)
 			}
-			fmt.Printf("记录 %s 已重置为待同步\n", id)
+			fmt.Printf("记录 %s 重试已提交\n", id)
 		}
-		fmt.Println("提示: 重置后的记录将由平台重新调度，可用 dsync task list --status running 跟踪")
+		if taskID != "" {
+			fmt.Printf("提示: 平台将重新触发同步，可用 dsync task status %s --watch 跟踪进度\n", taskID)
+		} else {
+			fmt.Println("提示: 平台将重新触发同步，可用 dsync task status <task-id> --watch 跟踪进度")
+		}
 		return nil
 	},
 }
