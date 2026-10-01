@@ -168,6 +168,7 @@
 
 <script setup>
 import { ref, reactive, computed, watch } from 'vue'
+import { useDialogModel } from '@/composables/useDialogModel'
 import { ElMessage } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import { acrRegistryAPI } from '@/api'
@@ -179,7 +180,6 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue', 'success'])
 
-const visible = ref(false)
 const formRef = ref(null)
 const submitting = ref(false)
 
@@ -256,9 +256,8 @@ const rules = {
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
 }
 
-watch(() => props.modelValue, (val) => {
-  visible.value = val
-  if (val && props.editData) {
+const openEditData = () => {
+  if (props.editData) {
     isEdit.value = true
     Object.assign(form, {
       registry_url: props.editData.registry_url,
@@ -287,11 +286,9 @@ watch(() => props.modelValue, (val) => {
       secret_key: '',
     })
   }
-})
+}
 
-watch(visible, (val) => {
-  emit('update:modelValue', val)
-})
+const visible = useDialogModel(props, emit, openEditData)
 
 const handleClose = () => {
   visible.value = false

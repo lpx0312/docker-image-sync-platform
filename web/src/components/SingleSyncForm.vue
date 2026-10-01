@@ -79,11 +79,12 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, RefreshLeft } from '@element-plus/icons-vue'
 import { useSyncStore } from '@/stores/sync'
 import { acrRegistryAPI, syncAPI } from '@/api'
+import { useDebouncedCallback } from '@/composables/useDebouncedCallback'
 
 const emit = defineEmits(['success'])
 
@@ -96,7 +97,6 @@ const selectedAcrId = ref(null)
 const currentAffinity = ref(null)
 const userChangedAcr = ref(false)
 
-let suggestTimer = null
 
 const syncForm = reactive({
   sourceImage: '',
@@ -209,14 +209,13 @@ const suggestAcrForInput = async () => {
   }
 }
 
+const runSuggestAcr = useDebouncedCallback(() => {
+  suggestAcrForInput()
+}, 500)
+
 const debouncedSuggestAcr = () => {
   userChangedAcr.value = false
-  if (suggestTimer) {
-    clearTimeout(suggestTimer)
-  }
-  suggestTimer = setTimeout(() => {
-    suggestAcrForInput()
-  }, 500)
+  runSuggestAcr()
 }
 
 const handleAcrChange = () => {
@@ -227,11 +226,6 @@ onMounted(() => {
   loadAcrData()
 })
 
-onUnmounted(() => {
-  if (suggestTimer) {
-    clearTimeout(suggestTimer)
-  }
-})
 
 const submitSync = async () => {
   try {

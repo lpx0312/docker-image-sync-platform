@@ -205,6 +205,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Search } from '@element-plus/icons-vue'
 import { acrRegistryAPI, acrRepositoryAPI } from '@/api'
 import { formatTime } from '@/utils/format'
+import { useDebouncedCallback } from '@/composables/useDebouncedCallback'
 import AddRepositoryDialog from '@/components/AddRepositoryDialog.vue'
 import BatchAddRepositoryDialog from '@/components/BatchAddRepositoryDialog.vue'
 import ResultReportDialog from '@/components/ResultReportDialog.vue'
@@ -239,7 +240,6 @@ const searchText = ref('')
 const currentPage = ref(1)
 const pageSize = ref(20)
 
-let searchTimer = null
 
 const filteredRepositories = computed(() => {
   const keyword = searchText.value.trim().toLowerCase()
@@ -256,12 +256,9 @@ const paginatedRepositories = computed(() => {
   return filteredRepositories.value.slice(start, start + pageSize.value)
 })
 
-const handleSearch = () => {
-  clearTimeout(searchTimer)
-  searchTimer = setTimeout(() => {
-    currentPage.value = 1
-  }, 300)
-}
+const handleSearch = useDebouncedCallback(() => {
+  currentPage.value = 1
+}, 300)
 
 const handlePageSizeChange = () => {
   currentPage.value = 1

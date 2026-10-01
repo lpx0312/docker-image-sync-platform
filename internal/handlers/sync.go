@@ -142,60 +142,52 @@ func normalizeBatchSyncRequest(req *models.BatchSyncRequest) {
 //   - 预估任务完成时间
 //   - 异步处理，立即返回响应
 //   - 支持自动重试机制
-func (h *SyncHandler) SubmitBatchSync(c *gin.Context) {
-	// ====================================================================
-	// 请求参数解析和验证
-	// ====================================================================
-
+// parseBatchSyncRequest 绑定并校验批量同步请求（含镜像数上限），
+// 失败时已写入响应，调用方收到 false 直接 return
+func parseBatchSyncRequest(c *gin.Context) (*models.BatchSyncRequest, bool) {
 	var req models.BatchSyncRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Logger.Error("解析批量同步请求参数失败", zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数格式错误"})
-		return
+		return nil, false
 	}
 
-	// 验证镜像列表不能为空
 	if len(req.Images) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "镜像列表不能为空"})
-		return
+		return nil, false
 	}
 
 	// 单次批量上限，防止失控/恶意提交产生大量任务记录（历史最大批量约40）
 	if len(req.Images) > maxBatchSyncImages {
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("单次最多同步 %d 个镜像", maxBatchSyncImages)})
-		return
+		return nil, false
 	}
 
 	normalizeBatchSyncRequest(&req)
+	return &req, true
+}
 
+// buildBatchSyncTask 解析 ACR 归属并在单个事务内创建任务主记录与全部镜像记录，
+// 正式与模拟批量同步共用。任何镜像解析失败都会回滚整个任务（原子性）。
+func (h *SyncHandler) buildBatchSyncTask(req *models.BatchSyncRequest) (*models.SyncTask, error) {
 	affinitySvc := services.NewAcrAffinityService(database.DB)
 	autoResolveAcr := len(req.Images) > 1
 
-	// ====================================================================
-	// 任务创建和初始化
-	// ====================================================================
-
-	// 生成全局唯一的任务ID，用于跟踪和查询任务状态
 	taskID := uuid.New().String()
-
-	// 创建批量同步任务主记录
-	// 包含任务的基本信息和配置参数
 	task := &models.SyncTask{
-		TaskID:        taskID,                   // 唯一任务标识
-		Status:        models.TaskStatusPending, // 初始状态：等待处理
-		MaxConcurrent: req.MaxConcurrent,        // 最大并发数
-		TotalImages:   len(req.Images),          // 镜像总数
-		AutoRetry:     req.AutoRetry,            // 自动重试开关
-		RetryCount:    req.RetryCount,           // 重试次数限制
-		AcrRegistryID: req.AcrRegistryID,        // ACR配置ID
+		TaskID:        taskID,
+		Status:        models.TaskStatusPending,
+		MaxConcurrent: req.MaxConcurrent,
+		TotalImages:   len(req.Images),
+		AutoRetry:     req.AutoRetry,
+		RetryCount:    req.RetryCount,
+		AcrRegistryID: req.AcrRegistryID,
 	}
 
-	// 构建镜像信息的JSON字符串，用于任务记录
-	// 格式：每行一个镜像，包含源镜像和目标标签
+	// 任务记录的镜像列表：每行一个镜像，目标标签以 :tag 后缀附加
 	var imageStrings []string
 	for _, img := range req.Images {
 		imageStr := img.SourceImage
-		// 如果指定了目标标签，则添加到镜像字符串中
 		if img.TargetTag != "" {
 			imageStr = imageStr + ":" + img.TargetTag
 		}
@@ -203,7 +195,7 @@ func (h *SyncHandler) SubmitBatchSync(c *gin.Context) {
 	}
 	task.ImagesJSON = strings.Join(imageStrings, "\n")
 
-	// 使用事务保护批量创建操作，确保任务和所有镜像记录的原子性
+	// 事务保护：任务与所有镜像记录要么全部创建要么全部回滚
 	if err := database.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(task).Error; err != nil {
 			return fmt.Errorf("创建批量同步任务失败: %w", err)
@@ -219,22 +211,14 @@ func (h *SyncHandler) SubmitBatchSync(c *gin.Context) {
 				architecture = img.Architecture
 			}
 
-			var originalInput string
 			imageWithTag := originalImage
 			if tag != "" {
 				imageWithTag = originalImage + ":" + tag
 			}
 
-			originalInput = imageWithTag
-
+			// 多镜像任务自动解析归属；单镜像未显式指定 ACR 时同样解析
 			acrRegistryID := req.AcrRegistryID
-			if autoResolveAcr {
-				resolved, resolveErr := affinitySvc.ResolveTargetAcr(imageWithTag)
-				if resolveErr != nil {
-					return fmt.Errorf("解析镜像目标 ACR 失败: %w", resolveErr)
-				}
-				acrRegistryID = resolved.SuggestedAcrID
-			} else if acrRegistryID == 0 {
+			if autoResolveAcr || acrRegistryID == 0 {
 				resolved, resolveErr := affinitySvc.ResolveTargetAcr(imageWithTag)
 				if resolveErr != nil {
 					return fmt.Errorf("解析镜像目标 ACR 失败: %w", resolveErr)
@@ -252,7 +236,7 @@ func (h *SyncHandler) SubmitBatchSync(c *gin.Context) {
 				Priority:      img.Priority,
 				MaxRetries:    req.RetryCount,
 				Description:   img.Description,
-				OriginalInput: originalInput,
+				OriginalInput: imageWithTag,
 				AcrRegistryID: acrRegistryID,
 			}
 
@@ -262,6 +246,20 @@ func (h *SyncHandler) SubmitBatchSync(c *gin.Context) {
 		}
 		return nil
 	}); err != nil {
+		return nil, err
+	}
+
+	return task, nil
+}
+
+func (h *SyncHandler) SubmitBatchSync(c *gin.Context) {
+	req, ok := parseBatchSyncRequest(c)
+	if !ok {
+		return
+	}
+
+	task, err := h.buildBatchSyncTask(req)
+	if err != nil {
 		logger.Logger.Error("批量同步事务失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建同步任务失败"})
 		return
@@ -274,7 +272,7 @@ func (h *SyncHandler) SubmitBatchSync(c *gin.Context) {
 	h.wg.Add(1)
 	go func() {
 		defer h.wg.Done()
-		h.processSyncTask(taskID)
+		h.processSyncTask(task.TaskID)
 	}()
 
 	estimatedMinutes := len(req.Images) * 3 / req.MaxConcurrent
@@ -283,8 +281,8 @@ func (h *SyncHandler) SubmitBatchSync(c *gin.Context) {
 	// 返回任务提交成功的响应
 	// 包含任务ID、状态信息和预计完成时间
 	c.JSON(http.StatusOK, gin.H{
-		"task_id":              taskID,                                            // 任务唯一标识
-		"status":               models.TaskStatusPending,                          // 当前任务状态
+		"task_id":              task.TaskID,                                       // 任务唯一标识
+		"status":               models.TaskStatusPending,                          // 当前状态：等待处理
 		"total_images":         len(req.Images),                                   // 镜像总数
 		"max_concurrent":       req.MaxConcurrent,                                 // 最大并发数
 		"estimated_completion": estimatedCompletion.Format("2006-01-02 15:04:05"), // 预计完成时间
@@ -1264,44 +1262,15 @@ func (h *SyncHandler) monitorGitHubActions(taskID, commitSHA string) {
 //   - 调用镜像仓库API检查镜像存在性
 //   - 计算同步耗时
 //   - 更新状态为成功或失败
-func (h *SyncHandler) handleSyncSuccess(taskID string) {
-	// 记录处理开始的日志
-	logger.Logger.Info("同步任务成功", zap.String("task_id", taskID))
+// verifySyncRecords 逐个验证任务下的镜像是否真正同步到了目标 registry，
+// 回写每条记录的成功/失败状态并返回计数。failureMessage 用于标记未同步成功的记录。
+func (h *SyncHandler) verifySyncRecords(taskID string, records []models.ImageSyncRecord, failureMessage string) (successCount, failedCount int) {
+	now := time.Now()
 
-	// ====================================================================
-	// 查询任务的镜像记录
-	// ====================================================================
-
-	// 获取任务下所有的镜像同步记录
-	var records []models.ImageSyncRecord
-	if err := database.DB.Where("task_id = ?", taskID).Find(&records).Error; err != nil {
-		logger.Logger.Error("查询镜像记录失败", zap.Error(err))
-		return
-	}
-
-	// ====================================================================
-	// 查询任务信息（获取 ACR 配置 ID）
-	// ====================================================================
-
-	var task models.SyncTask
-	if err := database.DB.Where("task_id = ?", taskID).First(&task).Error; err != nil {
-		logger.Logger.Error("查询任务失败", zap.Error(err))
-		return
-	}
-
-	// ====================================================================
-	// 验证镜像同步结果
-	// ====================================================================
-
-	// 统计成功同步的镜像数量
-	successCount := 0
-
-	// 逐个验证每个镜像是否成功同步到ACR
 	for _, record := range records {
 		// 生成目标ACR镜像地址（使用关联的 ACR 配置）
 		acrImage := h.buildACRImageForRecord(record)
 
-		// 检查镜像是否真正存在于ACR中
 		exists := utils.CheckImageExistsInRegistry(acrImage, record.AcrRegistryID)
 		var architectures []string
 		if detected, detectErr := utils.DetectImageArchitecturesInRegistry(acrImage, record.AcrRegistryID); detectErr != nil {
@@ -1314,16 +1283,10 @@ func (h *SyncHandler) handleSyncSuccess(taskID string) {
 		}
 		archJSON := utils.ArchitecturesToJSON(architectures)
 
-		// 计算同步耗时
-		completedTime := time.Now()
 		var duration int64
 		if record.StartedAt != nil {
-			duration = int64(completedTime.Sub(*record.StartedAt).Seconds())
+			duration = int64(now.Sub(*record.StartedAt).Seconds())
 		}
-
-		// ================================================================
-		// 处理镜像验证成功的情况
-		// ================================================================
 
 		if exists {
 			// 镜像存在，标记为成功
@@ -1331,7 +1294,7 @@ func (h *SyncHandler) handleSyncSuccess(taskID string) {
 				Where("id = ?", record.ID).
 				Updates(map[string]interface{}{
 					"sync_status":        models.SyncStatusSuccess,
-					"completed_at":       &completedTime,
+					"completed_at":       &now,
 					"duration":           duration,
 					"acr_image":          acrImage,
 					"acr_architectures":  archJSON,
@@ -1339,46 +1302,80 @@ func (h *SyncHandler) handleSyncSuccess(taskID string) {
 				logger.Logger.Error("更新镜像成功状态失败", zap.Error(err))
 			} else {
 				successCount++
+				logger.Logger.Info("镜像验证成功",
+					zap.String("task_id", taskID),
+					zap.String("image", record.OriginalImage),
+					zap.String("acr_image", acrImage))
 				h.registerRepositoryOnSyncSuccess(&record)
 			}
 		} else {
 			// 镜像不存在，标记为失败
-			errorMessage := "镜像未成功同步到ACR"
 			if err := database.DB.Model(&models.ImageSyncRecord{}).
 				Where("id = ?", record.ID).
 				Updates(map[string]interface{}{
 					"sync_status":       models.SyncStatusFailed,
-					"completed_at":      &completedTime,
+					"completed_at":      &now,
 					"duration":          duration,
 					"acr_image":         acrImage,
 					"acr_architectures": archJSON,
-					"error_message":     errorMessage,
+					"error_message":     failureMessage,
 				}).Error; err != nil {
 				logger.Logger.Error("更新镜像失败状态失败", zap.Error(err))
+			} else {
+				failedCount++
+				logger.Logger.Info("镜像验证失败",
+					zap.String("task_id", taskID),
+					zap.String("image", record.OriginalImage),
+					zap.String("error", failureMessage))
 			}
 		}
 	}
 
-	// 更新任务状态
-	completedTime := time.Now()
+	return successCount, failedCount
+}
+
+// finalizeSyncTask 依据成功/失败数量回写任务终态（进度 100%）。
+// errorMessage 非空时写入 error_message；返回最终状态。
+func (h *SyncHandler) finalizeSyncTask(taskID string, total, successCount, failedCount int, errorMessage string) string {
 	taskStatus := models.TaskStatusCompleted
-	if successCount == 0 {
+	switch {
+	case successCount == 0:
 		taskStatus = models.TaskStatusFailed
-	} else if successCount < len(records) {
+	case successCount < total:
 		taskStatus = models.TaskStatusPartialSuccess
+	}
+
+	updates := map[string]interface{}{
+		"status":           taskStatus,
+		"completed_at":     time.Now(),
+		"completed_images": successCount,
+		"failed_images":    failedCount,
+		"progress":         100.0,
+	}
+	if errorMessage != "" {
+		updates["error_message"] = errorMessage
 	}
 
 	if err := database.DB.Model(&models.SyncTask{}).
 		Where("task_id = ?", taskID).
-		Updates(map[string]interface{}{
-			"status":           taskStatus,
-			"completed_at":     &completedTime,
-			"completed_images": successCount,
-			"failed_images":    len(records) - successCount,
-			"progress":         100.0,
-		}).Error; err != nil {
-		logger.Logger.Error("更新任务完成状态失败", zap.Error(err))
+		Updates(updates).Error; err != nil {
+		logger.Logger.Error("更新任务状态失败", zap.Error(err))
 	}
+	return taskStatus
+}
+
+func (h *SyncHandler) handleSyncSuccess(taskID string) {
+	logger.Logger.Info("同步任务成功", zap.String("task_id", taskID))
+
+	var records []models.ImageSyncRecord
+	if err := database.DB.Where("task_id = ?", taskID).Find(&records).Error; err != nil {
+		logger.Logger.Error("查询镜像记录失败", zap.Error(err))
+		return
+	}
+
+	successCount, failedCount := h.verifySyncRecords(taskID, records, "镜像未成功同步到ACR")
+
+	taskStatus := h.finalizeSyncTask(taskID, len(records), successCount, failedCount, "")
 
 	logger.Logger.Info("同步任务处理完成",
 		zap.String("task_id", taskID),
@@ -1473,11 +1470,6 @@ func (h *SyncHandler) handlePartialSyncFailure(taskID, workflowErrorMessage stri
 		zap.String("task_id", taskID),
 		zap.String("workflow_error", workflowErrorMessage))
 
-	// ====================================================================
-	// 查询任务的镜像记录
-	// ====================================================================
-
-	// 获取任务下所有的镜像同步记录
 	var records []models.ImageSyncRecord
 	if err := database.DB.Where("task_id = ?", taskID).Find(&records).Error; err != nil {
 		logger.Logger.Error("查询镜像记录失败", zap.Error(err))
@@ -1489,133 +1481,20 @@ func (h *SyncHandler) handlePartialSyncFailure(taskID, workflowErrorMessage stri
 		return
 	}
 
-	// ====================================================================
-	// 查询任务信息（获取 ACR 配置 ID）
-	// ====================================================================
+	failureMessage := fmt.Sprintf("GitHub Actions工作流失败: %s; 镜像未成功同步到ACR", workflowErrorMessage)
+	successCount, failedCount := h.verifySyncRecords(taskID, records, failureMessage)
 
-	var task models.SyncTask
-	if err := database.DB.Where("task_id = ?", taskID).First(&task).Error; err != nil {
-		logger.Logger.Error("查询任务失败", zap.Error(err))
-		return
-	}
-
-	// ====================================================================
-	// 验证镜像同步结果
-	// ====================================================================
-
-	// 统计成功和失败的镜像数量
-	successCount := 0
-	failedCount := 0
-	now := time.Now()
-
-	// 逐个验证每个镜像是否成功同步到ACR
-	for _, record := range records {
-		// 生成目标ACR镜像地址（使用关联的 ACR 配置）
-		acrImage := h.buildACRImageForRecord(record)
-
-		// 检查镜像是否真正存在于ACR中
-		exists := utils.CheckImageExistsInRegistry(acrImage, record.AcrRegistryID)
-		var architectures []string
-		if detected, detectErr := utils.DetectImageArchitecturesInRegistry(acrImage, record.AcrRegistryID); detectErr != nil {
-			logger.Logger.Warn("检测镜像架构失败",
-				zap.Error(detectErr),
-				zap.String("task_id", taskID),
-				zap.String("acr_image", acrImage))
-		} else {
-			architectures = detected
-		}
-		archJSON := utils.ArchitecturesToJSON(architectures)
-
-		// 计算同步耗时
-		var duration int64
-		if record.StartedAt != nil {
-			duration = int64(now.Sub(*record.StartedAt).Seconds())
-		}
-
-		// ================================================================
-		// 处理镜像验证成功的情况
-		// ================================================================
-
-		if exists {
-			// 镜像存在，标记为成功
-			if err := database.DB.Model(&models.ImageSyncRecord{}).
-				Where("id = ?", record.ID).
-				Updates(map[string]interface{}{
-					"sync_status":       models.SyncStatusSuccess,
-					"completed_at":      &now,
-					"duration":          duration,
-					"acr_image":         acrImage,
-					"acr_architectures": archJSON,
-				}).Error; err != nil {
-				logger.Logger.Error("更新镜像成功状态失败", zap.Error(err))
-			} else {
-				successCount++
-				logger.Logger.Info("镜像验证成功",
-					zap.String("task_id", taskID),
-					zap.String("image", record.OriginalImage),
-					zap.String("acr_image", acrImage))
-				h.registerRepositoryOnSyncSuccess(&record)
-			}
-		} else {
-			// 镜像不存在，标记为失败
-			individualErrorMessage := fmt.Sprintf("GitHub Actions工作流失败: %s; 镜像未成功同步到ACR", workflowErrorMessage)
-			if err := database.DB.Model(&models.ImageSyncRecord{}).
-				Where("id = ?", record.ID).
-				Updates(map[string]interface{}{
-					"sync_status":       models.SyncStatusFailed,
-					"completed_at":      &now,
-					"duration":          duration,
-					"acr_image":         acrImage,
-					"acr_architectures": archJSON,
-					"error_message":     individualErrorMessage,
-				}).Error; err != nil {
-				logger.Logger.Error("更新镜像失败状态失败", zap.Error(err))
-			} else {
-				failedCount++
-				logger.Logger.Info("镜像验证失败",
-					zap.String("task_id", taskID),
-					zap.String("image", record.OriginalImage),
-					zap.String("error", individualErrorMessage))
-			}
-		}
-	}
-
-	// ====================================================================
-	// 更新任务状态
-	// ====================================================================
-
-	// 根据成功/失败数量确定任务状态
-	var taskStatus string
+	// 全部失败时保留工作流原始错误；部分成功时汇总说明
 	var finalErrorMessage string
-
-	if successCount == 0 {
-		// 全部失败
-		taskStatus = models.TaskStatusFailed
+	switch {
+	case successCount == 0:
 		finalErrorMessage = workflowErrorMessage
-	} else if failedCount == 0 {
-		// 全部成功（GitHub Actions报错但实际都成功了）
-		taskStatus = models.TaskStatusCompleted
-		finalErrorMessage = ""
-	} else {
-		// 部分成功部分失败
-		taskStatus = models.TaskStatusPartialSuccess
+	case failedCount > 0:
 		finalErrorMessage = fmt.Sprintf("GitHub Actions工作流失败，但%d个镜像成功同步，%d个镜像失败。工作流错误: %s",
 			successCount, failedCount, workflowErrorMessage)
 	}
 
-	// 更新任务状态
-	if err := database.DB.Model(&models.SyncTask{}).
-		Where("task_id = ?", taskID).
-		Updates(map[string]interface{}{
-			"status":           taskStatus,
-			"completed_at":     &now,
-			"completed_images": successCount,
-			"failed_images":    failedCount,
-			"progress":         100.0,
-			"error_message":    finalErrorMessage,
-		}).Error; err != nil {
-		logger.Logger.Error("更新任务状态失败", zap.Error(err))
-	}
+	taskStatus := h.finalizeSyncTask(taskID, len(records), successCount, failedCount, finalErrorMessage)
 
 	logger.Logger.Info("部分同步失败处理完成",
 		zap.String("task_id", taskID),
@@ -1664,134 +1543,38 @@ func (h *SyncHandler) parseImageNameAndTag(imageStr string) (string, string) {
 	return splitImageAndTag(imageStr)
 }
 
-// SubmitMockBatchSync 提交模拟批量同步任务
+// SubmitMockBatchSync 提交模拟批量同步任务。
+// 与正式批量同步共用 parseBatchSyncRequest/buildBatchSyncTask：
+// 校验、ACR 归属解析、事务化任务创建行为完全一致，仅异步执行器与响应结构不同。
 func (h *SyncHandler) SubmitMockBatchSync(c *gin.Context) {
-	var req models.BatchSyncRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		logger.Logger.Error("解析模拟批量同步请求参数失败", zap.Error(err))
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数格式错误"})
+	req, ok := parseBatchSyncRequest(c)
+	if !ok {
 		return
 	}
 
-	if len(req.Images) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "镜像列表不能为空"})
-		return
-	}
-
-	if len(req.Images) > maxBatchSyncImages {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("单次最多同步 %d 个镜像", maxBatchSyncImages)})
-		return
-	}
-
-	normalizeBatchSyncRequest(&req)
-
-	affinitySvc := services.NewAcrAffinityService(database.DB)
-	autoResolveAcr := len(req.Images) > 1
-
-	// 生成任务ID
-	taskID := uuid.New().String()
-
-	// 创建批量同步任务记录
-	task := &models.SyncTask{
-		TaskID:        taskID,
-		Status:        models.TaskStatusPending,
-		MaxConcurrent: req.MaxConcurrent,
-		TotalImages:   len(req.Images),
-		AutoRetry:     req.AutoRetry,
-		RetryCount:    req.RetryCount,
-		AcrRegistryID: req.AcrRegistryID,
-	}
-
-	// 构建镜像JSON字符串
-	var imageStrings []string
-	for _, img := range req.Images {
-		imageStr := img.SourceImage
-		if img.TargetTag != "" {
-			imageStr = imageStr + ":" + img.TargetTag
-		}
-		imageStrings = append(imageStrings, imageStr)
-	}
-	task.ImagesJSON = strings.Join(imageStrings, "\n")
-
-	if err := database.DB.Create(task).Error; err != nil {
+	task, err := h.buildBatchSyncTask(req)
+	if err != nil {
 		logger.Logger.Error("创建模拟批量同步任务失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建同步任务失败"})
 		return
 	}
 
-	// 为每个镜像创建同步记录
-	for i, img := range req.Images {
-		originalImage, tag, architecture := parseImageInfo(img.SourceImage)
-
-		// 使用请求中的标签和架构
-		if img.TargetTag != "" {
-			tag = img.TargetTag
-		}
-		if img.Architecture != "" {
-			architecture = img.Architecture
-		}
-
-		var originalInput string
-		imageWithTag := originalImage
-		if tag != "" {
-			imageWithTag = originalImage + ":" + tag
-		}
-		originalInput = imageWithTag
-
-		acrRegistryID := req.AcrRegistryID
-		if autoResolveAcr {
-			resolved, resolveErr := affinitySvc.ResolveTargetAcr(imageWithTag)
-			if resolveErr != nil {
-				logger.Logger.Error("解析镜像目标 ACR 失败", zap.Error(resolveErr), zap.String("image", imageWithTag))
-				continue
-			}
-			acrRegistryID = resolved.SuggestedAcrID
-		} else if acrRegistryID == 0 {
-			resolved, resolveErr := affinitySvc.ResolveTargetAcr(imageWithTag)
-			if resolveErr != nil {
-				logger.Logger.Error("解析镜像目标 ACR 失败", zap.Error(resolveErr), zap.String("image", imageWithTag))
-				continue
-			}
-			acrRegistryID = resolved.SuggestedAcrID
-		}
-
-		record := &models.ImageSyncRecord{
-			OriginalImage: originalImage,
-			Tag:           tag,
-			Architecture:  architecture,
-			OriginalInput: originalInput,
-			InputOrder:    i, // 保存输入顺序
-			SyncStatus:    models.SyncStatusPending,
-			TaskID:        taskID,
-			Priority:      img.Priority,
-			MaxRetries:    req.RetryCount,
-			Description:   img.Description, // 添加描述字段
-			AcrRegistryID: acrRegistryID,
-		}
-
-		if err := database.DB.Create(record).Error; err != nil {
-			logger.Logger.Error("创建镜像同步记录失败",
-				zap.Error(err),
-				zap.String("image", originalImage))
-		}
-	}
-
 	h.wg.Add(1)
 	go func() {
 		defer h.wg.Done()
-		h.processMockBatchSyncTask(taskID)
+		h.processMockBatchSyncTask(task.TaskID)
 	}()
 
 	// 计算预估时间
 	estimatedTime := h.calculateEstimatedTime(len(req.Images), req.MaxConcurrent)
 
 	logger.Logger.Info("模拟批量同步任务已提交",
-		zap.String("task_id", taskID),
+		zap.String("task_id", task.TaskID),
 		zap.Int("image_count", len(req.Images)),
 		zap.Int("max_concurrent", req.MaxConcurrent))
 
 	c.JSON(http.StatusOK, models.BatchSyncResponse{
-		TaskID:        taskID,
+		TaskID:        task.TaskID,
 		Message:       "模拟批量同步任务已提交，正在处理中...",
 		ImageCount:    len(req.Images),
 		EstimatedTime: fmt.Sprintf("%d秒", estimatedTime),

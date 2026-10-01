@@ -151,10 +151,11 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, RefreshLeft } from '@element-plus/icons-vue'
 import { syncAPI, acrRegistryAPI } from '@/api'
+import { useDebouncedCallback } from '@/composables/useDebouncedCallback'
 
 const emit = defineEmits(['success'])
 
@@ -177,8 +178,6 @@ const imageInput = ref('')
 const parsedImages = ref([])
 const loading = ref(false)
 const mockLoading = ref(false)
-let parseDebounceTimer = null
-let suggestTimer = null
 
 const batchRules = {}
 
@@ -282,14 +281,13 @@ const suggestAcrForSingleImage = async () => {
   }
 }
 
+const runSuggestAcrForImages = useDebouncedCallback(() => {
+  suggestAcrForSingleImage()
+}, 500)
+
 const debouncedSuggestAcrForImages = () => {
   userChangedAcr.value = false
-  if (suggestTimer) {
-    clearTimeout(suggestTimer)
-  }
-  suggestTimer = setTimeout(() => {
-    suggestAcrForSingleImage()
-  }, 500)
+  runSuggestAcrForImages()
 }
 
 const handleAcrChange = () => {
@@ -327,14 +325,9 @@ const validateInput = (inputText) => {
   return errors
 }
 
-const debouncedParseImageInput = () => {
-  if (parseDebounceTimer) {
-    clearTimeout(parseDebounceTimer)
-  }
-  parseDebounceTimer = setTimeout(() => {
-    parseImageInput()
-  }, 500)
-}
+const debouncedParseImageInput = useDebouncedCallback(() => {
+  parseImageInput()
+}, 500)
 
 const parseImageInput = () => {
   const validationErrors = validateInput(imageInput.value)
@@ -571,16 +564,6 @@ const resetForm = () => {
   selectedAcrId.value = defaultAcr ? defaultAcr.id : null
 }
 
-onUnmounted(() => {
-  if (parseDebounceTimer) {
-    clearTimeout(parseDebounceTimer)
-    parseDebounceTimer = null
-  }
-  if (suggestTimer) {
-    clearTimeout(suggestTimer)
-    suggestTimer = null
-  }
-})
 </script>
 
 <style scoped>

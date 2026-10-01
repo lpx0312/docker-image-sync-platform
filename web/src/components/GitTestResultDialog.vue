@@ -140,7 +140,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import { Download, Upload, Check, Close } from '@element-plus/icons-vue'
 
 // Props
@@ -228,11 +228,6 @@ const viewCommit = () => {
   }
 }
 
-// 监听visible变化
-watch(() => props.visible, (newVal) => {
-  if (newVal) {
-  }
-})
 </script>
 
 <style scoped>

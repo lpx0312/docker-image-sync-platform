@@ -50,7 +50,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive } from 'vue'
+import { useDialogModel } from '@/composables/useDialogModel'
 import { ElMessage } from 'element-plus'
 import { acrRepositoryAPI } from '@/api'
 import ResultReportDialog from '@/components/ResultReportDialog.vue'
@@ -63,7 +64,6 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue', 'success'])
 
-const visible = ref(false)
 const formRef = ref(null)
 const submitting = ref(false)
 
@@ -107,15 +107,8 @@ const showBatchAddResult = (response) => {
   })
 }
 
-watch(() => props.modelValue, (val) => {
-  visible.value = val
-  if (val) {
-    form.repository_names = ''
-  }
-})
-
-watch(visible, (val) => {
-  emit('update:modelValue', val)
+const visible = useDialogModel(props, emit, () => {
+  form.repository_names = ''
 })
 
 const handleClose = () => {
