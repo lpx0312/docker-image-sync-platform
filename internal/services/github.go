@@ -24,7 +24,10 @@
 package services
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -34,6 +37,8 @@ import (
 	"docker-image-sync-platform/internal/utils"
 
 	"github.com/go-resty/resty/v2"
+	"golang.org/x/crypto/blake2b"
+	"golang.org/x/crypto/nacl/box"
 	"go.uber.org/zap"
 )
 
@@ -777,6 +782,86 @@ func sanitizeWorkflowInputs(inputs map[string]string) map[string]string {
 		}
 	}
 	return masked
+}
+
+// sealSecretForGitHub 按 libsodium sealed box 格式加密 secret 值，
+// 供 GitHub Actions secrets API 使用。
+//
+// 格式：ephemeral_pk(32) || box(明文, nonce=blake2b-24(epk||recipient_pk), recipient_pk, ephemeral_sk)，
+// 输出整体 Base64。curve25519xsalsa20poly1305 与 x/crypto/nacl/box 一致。
+func sealSecretForGitHub(publicKeyB64, secretValue string) (string, error) {
+	pkBytes, err := base64.StdEncoding.DecodeString(publicKeyB64)
+	if err != nil {
+		return "", fmt.Errorf("解码 secret 公钥失败: %w", err)
+	}
+	if len(pkBytes) != 32 {
+		return "", errors.New("secret 公钥长度异常")
+	}
+	var recipientPK [32]byte
+	copy(recipientPK[:], pkBytes)
+
+	ephemeralPK, ephemeralSK, err := box.GenerateKey(rand.Reader)
+	if err != nil {
+		return "", fmt.Errorf("生成临时密钥对失败: %w", err)
+	}
+
+	var nonce [24]byte
+	h, err := blake2b.New(24, nil)
+	if err != nil {
+		return "", err
+	}
+	h.Write(ephemeralPK[:])
+	h.Write(recipientPK[:])
+	copy(nonce[:], h.Sum(nil))
+
+	sealed := box.Seal(nil, []byte(secretValue), &nonce, &recipientPK, ephemeralSK)
+	out := make([]byte, 0, len(ephemeralPK)+len(sealed))
+	out = append(out, ephemeralPK[:]...)
+	out = append(out, sealed...)
+	return base64.StdEncoding.EncodeToString(out), nil
+}
+
+// CreateOrUpdateSecret 创建或更新仓库级 GitHub Actions secret。
+//
+// workflow_dispatch 的 inputs 值对拥有仓库读权限的人在该 run 页面与 API 中
+// 可见，不适合传递凭据；写入 secret 后 inputs 只需携带 secret 名称，
+// 由 workflow 用 secrets 上下文读取。需要 token 具备仓库 admin 权限。
+func (s *GitHubService) CreateOrUpdateSecret(name, value string) error {
+	var keyResp struct {
+		KeyID string `json:"key_id"`
+		Key   string `json:"key"`
+	}
+	resp, err := s.client.R().
+		SetHeader("Accept", "application/vnd.github.v3+json").
+		SetResult(&keyResp).
+		Get(fmt.Sprintf("%s/repos/%s/%s/actions/secrets/public-key", s.baseURL, s.owner, s.repo))
+	if err != nil {
+		return fmt.Errorf("获取 secret 公钥失败: %w", err)
+	}
+	if resp.StatusCode() != http.StatusOK {
+		return fmt.Errorf("获取 secret 公钥失败: HTTP %d", resp.StatusCode())
+	}
+
+	encrypted, err := sealSecretForGitHub(keyResp.Key, value)
+	if err != nil {
+		return err
+	}
+
+	putResp, err := s.client.R().
+		SetHeader("Accept", "application/vnd.github.v3+json").
+		SetBody(map[string]string{
+			"encrypted_value": encrypted,
+			"key_id":          keyResp.KeyID,
+		}).
+		Put(fmt.Sprintf("%s/repos/%s/%s/actions/secrets/%s", s.baseURL, s.owner, s.repo, name))
+	if err != nil {
+		return fmt.Errorf("写入 secret 失败: %w", err)
+	}
+	// 201=新建，204=更新
+	if putResp.StatusCode() != http.StatusCreated && putResp.StatusCode() != http.StatusNoContent {
+		return fmt.Errorf("写入 secret 失败: HTTP %d", putResp.StatusCode())
+	}
+	return nil
 }
 
 // TriggerWorkflow 触发 GitHub Actions workflow_dispatch

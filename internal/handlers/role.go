@@ -23,7 +23,7 @@ func NewRoleHandler(roleService *services.RoleService) *RoleHandler {
 func (h *RoleHandler) ListPermissions(c *gin.Context) {
 	perms, err := h.roleService.ListPermissions()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, "ListPermissions", err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": perms})
@@ -33,7 +33,7 @@ func (h *RoleHandler) ListPermissions(c *gin.Context) {
 func (h *RoleHandler) ListRoles(c *gin.Context) {
 	roles, err := h.roleService.ListRoles()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, "ListRoles", err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": roles})
@@ -43,7 +43,7 @@ func (h *RoleHandler) ListRoles(c *gin.Context) {
 func (h *RoleHandler) ListRoleOptions(c *gin.Context) {
 	roles, err := h.roleService.ListRoleOptions()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondInternalError(c, "ListRoleOptions", err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": roles})

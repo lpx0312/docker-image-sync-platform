@@ -48,11 +48,12 @@ func validateStrongPassword(password string) error {
 type AuthHandler struct {
 	authService *services.AuthService
 	userService *services.UserService
+	lockout     *loginLockout
 }
 
 // NewAuthHandler 创建认证 Handler
 func NewAuthHandler(authService *services.AuthService, userService *services.UserService) *AuthHandler {
-	return &AuthHandler{authService: authService, userService: userService}
+	return &AuthHandler{authService: authService, userService: userService, lockout: newLoginLockout()}
 }
 
 type loginRequest struct {
@@ -72,8 +73,18 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	ip := c.ClientIP()
 	ua := c.GetHeader("User-Agent")
 
+	// 防爆破：同一用户名连续失败达到阈值后暂时锁定
+	if locked, remaining := h.lockout.locked(req.Username); locked {
+		h.userService.RecordLoginLog(0, req.Username, ip, ua, models.LoginStatusFailed, "尝试次数过多已锁定")
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"error": "登录失败次数过多，请约 " + formatLockMinutes(remaining) + " 后再试",
+		})
+		return
+	}
+
 	user, err := h.userService.GetUserByUsername(req.Username)
 	if err != nil {
+		h.lockout.recordFailure(req.Username)
 		h.userService.RecordLoginLog(0, req.Username, ip, ua, models.LoginStatusFailed, "用户不存在")
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户名或密码错误"})
 		return
@@ -86,10 +97,13 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	if !h.authService.CheckPassword(user.PasswordHash, req.Password) {
+		h.lockout.recordFailure(req.Username)
 		h.userService.RecordLoginLog(user.ID, req.Username, ip, ua, models.LoginStatusFailed, "密码错误")
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户名或密码错误"})
 		return
 	}
+
+	h.lockout.recordSuccess(req.Username)
 
 	roleCode := ""
 	if user.Role != nil {

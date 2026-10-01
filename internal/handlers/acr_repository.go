@@ -42,7 +42,7 @@ func (h *AcrRepositoryHandler) GetAll(c *gin.Context) {
 	repos, err := h.service.GetAll(uint(acrRegistryID))
 	if err != nil {
 		logger.Logger.Error("获取镜像列表失败", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		respondInternalError(c, "GetAll", err)
 		return
 	}
 
@@ -61,7 +61,7 @@ func (h *AcrRepositoryHandler) Create(c *gin.Context) {
 	result, err := h.service.Create(&req)
 	if err != nil {
 		logger.Logger.Error("创建镜像失败", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		respondInternalError(c, "Create", err)
 		return
 	}
 
@@ -95,7 +95,7 @@ func (h *AcrRepositoryHandler) BatchCreate(c *gin.Context) {
 	created, err := h.service.BatchCreate(&req)
 	if err != nil {
 		logger.Logger.Error("批量创建镜像失败", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		respondInternalError(c, "BatchCreate", err)
 		return
 	}
 
@@ -131,7 +131,7 @@ func (h *AcrRepositoryHandler) BatchDelete(c *gin.Context) {
 	deleted, err := h.service.BatchDelete(req.IDs)
 	if err != nil {
 		logger.Logger.Error("批量删除镜像失败", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		respondInternalError(c, "BatchDelete", err)
 		return
 	}
 
@@ -155,7 +155,7 @@ func (h *AcrRepositoryHandler) CleanInvalid(c *gin.Context) {
 	result, err := h.service.CleanInvalid(req.AcrRegistryID)
 	if err != nil {
 		logger.Logger.Error("清理无效镜像失败", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		respondInternalError(c, "CleanInvalid", err)
 		return
 	}
 
@@ -182,7 +182,7 @@ func (h *AcrRepositoryHandler) Delete(c *gin.Context) {
 
 	if err := h.service.Delete(uint(id)); err != nil {
 		logger.Logger.Error("删除镜像失败", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		respondInternalError(c, "Delete", err)
 		return
 	}
 
@@ -200,7 +200,7 @@ func (h *AcrRepositoryHandler) SyncFromRecords(c *gin.Context) {
 	created, err := h.service.SyncFromRecords(req.AcrRegistryID)
 	if err != nil {
 		logger.Logger.Error("从同步记录导入失败", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		respondInternalError(c, "SyncFromRecords", err)
 		return
 	}
 
@@ -233,7 +233,7 @@ func (h *AcrRepositoryHandler) ImportFromRegistry(c *gin.Context) {
 	result, err := h.service.ImportFromRegistry(req.AcrRegistryID)
 	if err != nil {
 		logger.Logger.Error("从远程仓库导入失败", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		respondInternalError(c, "ImportFromRegistry", err)
 		return
 	}
 
@@ -255,7 +255,7 @@ func (h *AcrRepositoryHandler) GetDuplicates(c *gin.Context) {
 	duplicates, err := affinitySvc.GetDuplicateRepositories()
 	if err != nil {
 		logger.Logger.Error("查询跨 ACR 重复仓库失败", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		respondInternalError(c, "GetDuplicates", err)
 		return
 	}
 

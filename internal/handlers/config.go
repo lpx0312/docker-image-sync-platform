@@ -127,7 +127,7 @@ func (h *ConfigHandler) GetGitRepositoryConfig(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"status":  "error",
 			"message": "Failed to get git repository configuration",
-			"error":   err.Error(),
+			"error":   "服务器内部错误，请稍后重试",
 		})
 		return
 	}
@@ -177,7 +177,7 @@ func (h *ConfigHandler) UpdateGitRepositoryConfig(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"status":  "error",
 			"message": "Invalid request format",
-			"error":   err.Error(),
+			"error":   "服务器内部错误，请稍后重试",
 		})
 		return
 	}
@@ -214,7 +214,7 @@ func (h *ConfigHandler) UpdateGitRepositoryConfig(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"status":  "error",
 			"message": "Failed to update git repository configuration",
-			"error":   err.Error(),
+			"error":   "服务器内部错误，请稍后重试",
 		})
 		return
 	}
@@ -308,6 +308,12 @@ func (h *ConfigHandler) GetConfigStatus(c *gin.Context) {
 			"port": config.AppConfig.Server.Port,
 			"mode": config.AppConfig.Server.Mode,
 		},
+		"encryption": gin.H{
+			// 暴露是否使用源码内默认密钥加密，供前端/运维确认安全状态；
+			// 默认密钥意味着拿到源码+数据库即可解密所有凭据，生产应配置 ENCRYPTION_KEY
+			"using_default_key": os.Getenv("ENCRYPTION_KEY") == "",
+			"key_source":        map[bool]string{true: "default", false: "env"}[os.Getenv("ENCRYPTION_KEY") == ""],
+		},
 		"database": gin.H{
 			"host":     config.AppConfig.Database.Host,
 			"port":     config.AppConfig.Database.Port,
@@ -378,31 +384,6 @@ func (h *ConfigHandler) GetConfigStatus(c *gin.Context) {
 	})
 }
 
-// DebugGetConfig 调试配置获取
-func (h *ConfigHandler) DebugGetConfig(c *gin.Context) {
-	key := c.Param("key")
-	if key == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"status":  "error",
-			"message": "key parameter is required",
-		})
-		return
-	}
-
-	value, err := h.configService.GetConfig(key)
-	c.JSON(http.StatusOK, gin.H{
-		"status": "success",
-		"key":    key,
-		"value":  value,
-		"error": func() string {
-			if err != nil {
-				return err.Error()
-			}
-			return ""
-		}(),
-	})
-}
-
 // ====================================================================
 // Git配置管理API
 // ====================================================================
@@ -443,7 +424,7 @@ func (h *ConfigHandler) GetGitConfig(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"status":  "error",
 			"message": "Failed to get Gitee configuration",
-			"error":   err.Error(),
+			"error":   "服务器内部错误，请稍后重试",
 		})
 		return
 	}
@@ -454,7 +435,7 @@ func (h *ConfigHandler) GetGitConfig(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"status":  "error",
 			"message": "Failed to get GitHub configuration",
-			"error":   err.Error(),
+			"error":   "服务器内部错误，请稍后重试",
 		})
 		return
 	}
@@ -516,7 +497,7 @@ func (h *ConfigHandler) UpdateGiteeConfig(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"status":  "error",
 			"message": "Invalid request format",
-			"error":   err.Error(),
+			"error":   "服务器内部错误，请稍后重试",
 		})
 		return
 	}
@@ -535,7 +516,7 @@ func (h *ConfigHandler) UpdateGiteeConfig(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"status":  "error",
 			"message": "Failed to update Gitee configuration",
-			"error":   err.Error(),
+			"error":   "服务器内部错误，请稍后重试",
 		})
 		return
 	}
@@ -570,7 +551,7 @@ func (h *ConfigHandler) UpdateGitHubConfig(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"status":  "error",
 			"message": "Invalid request format",
-			"error":   err.Error(),
+			"error":   "服务器内部错误，请稍后重试",
 		})
 		return
 	}
@@ -589,7 +570,7 @@ func (h *ConfigHandler) UpdateGitHubConfig(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"status":  "error",
 			"message": "Failed to update GitHub configuration",
-			"error":   err.Error(),
+			"error":   "服务器内部错误，请稍后重试",
 		})
 		return
 	}
@@ -632,7 +613,7 @@ func (h *ConfigHandler) TestGitConnection(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"status":  "error",
 			"message": "Invalid request format",
-			"error":   err.Error(),
+			"error":   "服务器内部错误，请稍后重试",
 		})
 		return
 	}
@@ -759,11 +740,10 @@ func (h *ConfigHandler) testGiteeConnection(repoURL, username, password string) 
 		return fmt.Errorf("创建请求失败: %w", err)
 	}
 
-	// Gitee 使用密码作为 private token 或通过 query 参数传递
+	// Gitee v5 凭证通过 Authorization 头传递（私人令牌），
+	// 不走 URL query，避免被反向代理/访问日志完整记录
 	req.Header.Set("Content-Type", "application/json")
-	q := req.URL.Query()
-	q.Set("access_token", password)
-	req.URL.RawQuery = q.Encode()
+	req.Header.Set("Authorization", "token "+password)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -829,7 +809,7 @@ func (h *ConfigHandler) GetAliyunConfig(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"status":  "error",
 			"message": "Failed to get Aliyun configuration",
-			"error":   err.Error(),
+			"error":   "服务器内部错误，请稍后重试",
 		})
 		return
 	}
@@ -876,7 +856,7 @@ func (h *ConfigHandler) UpdateAliyunConfig(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"status":  "error",
 			"message": "Invalid request format",
-			"error":   err.Error(),
+			"error":   "服务器内部错误，请稍后重试",
 		})
 		return
 	}
@@ -895,7 +875,7 @@ func (h *ConfigHandler) UpdateAliyunConfig(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"status":  "error",
 			"message": "Failed to update Aliyun configuration",
-			"error":   err.Error(),
+			"error":   "服务器内部错误，请稍后重试",
 		})
 		return
 	}
@@ -940,7 +920,7 @@ func (h *ConfigHandler) TestAliyunConnection(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"status":  "error",
 			"message": "Invalid request format",
-			"error":   err.Error(),
+			"error":   "服务器内部错误，请稍后重试",
 		})
 		return
 	}
@@ -951,7 +931,7 @@ func (h *ConfigHandler) TestAliyunConnection(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"status":  "error",
 			"message": "阿里云镜像仓库连接失败",
-			"error":   err.Error(),
+			"error":   "服务器内部错误，请稍后重试",
 		})
 		return
 	}
@@ -990,7 +970,7 @@ func (h *ConfigHandler) GetAllConfigs(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"status":  "error",
 			"message": "Failed to get Gitee configuration",
-			"error":   err.Error(),
+			"error":   "服务器内部错误，请稍后重试",
 		})
 		return
 	}
@@ -1000,7 +980,7 @@ func (h *ConfigHandler) GetAllConfigs(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"status":  "error",
 			"message": "Failed to get GitHub configuration",
-			"error":   err.Error(),
+			"error":   "服务器内部错误，请稍后重试",
 		})
 		return
 	}
@@ -1011,7 +991,7 @@ func (h *ConfigHandler) GetAllConfigs(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"status":  "error",
 			"message": "Failed to get Aliyun configuration",
-			"error":   err.Error(),
+			"error":   "服务器内部错误，请稍后重试",
 		})
 		return
 	}
@@ -1583,7 +1563,7 @@ func (h *ConfigHandler) TestGitOperations(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
 			"message": "请求参数格式错误",
-			"error":   err.Error(),
+			"error":   "服务器内部错误，请稍后重试",
 		})
 		return
 	}
@@ -1623,7 +1603,7 @@ func (h *ConfigHandler) TestGitOperations(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
 			"message": "解析GitHub仓库URL失败",
-			"error":   err.Error(),
+			"error":   "服务器内部错误，请稍后重试",
 		})
 		return
 	}

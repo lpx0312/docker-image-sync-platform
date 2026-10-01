@@ -176,7 +176,11 @@ func main() {
 	// 允许前端应用从不同域名访问API
 	router.Use(middleware.CORS())
 
-	// 4. 全局限流中间件
+	// 4. 请求体大小限制
+	// 全局兜底防止超大请求体耗尽内存（批量同步等场景另有数量级校验）
+	router.Use(middleware.BodySizeLimit(5 << 20))
+
+	// 5. 全局限流中间件
 	// 防止API被恶意调用，保护服务器资源
 	// 限制：每秒100个请求，突发允许200个请求
 	router.Use(middleware.RateLimit(rate.Limit(100), 200))
@@ -300,7 +304,8 @@ func main() {
 				githubAPIService := gitServiceFactory.GetGitHubAPIService()
 				runs, err := githubAPIService.ListWorkflowRuns(page, perPage, status)
 				if err != nil {
-					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+					logger.Logger.Error("GitHub API 调用失败", zap.Error(err))
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "GitHub API 调用失败，请稍后重试"})
 					return
 				}
 				c.JSON(http.StatusOK, runs)
@@ -311,7 +316,8 @@ func main() {
 					githubAPIService := gitServiceFactory.GetGitHubAPIService()
 					run, err := githubAPIService.GetWorkflowRunDetails(runID)
 					if err != nil {
-						c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+						logger.Logger.Error("GitHub API 调用失败", zap.Error(err))
+						c.JSON(http.StatusInternalServerError, gin.H{"error": "GitHub API 调用失败，请稍后重试"})
 						return
 					}
 					c.JSON(http.StatusOK, run)
@@ -321,7 +327,8 @@ func main() {
 					githubAPIService := gitServiceFactory.GetGitHubAPIService()
 					rateLimit, err := githubAPIService.CheckRateLimit()
 					if err != nil {
-						c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+						logger.Logger.Error("GitHub API 调用失败", zap.Error(err))
+						c.JSON(http.StatusInternalServerError, gin.H{"error": "GitHub API 调用失败，请稍后重试"})
 						return
 					}
 					c.JSON(http.StatusOK, rateLimit)
@@ -331,7 +338,8 @@ func main() {
 					githubAPIService := gitServiceFactory.GetGitHubAPIService()
 					usage, err := githubAPIService.GetActionsUsage()
 					if err != nil {
-						c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+						logger.Logger.Error("GitHub API 调用失败", zap.Error(err))
+						c.JSON(http.StatusInternalServerError, gin.H{"error": "GitHub API 调用失败，请稍后重试"})
 						return
 					}
 					c.JSON(http.StatusOK, usage)
@@ -357,11 +365,6 @@ func main() {
 				configGroup.PUT("/aliyun-db", configHandler.UpdateAliyunConfig)
 				configGroup.POST("/aliyun/test", configHandler.TestAliyunConnection)
 				configGroup.GET("/all", configHandler.GetAllConfigs)
-
-				// debug 路由仅在开发环境下注册
-				if config.AppConfig.Server.Mode != "release" {
-					configGroup.GET("/debug/:key", configHandler.DebugGetConfig)
-				}
 			}
 
 			// ACR配置管理

@@ -28,7 +28,7 @@ func (h *AcrRegistryHandler) GetAll(c *gin.Context) {
 	registries, err := h.service.GetAll()
 	if err != nil {
 		logger.Logger.Error("获取ACR配置列表失败", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		respondInternalError(c, "GetAll", err)
 		return
 	}
 
@@ -76,7 +76,7 @@ func (h *AcrRegistryHandler) Create(c *gin.Context) {
 	registry, err := h.service.Create(&req)
 	if err != nil {
 		logger.Logger.Error("创建ACR配置失败", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		respondInternalError(c, "Create", err)
 		return
 	}
 
@@ -100,7 +100,7 @@ func (h *AcrRegistryHandler) Update(c *gin.Context) {
 	registry, err := h.service.Update(uint(id), &req)
 	if err != nil {
 		logger.Logger.Error("更新ACR配置失败", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		respondInternalError(c, "Update", err)
 		return
 	}
 
@@ -117,7 +117,7 @@ func (h *AcrRegistryHandler) Delete(c *gin.Context) {
 
 	if err := h.service.Delete(uint(id)); err != nil {
 		logger.Logger.Error("删除ACR配置失败", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		respondInternalError(c, "Delete", err)
 		return
 	}
 
@@ -134,7 +134,7 @@ func (h *AcrRegistryHandler) SetDefault(c *gin.Context) {
 
 	if err := h.service.SetDefault(uint(id)); err != nil {
 		logger.Logger.Error("设置默认ACR失败", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		respondInternalError(c, "SetDefault", err)
 		return
 	}
 
@@ -152,7 +152,7 @@ func (h *AcrRegistryHandler) TestConnection(c *gin.Context) {
 	result, err := h.service.TestConnection(uint(id))
 	if err != nil {
 		logger.Logger.Error("测试仓库连通性失败", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		respondInternalError(c, "TestConnection", err)
 		return
 	}
 
@@ -165,7 +165,7 @@ func (h *AcrRegistryHandler) GetQuotaSummary(c *gin.Context) {
 	summary, err := affinitySvc.GetQuotaSummary()
 	if err != nil {
 		logger.Logger.Error("获取 ACR 配额摘要失败", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		respondInternalError(c, "GetQuotaSummary", err)
 		return
 	}
 

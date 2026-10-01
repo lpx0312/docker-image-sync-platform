@@ -38,6 +38,9 @@ import (
 	"gorm.io/gorm"                   // ORM框架
 )
 
+// maxBatchSyncImages 单次批量同步的镜像数量上限
+const maxBatchSyncImages = 200
+
 // SyncHandler 镜像同步处理器
 //
 // 负责处理所有与Docker镜像同步相关的HTTP请求，包括：
@@ -154,6 +157,12 @@ func (h *SyncHandler) SubmitBatchSync(c *gin.Context) {
 	// 验证镜像列表不能为空
 	if len(req.Images) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "镜像列表不能为空"})
+		return
+	}
+
+	// 单次批量上限，防止失控/恶意提交产生大量任务记录（历史最大批量约40）
+	if len(req.Images) > maxBatchSyncImages {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("单次最多同步 %d 个镜像", maxBatchSyncImages)})
 		return
 	}
 
@@ -321,6 +330,11 @@ func (h *SyncHandler) SubmitSync(c *gin.Context) {
 	// 验证镜像列表不能为空
 	if len(req.Images) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "镜像列表不能为空"})
+		return
+	}
+
+	if len(req.Images) > maxBatchSyncImages {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("单次最多同步 %d 个镜像", maxBatchSyncImages)})
 		return
 	}
 
@@ -1664,6 +1678,11 @@ func (h *SyncHandler) SubmitMockBatchSync(c *gin.Context) {
 		return
 	}
 
+	if len(req.Images) > maxBatchSyncImages {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("单次最多同步 %d 个镜像", maxBatchSyncImages)})
+		return
+	}
+
 	normalizeBatchSyncRequest(&req)
 
 	affinitySvc := services.NewAcrAffinityService(database.DB)
@@ -2198,12 +2217,7 @@ func (h *SyncHandler) buildAcrWorkflowInputs(acrRegistryID uint) (map[string]str
 		if err != nil {
 			return nil, fmt.Errorf("解密仓库密码失败: %w", err)
 		}
-		return map[string]string{
-			"registry":          acr.RegistryURL,
-			"namespace":         acr.Namespace,
-			"registry_user":     acr.Username,
-			"registry_password": password,
-		}, nil
+		return h.buildRegistryInputs(acrRegistryID, acr.RegistryURL, acr.Namespace, acr.Username, password)
 	}
 
 	configService := h.gitServiceFactory.GetConfigService()
@@ -2217,6 +2231,39 @@ func (h *SyncHandler) buildAcrWorkflowInputs(acrRegistryID uint) (map[string]str
 	}
 	username, _ := configService.GetConfig("aliyun_username")
 	password, _ := configService.GetConfig("aliyun_password")
+	return h.buildRegistryInputs(0, registry, namespace, username, password)
+}
+
+// buildRegistryInputs 构造 workflow_dispatch 的仓库凭据 inputs。
+//
+// 优先把密码写入仓库级 GitHub Actions secret（按 registry ID 命名，
+// 避免并发 run 覆盖），inputs 仅携带 secret 名称——workflow_dispatch 的
+// inputs 值对拥有仓库读权限的人在该 run 页面/API 中可见，不能放明文。
+// secret 写入失败（如 token 权限不足）时回退为明文 inputs 并记录警告，
+// 保持与旧版 workflow（只认 inputs.registry_password）的兼容。
+func (h *SyncHandler) buildRegistryInputs(acrRegistryID uint, registry, namespace, username, password string) (map[string]string, error) {
+	secretName := "SYNC_REG_PASSWORD_DEFAULT"
+	if acrRegistryID > 0 {
+		secretName = fmt.Sprintf("SYNC_REG_PASSWORD_%d", acrRegistryID)
+	}
+
+	if password != "" {
+		githubSvc := h.gitServiceFactory.GetGitHubAPIService()
+		if err := githubSvc.CreateOrUpdateSecret(secretName, password); err != nil {
+			logger.Logger.Warn("写入 GitHub Actions secret 失败，回退为 inputs 明文传递",
+				zap.String("secret", secretName),
+				zap.Error(err))
+		} else {
+			return map[string]string{
+				"registry":                 registry,
+				"namespace":                namespace,
+				"registry_user":            username,
+				"registry_password":        "",
+				"registry_password_secret": secretName,
+			}, nil
+		}
+	}
+
 	return map[string]string{
 		"registry":          registry,
 		"namespace":         namespace,

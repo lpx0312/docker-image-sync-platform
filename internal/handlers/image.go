@@ -906,7 +906,7 @@ func (h *ImageHandler) BatchCheckImages(c *gin.Context) {
 				"original_image": image.OriginalImage,
 				"target_image":   targetImage,
 				"exists":         false,
-				"error":          err.Error(),
+				"error":          "服务器内部错误，请稍后重试",
 			})
 			failedCount++
 			continue

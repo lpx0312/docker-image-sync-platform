@@ -66,7 +66,7 @@ func (h *AcrTagHandler) GetTags(c *gin.Context) {
 	tagNames, err := apiClient.GetTagNames(acr.RegistryURL, acr.Username, password, acr.Namespace, repositoryName, acr.AuthServer, acr.DockerService)
 	if err != nil {
 		logger.Logger.Error("获取Tag列表失败", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		respondInternalError(c, "GetTags", err)
 		return
 	}
 
@@ -111,7 +111,7 @@ func (h *AcrTagHandler) GetTagsDetails(c *gin.Context) {
 	details, err := apiClient.GetTagsDetailsBatch(acr.RegistryURL, acr.Username, password, acr.Namespace, repositoryName, acr.AuthServer, acr.DockerService, tagNames)
 	if err != nil {
 		logger.Logger.Error("批量获取Tag详情失败", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		respondInternalError(c, "GetTagsDetails", err)
 		return
 	}
 
@@ -158,7 +158,7 @@ func (h *AcrTagHandler) GetTagDetail(c *gin.Context) {
 	detail, err := apiClient.GetTagDetail(acr.RegistryURL, acr.Username, password, acr.Namespace, repositoryName, tag, acr.AuthServer, acr.DockerService)
 	if err != nil {
 		logger.Logger.Error("获取Tag详细信息失败", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		respondInternalError(c, "GetTagDetail", err)
 		return
 	}
 

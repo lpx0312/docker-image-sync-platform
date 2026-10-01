@@ -18,49 +18,53 @@ package middleware
 import (
 	"net/http"
 
+	"docker-image-sync-platform/internal/config"
+
 	"github.com/gin-gonic/gin"
 )
 
-// CORS 创建一个跨域资源共享(CORS)中间件，使用默认配置。
+// CORS 创建跨域资源共享中间件，来源白名单由配置 security.cors.allowed_origins 驱动。
 //
-// 功能说明：
-//   - 允许所有来源的跨域请求 (Access-Control-Allow-Origin: *)
-//   - 支持常用HTTP方法：GET, POST, PUT, DELETE, OPTIONS
-//   - 允许常用请求头：Origin, X-Requested-With, Content-Type, Accept, Authorization等
-//   - 自动处理OPTIONS预检请求
-//   - 记录请求来源信息到上下文
-//
-// 返回值：
-//   - gin.HandlerFunc: Gin框架中间件函数
-//
-// 使用场景：
-//   - 开发环境或需要允许所有来源的场景
-//   - 快速启用CORS支持，无需复杂配置
-//
-// 安全注意：
-//   - 生产环境建议使用CORSWithConfig指定具体允许的来源
-//
-// 示例：
-//
-//	router.Use(middleware.CORS())
+// 安全说明：
+//   - 平台认证使用 Authorization 请求头（token 存 localStorage），不使用 Cookie，
+//     因此不需要 Access-Control-Allow-Credentials，也不反射请求 Origin；
+//     反射 Origin + credentials 的组合会让任意恶意网页携带凭据跨域调用全部 API
+//   - allowed_origins 为空或包含 "*" 时返回通配 "*"；配置了具体域名列表时，
+//     仅白名单内的 Origin 会获得 Access-Control-Allow-Origin 回显，其余请求
+//     不设置该响应头（浏览器侧拦截跨域读取，非浏览器调用不受影响）
 func CORS() gin.HandlerFunc {
+	allowedOrigins := []string{"*"}
+	if config.AppConfig != nil && len(config.AppConfig.Security.CORS.AllowedOrigins) > 0 {
+		allowedOrigins = config.AppConfig.Security.CORS.AllowedOrigins
+	}
+
+	wildcard := false
+	exact := make(map[string]struct{}, len(allowedOrigins))
+	for _, o := range allowedOrigins {
+		if o == "*" {
+			wildcard = true
+			break
+		}
+		exact[o] = struct{}{}
+	}
+
 	return func(c *gin.Context) {
 		method := c.Request.Method
 		origin := c.Request.Header.Get("Origin")
 
-		// 当存在 Origin 时，回显实际 origin 并启用 credentials；
-		// 否则使用 * 但不设置 credentials，避免规范冲突。
-		if origin != "" {
-			c.Header("Access-Control-Allow-Origin", origin)
-			c.Header("Access-Control-Allow-Credentials", "true")
-			c.Set("origin", origin)
-		} else {
+		if wildcard {
 			c.Header("Access-Control-Allow-Origin", "*")
+		} else if origin != "" {
+			if _, ok := exact[origin]; ok {
+				c.Header("Access-Control-Allow-Origin", origin)
+				c.Set("origin", origin)
+			}
+			// 白名单外的 Origin 不回显 Allow-Origin，浏览器将拒绝跨域读取
 		}
 
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization, Cache-Control, X-File-Name")
-		c.Header("Access-Control-Expose-Headers", "Content-Length, Access-Control-Allow-Origin, Access-Control-Allow-Headers, Content-Type")
+		c.Header("Access-Control-Expose-Headers", "Content-Length, Content-Type")
 
 		if method == "OPTIONS" {
 			c.AbortWithStatus(http.StatusNoContent)
@@ -70,6 +74,7 @@ func CORS() gin.HandlerFunc {
 		c.Next()
 	}
 }
+
 
 // CORSWithConfig 创建一个可配置的跨域资源共享(CORS)中间件。
 //
@@ -151,10 +156,8 @@ func CORSWithConfig(allowOrigins []string, allowMethods []string, allowHeaders [
 		c.Header("Access-Control-Allow-Origin", allowOrigin)
 		c.Header("Access-Control-Allow-Methods", allowMethodsStr)
 		c.Header("Access-Control-Allow-Headers", allowHeadersStr)
-		c.Header("Access-Control-Expose-Headers", "Content-Length, Access-Control-Allow-Origin, Access-Control-Allow-Headers, Content-Type")
-		if allowOrigin != "*" {
-			c.Header("Access-Control-Allow-Credentials", "true")
-		}
+		c.Header("Access-Control-Expose-Headers", "Content-Length, Content-Type")
+		// 平台认证走 Authorization 头而非 Cookie，无需 Allow-Credentials
 
 		// 处理预检请求
 		if method == "OPTIONS" {
