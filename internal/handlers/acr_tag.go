@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 // AcrTagHandler 镜像仓库 Tag 查询处理器（ACR / SWR 通用，按仓库类型分发客户端）
@@ -26,7 +29,9 @@ func NewAcrTagHandler(encryptionSvc *services.EncryptionService) *AcrTagHandler 
 	}
 }
 
-// getAcrConfig 获取镜像仓库配置并解密密码，同时返回对应类型的数据面 API 客户端
+// getAcrConfig 获取镜像仓库配置并解密密码，同时返回对应类型的数据面 API 客户端。
+// 错误有两类：记录不存在（gorm.ErrRecordNotFound）与密码解密失败（其余），
+// 调用方经 respondAcrConfigError 区分响应，避免把密钥配置问题误报为"配置不存在"
 func (h *AcrTagHandler) getAcrConfig(acrRegistryID uint) (*models.AcrRegistry, string, services.RegistryAPIClient, error) {
 	var acr models.AcrRegistry
 	if err := database.DB.First(&acr, acrRegistryID).Error; err != nil {
@@ -35,10 +40,24 @@ func (h *AcrTagHandler) getAcrConfig(acrRegistryID uint) (*models.AcrRegistry, s
 
 	password, err := h.encryptionSvc.Decrypt(acr.Password)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, "", nil, fmt.Errorf("解密仓库密码失败（服务端 ENCRYPTION_KEY 可能与写入时不一致）: %w", err)
 	}
 
 	return &acr, password, services.NewRegistryAPIService(acr.RegistryType, acr.RegistryURL), nil
+}
+
+// respondAcrConfigError 按错误类型响应 getAcrConfig 的失败：
+// 记录不存在返回 404，解密失败返回 500 并给出指向密钥配置的提示（细节进日志）
+func (h *AcrTagHandler) respondAcrConfigError(c *gin.Context, operation string, err error) {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "镜像仓库配置不存在"})
+		return
+	}
+	logger.Logger.Error(operation+"：获取仓库配置失败", zap.Error(err))
+	c.JSON(http.StatusInternalServerError, gin.H{
+		"status":  "error",
+		"message": "仓库凭据解密失败，请检查服务端 ENCRYPTION_KEY 配置",
+	})
 }
 
 // GetTags 获取镜像的 Tag 名称列表（轻量，不含 manifest 详情）
@@ -59,7 +78,7 @@ func (h *AcrTagHandler) GetTags(c *gin.Context) {
 
 	acr, password, apiClient, err := h.getAcrConfig(uint(acrRegistryID))
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "镜像仓库配置不存在"})
+		h.respondAcrConfigError(c, "GetTags", err)
 		return
 	}
 
@@ -104,7 +123,7 @@ func (h *AcrTagHandler) GetTagsDetails(c *gin.Context) {
 
 	acr, password, apiClient, err := h.getAcrConfig(uint(acrRegistryID))
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "镜像仓库配置不存在"})
+		h.respondAcrConfigError(c, "GetTagsDetails", err)
 		return
 	}
 
@@ -150,7 +169,7 @@ func (h *AcrTagHandler) GetTagDetail(c *gin.Context) {
 	// 获取镜像仓库配置
 	acr, password, apiClient, err := h.getAcrConfig(uint(acrRegistryID))
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "镜像仓库配置不存在"})
+		h.respondAcrConfigError(c, "GetTagDetail", err)
 		return
 	}
 

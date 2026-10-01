@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"unicode"
 
+	"docker-image-sync-platform/internal/middleware"
 	"docker-image-sync-platform/internal/models"
 	"docker-image-sync-platform/internal/services"
 
@@ -185,6 +187,15 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	ua := c.GetHeader("User-Agent")
 
 	h.userService.RecordLoginLog(userID.(uint), username.(string), ip, ua, models.LoginStatusSuccess, "主动登出")
+
+	// 吊销当前 token，登出立即生效（内存黑名单，随服务重启清空）
+	if authHeader := c.GetHeader("Authorization"); strings.HasPrefix(authHeader, "Bearer ") {
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+		if claims, err := h.authService.ValidateToken(token); err == nil {
+			middleware.RevokeToken(token, claims.ExpiresAt.Time)
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "已登出"})
 }
 

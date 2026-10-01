@@ -33,6 +33,13 @@ func AuthRequired(authService *services.AuthService) gin.HandlerFunc {
 			return
 		}
 
+		// 已登出吊销的 token 立即失效
+		if isTokenRevoked(parts[1]) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "认证已失效，请重新登录"})
+			c.Abort()
+			return
+		}
+
 		c.Set("userID", claims.UserID)
 		c.Set("username", claims.Username)
 		c.Set("roleID", claims.RoleID)
