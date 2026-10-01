@@ -1,0 +1,100 @@
+# ============================================================================
+# Docker镜像同步平台 - 测试流水线
+# ============================================================================
+#
+# push / PR 触发：后端 go vet + 单元测试（含 race 检测），前端依赖安装 + 构建。
+# 纯验证不产出制品；镜像构建见 docker-all.yml，CLI 发布见 cli-release.yml。
+#
+# 依赖源说明：
+#   - web/package-lock.json 的 resolved 指向内网 npm 仓库（192.168.0.12），
+#     GitHub runner 不可达，安装前按 zone 替换为公共源
+#   - zone: global（默认）→ registry.npmjs.org / proxy.golang.org
+#     zone: cn            → registry.npmmirror.com / goproxy.cn
+#     手动触发可切换；内网 runner 请勿复用本文件（含内网地址替换逻辑的镜像）
+# ============================================================================
+
+name: test
+
+on:
+  push:
+    branches: [master, main]
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+      - '.cursor/**'
+      - '.claude/**'
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+    inputs:
+      zone:
+        description: '依赖源区域（global=默认国外源，cn=国内镜像源）'
+        type: choice
+        default: global
+        options: [global, cn]
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: 后端（vet + 单元测试 + race）
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: 使用国内 Go 模块代理
+        if: github.event_name == 'workflow_dispatch' && inputs.zone == 'cn'
+        run: go env -w GOPROXY=https://goproxy.cn,direct
+
+      - name: go vet
+        run: go vet ./...
+
+      # 测试均为 httptest mock / 纯函数，不依赖外部 MySQL 与真实仓库凭据
+      - name: 单元测试（race 检测）
+        run: go test -race -count=1 ./...
+
+  frontend:
+    name: 前端（依赖安装 + 构建）
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # lock 的 resolved 形如 http://192.168.0.12/repository/proxy-npm-taobao/<pkg>/-/<pkg>-<ver>.tgz，
+      # 需同时替换 host 与 Nexus 路径前缀，公共源的 tarball 路径从包名开始
+      - name: 替换 lock 中的内网 npm 源为公共源
+        run: |
+          if [ "${{ github.event_name == 'workflow_dispatch' && inputs.zone == 'cn' }}" = "true" ]; then
+            sed -i 's#http://192.168.0.12/repository/proxy-npm-taobao/#https://registry.npmmirror.com/#g' package-lock.json
+          else
+            sed -i 's#http://192.168.0.12/repository/proxy-npm-taobao/#https://registry.npmjs.org/#g' package-lock.json
+          fi
+          echo "替换后残留内网地址：$(grep -c '192.168.0.12' package-lock.json || true)"
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 构建
+        run: npm run build
