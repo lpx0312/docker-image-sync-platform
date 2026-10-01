@@ -160,7 +160,6 @@ docker-image-sync-platform/
 - `POST /sync/batch` — 批量同步（同步限流）
 - `POST /sync/batch/mock` — 模拟批量同步（测试用，同步限流）
 - `GET /sync/status/:taskId` — 查询单个任务状态
-- `GET /sync/batch/status/:taskId` — 查询批量任务状态（已废弃，返回 410 Gone）
 - `GET /sync/history` — 同步历史
 
 ### 镜像仓库实例 (Config) — 读需 config/sync/images 任一权限，写需 `config` 权限
@@ -204,7 +203,6 @@ docker-image-sync-platform/
 ### 配置 (Config) — 需登录 + `config` 权限
 - `GET /config/status` — 配置状态（不含敏感信息）
 - `GET /config/all` — 全部配置
-- `GET /config/debug/:key` — 调试：获取指定配置项（仅非 release 模式）
 - `GET /config/git-repository` — 获取当前 Git 仓库类型
 - `PUT /config/git-repository` — 切换 Git 仓库类型（gitee/github）
 - `GET /config/git` — Git 详细配置

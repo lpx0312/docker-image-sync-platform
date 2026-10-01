@@ -82,7 +82,7 @@ docs/
 
 我们欢迎您为文档做出贡献！如果您发现文档中的错误或有改进建议，请：
 
-1. **报告问题**: 在 [GitHub Issues](https://github.com/lpx0312/docker_image_pusher/issues) 中创建新的 Issue
+1. **报告问题**: 在 [GitHub Issues](https://github.com/lpx0312/docker-image-sync-platform/issues) 中创建新的 Issue
 2. **提交改进**: Fork 项目，修改文档后提交 Pull Request
 3. **建议新内容**: 如果您认为需要添加新的文档内容，请创建 Issue 说明
 
@@ -95,8 +95,8 @@ docs/
 
 ## 🔗 相关链接
 
-- **项目主页**: https://github.com/lpx0312/docker_image_pusher
-- **问题反馈**: https://github.com/lpx0312/docker_image_pusher/issues
+- **项目主页**: https://github.com/lpx0312/docker-image-sync-platform
+- **问题反馈**: https://github.com/lpx0312/docker-image-sync-platform/issues
 
 ---
 

@@ -30,7 +30,7 @@
 ### 💾 数据管理
 - **持久化存储**: MySQL数据库存储所有同步记录
 - **高级搜索**: 支持按状态、时间、镜像名等多维度筛选
-- **批量操作**: 支持批量删除、重试等操作
+- **批量操作**: 支持批量删除；失败记录支持一键重试（CLI `dsync retry --task` 可按任务批量）
 - **数据导出**: 支持同步记录导出功能
 
 ### 🔐 认证与权限
@@ -122,14 +122,15 @@
 
 1. **克隆项目**
 ```bash
-git clone https://github.com/lpx0312/docker_image_pusher.git
+git clone https://github.com/lpx0312/docker-image-sync-platform.git
 cd docker-image-sync-platform
 ```
 
 2. **配置环境变量**
 ```bash
-# 复制环境变量模板
-cp .env.example .env
+# 复制环境变量模板（All-in-One 部署在 deploy/docker-all/ 下）
+cd deploy/docker-all
+cp env-example .env
 
 # 编辑配置文件（必须配置）
 nano .env
@@ -137,6 +138,9 @@ nano .env
 
 **重要配置项说明：**
 ```bash
+# 敏感数据加密密钥（必填，用于加密仓库凭据等；丢失后已存密文不可解密）
+ENCRYPTION_KEY=your-encryption-key
+
 # Git仓库配置（必填）
 GITEE_USERNAME=your-gitee-username
 GITEE_PASSWORD=your-gitee-password
@@ -285,13 +289,9 @@ auth:
 
 4. **启动开发环境**
 ```bash
-# 方式1：使用脚本（推荐）
-# Linux/macOS
-chmod +x dev.sh
-./dev.sh
-
-# Windows PowerShell
-.\dev.bat
+# 方式1：使用脚本（Linux/macOS）
+chmod +x scripts/dev.sh
+./scripts/dev.sh
 
 # 方式2：使用Makefile
 make dev
@@ -345,7 +345,7 @@ mysql:8.0
 - **详细信息**：点击记录查看详细同步信息
 
 #### 实时状态更新
-- 同步状态自动刷新（每30秒）
+- 同步状态自动刷新（每5秒）
 - GitHub Actions执行状态实时显示
 - 失败任务支持一键重试
 
@@ -359,7 +359,7 @@ mysql:8.0
 
 #### 自动化流程
 1. **代码提交**：系统通过 Git API 更新 Action 仓库的`images.txt`文件
-2. **任务分发**：系统调用 workflow_dispatch 触发 GitHub Actions，目标仓库地址、命名空间、用户名、密码作为 inputs 一并下发
+2. **任务分发**：系统调用 workflow_dispatch 触发 GitHub Actions，目标仓库地址与命名空间随 inputs 下发，登录密码写入 Action 仓库级 secret（`SYNC_REG_PASSWORD_<id>`），inputs 仅携带 secret 名称，避免凭据暴露在运行记录中
 3. **镜像同步**：GitHub Actions 按 dispatch 下发的目标执行镜像同步（仅推送到该目标，Action 仓库仅保留源仓库拉取凭据）
 4. **状态回调**：同步完成后更新数据库状态
 
@@ -461,9 +461,9 @@ docker-image-sync-platform/
 ├── internal/               # 内部包
 │   ├── config/             # 配置管理
 │   ├── database/           # 数据库操作
-│   ├── handlers/           # HTTP处理器（sync、image、config、auth）
+│   ├── handlers/           # HTTP处理器（同步、镜像、配置、认证、角色、仓库配置/台账/Tag 等）
 │   ├── logger/             # 日志管理
-│   ├── middleware/         # 中间件（CORS、日志、限流、认证、权限）
+│   ├── middleware/         # 中间件（CORS、日志、限流、认证、权限、请求体限制）
 │   ├── models/             # 数据模型（含用户、角色、权限）
 │   ├── services/           # 业务服务（含认证、用户管理）
 │   └── utils/              # 工具函数（ACR、Git URL解析等）
@@ -512,7 +512,7 @@ docker-image-sync-platform/
 
 如果您发现了bug或有功能建议，请：
 
-1. 检查 [Issues](https://github.com/lpx0312/docker_image_pusher/issues) 中是否已有相关问题
+1. 检查 [Issues](https://github.com/lpx0312/docker-image-sync-platform/issues) 中是否已有相关问题
 2. 如果没有，请创建新的Issue，并提供：
    - 详细的问题描述
    - 重现步骤
@@ -551,6 +551,13 @@ A: 目标仓库支持私有——Harbor 与通用 Registry 类型可对接自建
 A: 镜像管理页支持「从仓库导入」（远程拉取已有仓库列表）、「批量添加」（逐个远程校验存在性）、「从同步记录导入」三种方式建立台账；CLI 侧可用 `dsync repo import --acr <别名>`（从仓库导入）与 `dsync repo sync-records --acr <别名>`；同步侧可使用批量同步功能或 `dsync batch -f images.txt`。
 
 ## 🔄 更新日志
+
+### v2.1.2 (2026-10)
+- 🐛 手动重试真实触发同步链路（此前仅重置状态，GitHub Actions 不会启动）；同任务多次重试串行调度
+- 🔄 移除从未实现的自动重试参数链路（表单/CLI/配置）；网络层重试不受影响
+- 🔐 安全收敛：CORS 来源白名单、删除调试端点、同步凭据改走 GitHub Actions secret、请求体大小限制、登录失败锁定、登出吊销 token
+- 🐛 SPA 路由深链接/刷新不再 404；Tag 接口区分"凭据解密失败"与"配置不存在"
+- ✨ 新增 CI 测试流水线（后端 vet/单测/race + 前端构建）
 
 ### v2.1.1 (2026-08)
 - 🔄 Action 流水线目标配置全量改为后端 dispatch 下发：删除 Action 仓库目标侧 vars/secrets（原 HUAWEI_*）及 inputs 默认值
@@ -610,7 +617,7 @@ A: 镜像管理页支持「从仓库导入」（远程拉取已有仓库列表�
 
 ## 仓库地址
 
-- **GitHub**: https://github.com/lpx0312/docker_image_pusher
+- **GitHub**: https://github.com/lpx0312/docker-image-sync-platform
 - **Gitee**: https://gitee.com/lpx03/docker_image_pusher
 
 ## 📄 许可证

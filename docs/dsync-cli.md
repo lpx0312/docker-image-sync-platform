@@ -115,7 +115,7 @@ k8s.gcr.io/pause:3.9  3.9
 ```
 
 ```bash
-dsync batch -f images.txt --acr my-ns --auto-retry
+dsync batch -f images.txt --acr my-ns
 ```
 
 > **注意**：批量同步多于 1 个镜像时，服务端会按仓库亲和性自动分配 ACR，`--acr` 仅作为无归属仓库的首选，并非强制指定。
