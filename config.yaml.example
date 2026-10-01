@@ -71,8 +71,6 @@ log:
 sync:
   timeout_minutes: 30
   max_concurrent_jobs: 3
-  max_retry_count: 3
-  retry_interval_minutes: 5
 
 auth:
   jwt_secret: "${JWT_SECRET}"

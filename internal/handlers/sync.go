@@ -100,20 +100,6 @@ func normalizeBatchSyncRequest(req *models.BatchSyncRequest) {
 		}
 		req.MaxConcurrent = mc
 	}
-	if !req.AutoRetry {
-		req.RetryCount = 0
-		return
-	}
-	if req.RetryCount < 1 || req.RetryCount > 5 {
-		rc := syncCfg.MaxRetryCount
-		if rc < 1 {
-			rc = 3
-		}
-		if rc > 5 {
-			rc = 5
-		}
-		req.RetryCount = rc
-	}
 }
 
 // SubmitBatchSync 提交批量镜像同步任务
@@ -128,8 +114,6 @@ func normalizeBatchSyncRequest(req *models.BatchSyncRequest) {
 // 请求体: models.BatchSyncRequest
 //   - Images: 要同步的镜像列表
 //   - MaxConcurrent: 最大并发数 (1-10)；0 或未传时使用配置 sync.max_concurrent_jobs
-//   - AutoRetry: 是否自动重试失败的任务
-//   - RetryCount: 重试次数；开启自动重试且为 0 时使用配置 sync.max_retry_count
 //
 // 响应:
 //   - 200: 任务提交成功，返回任务ID和预计完成时间
@@ -141,7 +125,6 @@ func normalizeBatchSyncRequest(req *models.BatchSyncRequest) {
 //   - 自动生成唯一任务ID
 //   - 预估任务完成时间
 //   - 异步处理，立即返回响应
-//   - 支持自动重试机制
 // parseBatchSyncRequest 绑定并校验批量同步请求（含镜像数上限），
 // 失败时已写入响应，调用方收到 false 直接 return
 func parseBatchSyncRequest(c *gin.Context) (*models.BatchSyncRequest, bool) {
@@ -179,8 +162,6 @@ func (h *SyncHandler) buildBatchSyncTask(req *models.BatchSyncRequest) (*models.
 		Status:        models.TaskStatusPending,
 		MaxConcurrent: req.MaxConcurrent,
 		TotalImages:   len(req.Images),
-		AutoRetry:     req.AutoRetry,
-		RetryCount:    req.RetryCount,
 		AcrRegistryID: req.AcrRegistryID,
 	}
 
@@ -234,7 +215,6 @@ func (h *SyncHandler) buildBatchSyncTask(req *models.BatchSyncRequest) (*models.
 				SyncStatus:    models.SyncStatusPending,
 				InputOrder:    i + 1,
 				Priority:      img.Priority,
-				MaxRetries:    req.RetryCount,
 				Description:   img.Description,
 				OriginalInput: imageWithTag,
 				AcrRegistryID: acrRegistryID,

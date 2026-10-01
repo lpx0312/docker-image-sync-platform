@@ -67,8 +67,6 @@ var batchCmd = &cobra.Command{
 		ns, _ := cmd.Flags().GetString("acr")
 		arch, _ := cmd.Flags().GetString("arch")
 		concurrency, _ := cmd.Flags().GetInt("concurrency")
-		autoRetry, _ := cmd.Flags().GetBool("auto-retry")
-		retryCount, _ := cmd.Flags().GetInt("retry-count")
 		noWait, _ := cmd.Flags().GetBool("no-wait")
 
 		items, err := parseBatchFile(file)
@@ -79,16 +77,12 @@ var batchCmd = &cobra.Command{
 		req := batchRequest{
 			Images:        items,
 			MaxConcurrent: concurrency,
-			AutoRetry:     autoRetry,
 			AcrRegistryID: 0,
 		}
 		if arch != "" {
 			for i := range req.Images {
 				req.Images[i].Architecture = arch
 			}
-		}
-		if autoRetry && retryCount > 0 {
-			req.RetryCount = retryCount
 		}
 		if ns != "" {
 			reg, err := resolveAcrByNamespace(newClient(), ns)
@@ -126,8 +120,6 @@ func init() {
 	batchCmd.Flags().String("acr", "", "首选目标仓库（别名优先，兼容 namespace；多镜像时服务端仍按亲和性分配）")
 	batchCmd.Flags().String("arch", "", "目标架构，如 amd64 / arm64")
 	batchCmd.Flags().Int("concurrency", 0, "最大并发数（0 表示使用服务端配置）")
-	batchCmd.Flags().Bool("auto-retry", false, "失败自动重试")
-	batchCmd.Flags().Int("retry-count", 0, "自动重试次数（0 表示使用服务端配置）")
 	batchCmd.Flags().Bool("no-wait", false, "提交后立即返回 task-id，不等待完成")
 	rootCmd.AddCommand(batchCmd)
 }

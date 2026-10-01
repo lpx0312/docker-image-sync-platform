@@ -517,17 +517,6 @@ func initDefaultConfigs() error {
 		maxConcurrentSyncs = "3" // 默认3个并发任务，与config.yaml中的值一致
 	}
 
-	// 从配置文件中读取重试配置
-	maxRetryCount := fmt.Sprintf("%d", config.AppConfig.Sync.MaxRetryCount)
-	if config.AppConfig.Sync.MaxRetryCount == 0 {
-		maxRetryCount = "3" // 默认重试3次
-	}
-
-	retryIntervalMinutes := fmt.Sprintf("%d", config.AppConfig.Sync.RetryIntervalMinutes)
-	if config.AppConfig.Sync.RetryIntervalMinutes == 0 {
-		retryIntervalMinutes = "5" // 默认重试间隔5分钟
-	}
-
 	defaultConfigs := []models.SystemConfig{
 		// 阿里云配置
 		{
@@ -644,16 +633,6 @@ func initDefaultConfigs() error {
 			ConfigKey:   "max_concurrent_syncs",
 			ConfigValue: maxConcurrentSyncs,
 			Description: "最大并发同步数量",
-		},
-		{
-			ConfigKey:   "max_retry_count",
-			ConfigValue: maxRetryCount,
-			Description: "同步失败重试次数",
-		},
-		{
-			ConfigKey:   "retry_interval_minutes",
-			ConfigValue: retryIntervalMinutes,
-			Description: "重试间隔时间（分钟）",
 		},
 	}
 

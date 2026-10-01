@@ -489,8 +489,6 @@ const submitBatchSync = async () => {
     const batchData = {
       images: buildBatchImageItems(),
       max_concurrent: 0,
-      auto_retry: true,
-      retry_count: 0,
       acr_registry_id: isMultiImage.value ? 0 : selectedAcrId.value
     }
 
@@ -529,8 +527,6 @@ const submitMockBatchSync = async () => {
     const batchData = {
       images: buildBatchImageItems(),
       max_concurrent: 0,
-      auto_retry: true,
-      retry_count: 0,
       acr_registry_id: isMultiImage.value ? 0 : selectedAcrId.value
     }
 

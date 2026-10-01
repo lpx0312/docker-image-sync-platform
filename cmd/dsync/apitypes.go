@@ -127,8 +127,6 @@ type batchImageItem struct {
 type batchRequest struct {
 	Images        []batchImageItem `json:"images"`
 	MaxConcurrent int              `json:"max_concurrent,omitempty"`
-	AutoRetry     bool             `json:"auto_retry"`
-	RetryCount    int              `json:"retry_count,omitempty"`
 	AcrRegistryID uint             `json:"acr_registry_id,omitempty"`
 }
 

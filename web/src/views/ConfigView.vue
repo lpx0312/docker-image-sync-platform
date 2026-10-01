@@ -57,9 +57,8 @@
               </el-form-item>
               <el-form-item>
                 <el-text type="info" size="small" class="system-hint">
-                  批量同步的并发数与失败重试次数由服务端
-                  <code>config.yaml</code> 中 <code>sync.max_concurrent_jobs</code>、
-                  <code>sync.max_retry_count</code> 等字段决定；同步页不再单独配置。
+                  批量同步的并发数由服务端
+                  <code>config.yaml</code> 中 <code>sync.max_concurrent_jobs</code> 决定；同步页不再单独配置。
                 </el-text>
               </el-form-item>
             </el-form>

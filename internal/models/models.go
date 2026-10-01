@@ -76,8 +76,6 @@ type ImageSyncRecord struct {
 	Description    string         `json:"description" gorm:"type:varchar(500)"`                                                                              // 同步说明，描述同步目的和用途
 	TaskID         string         `json:"task_id" gorm:"type:varchar(100);index"`                                                                            // 关联的任务ID，建立索引以提高任务查询性能
 	Priority       int            `json:"priority" gorm:"default:0"`                                                                                         // 优先级，数字越大优先级越高
-	RetryCount     int            `json:"retry_count" gorm:"default:0"`                                                                                      // 当前重试次数
-	MaxRetries     int            `json:"max_retries" gorm:"default:3"`                                                                                      // 最大重试次数
 	StartedAt      *time.Time     `json:"started_at"`                                                                                                        // 开始同步时间
 	CompletedAt    *time.Time     `json:"completed_at"`                                                                                                      // 完成同步时间
 	Duration       int64          `json:"duration" gorm:"default:0"`                                                                                         // 同步耗时（秒），用于性能分析
@@ -134,9 +132,6 @@ type SyncTask struct {
 	TotalImages     int            `json:"total_images" gorm:"default:0"`                  // 总镜像数量
 	CompletedImages int            `json:"completed_images" gorm:"default:0"`              // 已完成镜像数量
 	FailedImages    int            `json:"failed_images" gorm:"default:0"`                 // 失败镜像数量
-	AutoRetry       bool           `json:"auto_retry" gorm:"default:false"`                // 是否启用自动重试
-	RetryCount      int            `json:"retry_count" gorm:"default:0"`                   // 允许的重试次数
-	CurrentRetry    int            `json:"current_retry" gorm:"default:0"`                 // 当前重试次数
 	Progress        float64        `json:"progress" gorm:"type:decimal(5,2);default:0.00"` // 任务进度百分比（0.00-100.00）
 	CreatedAt       time.Time      `json:"created_at" gorm:"index"`                        // 创建时间，建立索引以提高时间范围查询性能
 	UpdatedAt       time.Time      `json:"updated_at"`                                     // 更新时间
@@ -337,13 +332,10 @@ type SyncRequest struct {
 // 字段说明：
 //   - Images: 镜像同步项列表，每项包含详细配置
 //   - MaxConcurrent: 最大并发数，控制同时进行的同步数量
-//   - AutoRetry: 是否启用自动重试
-//   - RetryCount: 重试次数限制
 //
 // 验证规则：
 //   - Images: 必填，至少包含一个镜像项
 //   - MaxConcurrent: 范围1-10，防止过度并发
-//   - RetryCount: 范围0-3，合理的重试限制
 //
 // 使用场景：
 //   - 大规模镜像同步任务
@@ -353,8 +345,6 @@ type SyncRequest struct {
 type BatchSyncRequest struct {
 	Images        []ImageSyncItem `json:"images" binding:"required"` // 镜像同步项列表，必填
 	MaxConcurrent int             `json:"max_concurrent"`            // 最大并发数；0 或未传由服务端按配置填充
-	AutoRetry     bool            `json:"auto_retry"`                // 是否启用自动重试
-	RetryCount    int             `json:"retry_count"`               // 重试次数；0 且启用重试时由服务端按配置填充
 	AcrRegistryID uint            `json:"acr_registry_id"`           // ACR配置ID，0表示使用默认配置
 }
 
@@ -499,9 +489,6 @@ type TaskStatusResponse struct {
 //   - FailedImages: 失败镜像数量
 //   - Progress: 任务进度百分比
 //   - MaxConcurrent: 最大并发数
-//   - AutoRetry: 是否启用自动重试
-//   - CurrentRetry: 当前重试次数
-//   - RetryCount: 总重试次数
 //   - GitHubActionURL: GitHub Actions链接
 //   - StartedAt: 开始时间
 //   - CompletedAt: 完成时间
@@ -523,9 +510,6 @@ type BatchTaskStatusResponse struct {
 	FailedImages    int                       `json:"failed_images"`     // 失败镜像数量
 	Progress        float64                   `json:"progress"`          // 任务进度百分比
 	MaxConcurrent   int                       `json:"max_concurrent"`    // 最大并发数
-	AutoRetry       bool                      `json:"auto_retry"`        // 是否启用自动重试
-	CurrentRetry    int                       `json:"current_retry"`     // 当前重试次数
-	RetryCount      int                       `json:"retry_count"`       // 总重试次数
 	GitHubActionURL string                    `json:"github_action_url"` // GitHub Actions链接
 	StartedAt       *time.Time                `json:"started_at"`        // 开始时间
 	CompletedAt     *time.Time                `json:"completed_at"`      // 完成时间
@@ -548,8 +532,6 @@ type BatchTaskStatusResponse struct {
 //   - SyncStatus: 同步状态
 //   - ErrorMessage: 错误信息
 //   - Priority: 优先级
-//   - RetryCount: 当前重试次数
-//   - MaxRetries: 最大重试次数
 //   - StartedAt: 开始时间
 //   - CompletedAt: 完成时间
 //   - Duration: 同步耗时
@@ -569,8 +551,6 @@ type ImageSyncDetailResponse struct {
 	SyncStatus    string     `json:"sync_status"`    // 同步状态
 	ErrorMessage  string     `json:"error_message"`  // 错误信息
 	Priority      int        `json:"priority"`       // 优先级
-	RetryCount    int        `json:"retry_count"`    // 当前重试次数
-	MaxRetries    int        `json:"max_retries"`    // 最大重试次数
 	StartedAt     *time.Time `json:"started_at"`     // 开始时间
 	CompletedAt   *time.Time `json:"completed_at"`   // 完成时间
 	Duration      int64      `json:"duration"`       // 同步耗时（秒）
