@@ -1023,89 +1023,6 @@ func (s *GitService) pushWithRetry(commitSHA string) error {
 	return fmt.Errorf("推送到%s失败，已重试%d次", repoName, maxRetries)
 }
 
-// GetRepoStatus 获取仓库状态信息
-//
-// 功能说明:
-//   - 获取Git仓库的当前状态信息
-//   - 包含工作区状态、最新提交信息等
-//   - 提供仓库健康状态的全面视图
-//   - 用于监控和调试Git操作
-//
-// 返回值:
-//   - map[string]interface{}: 包含仓库状态的详细信息
-//   - error: 获取状态过程中的错误
-//
-// 状态信息包含:
-//   - is_clean: 工作区是否干净（无未提交更改）
-//   - last_commit: 最新提交的SHA值
-//   - last_message: 最新提交的消息
-//   - last_author: 最新提交的作者
-//   - last_time: 最新提交的时间
-//   - repo_path: 仓库的本地路径
-//
-// 错误处理:
-//   - 仓库未初始化
-//   - 获取工作区状态失败
-//   - 获取提交信息失败
-//
-// 使用场景:
-//   - 系统状态监控
-//   - 调试Git操作问题
-//   - 仓库健康检查
-//   - 管理界面状态展示
-func (s *GitService) GetRepoStatus(ctx context.Context) (map[string]interface{}, error) {
-	// ====================================================================
-	// 仓库状态检查
-	// ====================================================================
-
-	if s.repo == nil {
-		return nil, fmt.Errorf("仓库未初始化")
-	}
-
-	// ====================================================================
-	// 获取工作区状态
-	// ====================================================================
-
-	worktree, err := s.repo.Worktree()
-	if err != nil {
-		return nil, err
-	}
-
-	status, err := worktree.Status()
-	if err != nil {
-		return nil, err
-	}
-
-	// ====================================================================
-	// 获取最新提交信息
-	// ====================================================================
-
-	// 获取HEAD引用（当前分支的最新提交）
-	ref, err := s.repo.Head()
-	if err != nil {
-		return nil, err
-	}
-
-	// 获取提交对象的详细信息
-	commit, err := s.repo.CommitObject(ref.Hash())
-	if err != nil {
-		return nil, err
-	}
-
-	// ====================================================================
-	// 构建状态信息
-	// ====================================================================
-
-	return map[string]interface{}{
-		"is_clean":     status.IsClean(),     // 工作区是否干净
-		"last_commit":  commit.Hash.String(), // 最新提交SHA
-		"last_message": commit.Message,       // 最新提交消息
-		"last_author":  commit.Author.Name,   // 最新提交作者
-		"last_time":    commit.Author.When,   // 最新提交时间
-		"repo_path":    s.repoPath,           // 仓库路径
-	}, nil
-}
-
 // CleanRepository 清理Git仓库
 //
 // 功能说明:
@@ -1136,39 +1053,5 @@ func (s *GitService) CleanRepository(ctx context.Context) error {
 	if s.repoPath != "" {
 		return os.RemoveAll(s.repoPath)
 	}
-	return nil
-}
-
-// PullLatest 拉取最新的远程仓库内容
-// 实现GitServiceInterface接口
-func (s *GitService) PullLatest(ctx context.Context) error {
-	return s.pullLatest()
-}
-
-// TestConnection 测试Git连接
-// 实现GitServiceInterface接口的可选方法
-func (s *GitService) TestConnection() error {
-	// 获取Git配置
-	repoURL, username, token, _, _, _, err := s.getCurrentGitConfig()
-	if err != nil {
-		return fmt.Errorf("获取Git配置失败: %v", err)
-	}
-
-	// 尝试连接远程仓库
-	_, err = git.PlainCloneContext(context.Background(), "/tmp/test-connection", false, &git.CloneOptions{
-		URL:  repoURL,
-		Auth: &http.BasicAuth{
-			Username: username,
-			Password: token,
-		},
-		Depth: 1,
-	})
-
-	if err != nil {
-		return fmt.Errorf("连接Git仓库失败: %v", err)
-	}
-
-	// 清理测试目录
-	os.RemoveAll("/tmp/test-connection")
 	return nil
 }

@@ -43,17 +43,6 @@ func NewGitServiceFactory(encryptionService *EncryptionService) *GitServiceFacto
 	return factory
 }
 
-// GetGitService 获取当前配置的Git服务
-func (f *GitServiceFactory) GetGitService() (*GitService, error) {
-	// 如果启用优化服务，使用优化版本
-	if f.useOptimized {
-		return f.getOptimizedGitService()
-	}
-
-	// 否则使用原有逻辑
-	return f.getOriginalGitService()
-}
-
 // GetGitServiceInterface 获取统一的Git服务接口
 // 返回实现GitServiceInterface接口的服务实例
 func (f *GitServiceFactory) GetGitServiceInterface() (GitServiceInterface, error) {
@@ -69,50 +58,6 @@ func (f *GitServiceFactory) GetGitServiceInterface() (GitServiceInterface, error
 	}
 
 	return f.getOrCreateGitService(repoType)
-}
-
-// getOptimizedGitService 获取优化后的Git服务
-func (f *GitServiceFactory) getOptimizedGitService() (*GitService, error) {
-	// 获取当前配置的Git仓库类型
-	repoType, err := f.getGitRepositoryType()
-	if err != nil {
-		return nil, fmt.Errorf("获取Git仓库配置失败: %v", err)
-	}
-
-	f.ensureOptimizedServiceInitialized()
-
-	logger.Logger.Info("使用Git服务工厂选择合适的实现", zap.String("repo_type", repoType))
-
-	svc, err := f.getOrCreateGitService(repoType)
-	if err != nil {
-		return nil, err
-	}
-
-	gitSvc, ok := svc.(*GitService)
-	if !ok {
-		return nil, fmt.Errorf("服务类型不匹配，预期 *GitService")
-	}
-	return gitSvc, nil
-}
-
-// getOriginalGitService 获取原有的Git服务
-func (f *GitServiceFactory) getOriginalGitService() (*GitService, error) {
-	// 获取当前配置的Git仓库类型
-	repoType, err := f.getGitRepositoryType()
-	if err != nil {
-		return nil, fmt.Errorf("获取Git仓库配置失败: %v", err)
-	}
-
-	svc, err := f.getOrCreateGitService(repoType)
-	if err != nil {
-		return nil, err
-	}
-
-	gitSvc, ok := svc.(*GitService)
-	if !ok {
-		return nil, fmt.Errorf("服务类型不匹配，预期 *GitService")
-	}
-	return gitSvc, nil
 }
 
 // getOrCreateGitService 安全地获取或创建 Git 服务实例
@@ -315,16 +260,6 @@ func (f *GitServiceFactory) IsUsingAPI() bool {
 	f.mutex.RLock()
 	defer f.mutex.RUnlock()
 	return f.useAPI
-}
-
-// TestGitFileService 测试Git文件API服务连接
-func (f *GitServiceFactory) TestGitFileService() error {
-	gitFileService, err := f.GetGitFileService()
-	if err != nil {
-		return fmt.Errorf("获取Git文件API服务失败: %w", err)
-	}
-
-	return gitFileService.TestConnection()
 }
 
 // ClearGitFileServiceCache 清理Git文件API服务缓存
