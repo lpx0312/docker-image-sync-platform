@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -322,13 +323,17 @@ func TestSmokeEndToEnd(t *testing.T) {
 		})
 	}
 
-	// 验证凭据落盘且权限为 0600
-	info, err := os.Stat(cfgFile)
-	if err != nil {
-		t.Fatalf("配置文件未生成: %v", err)
-	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Errorf("配置文件权限 = %o, 期望 0600", perm)
+	// 验证凭据落盘且权限为 0600。
+	// Windows 的 chmod 仅映射只读位，WriteFile 的 0600 不生效，
+	// Stat 恒报 0666，该断言仅在 POSIX 平台有意义。
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(cfgFile)
+		if err != nil {
+			t.Fatalf("配置文件未生成: %v", err)
+		}
+		if perm := info.Mode().Perm(); perm != 0o600 {
+			t.Errorf("配置文件权限 = %o, 期望 0600", perm)
+		}
 	}
 	data, _ := os.ReadFile(cfgFile)
 	if !strings.Contains(string(data), "mock-token") {
