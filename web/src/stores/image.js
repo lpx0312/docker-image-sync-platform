@@ -93,7 +93,7 @@ export const useImageStore = defineStore('image', () => {
       // 更新镜像状态
       const image = images.value.find(img => img.id === id)
       if (image) {
-        image.status = 'pending'
+        image.sync_status = 'pending'
         image.updated_at = new Date().toISOString()
       }
       // 重新加载统计
@@ -143,10 +143,10 @@ export const useImageStore = defineStore('image', () => {
   const updateImageStatus = (id, status, message = '') => {
     const image = images.value.find(img => img.id === id)
     if (image) {
-      image.status = status
+      image.sync_status = status
       image.updated_at = new Date().toISOString()
       if (message) {
-        image.message = message
+        image.error_message = message
       }
     }
   }

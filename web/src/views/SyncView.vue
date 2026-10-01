@@ -372,6 +372,7 @@ const currentPage = ref(1)
 const pageSize = ref(20)
 const retryingIds = ref([])
 const deletingIds = ref([])
+let searchTimer = null
 const checkingIds = ref([])
 const batchChecking = ref(false)
 const detailDialogVisible = ref(false)
@@ -412,9 +413,13 @@ const refreshImageData = async () => {
 }
 
 const handleSearch = () => {
-  currentPage.value = 1
-  imageStore.updatePagination(1, pageSize.value)
-  refreshImageData()
+  // 搜索输入防抖，避免每敲一个字符就请求一次后端
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    currentPage.value = 1
+    imageStore.updatePagination(1, pageSize.value)
+    refreshImageData()
+  }, 300)
 }
 
 const handleStatusFilter = () => {
@@ -622,6 +627,7 @@ onUnmounted(() => {
     clearInterval(statusPollingTimer)
     statusPollingTimer = null
   }
+  clearTimeout(searchTimer)
 })
 </script>
 

@@ -563,6 +563,11 @@ func (cs *ConfigService) SetAliyunConfig(config AliyunConfig) error {
 		return fmt.Errorf("failed to commit aliyun config: %w", err)
 	}
 
+	// 清理缓存，确保下次读取时获取最新值
+	for key := range configs {
+		cs.cache.Delete(key)
+	}
+
 	cs.logger.Info("Successfully set aliyun config")
 	return nil
 }

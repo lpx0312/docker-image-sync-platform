@@ -234,13 +234,16 @@ func (s *bearerV2Client) RepositoryExists(registry, username, password, namespac
 	return len(tags) > 0, nil
 }
 
-// IsRepositoryNotFound 判断错误是否表示仓库不存在（404）或无权限（401）
+// IsRepositoryNotFound 判断错误是否表示仓库不存在。
+// SWR 对不存在的仓库返回 200 且 tags 为 null（GetTags 已按空列表处理），
+// 404 是常规不存在路径。Token 获取阶段的认证失败（凭证错误）不属于
+// “仓库不存在”，应由调用方归类为“检查失败”。
 func (s *bearerV2Client) IsRepositoryNotFound(err error) bool {
 	if err == nil {
 		return false
 	}
 	msg := err.Error()
-	return strings.Contains(msg, "HTTP 404") || strings.Contains(msg, "HTTP 401") || strings.Contains(msg, "认证被拒绝")
+	return strings.Contains(msg, "获取Tag列表失败: HTTP 404")
 }
 
 // fetchManifest 拉取 manifest，401 时自动刷新 token

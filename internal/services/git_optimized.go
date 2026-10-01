@@ -28,6 +28,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -470,6 +471,37 @@ func (s *GitOptimizedService) initSparseRepository() error {
 	return s.createNewSparseRepository(repoURL, username, token, repoType)
 }
 
+// buildAuthURL 构建带认证信息的仓库 URL。
+// git CLI 不读取 GIT_USERNAME/GIT_PASSWORD 环境变量，凭证必须随 URL
+// 传递（url.Userinfo 负责正确的百分号编码，不要预先 QueryEscape，
+// 否则会双重编码）。GitHub 必须使用 Token；Gitee 无 Token 时回退密码。
+func (s *GitOptimizedService) buildAuthURL(repoURL, username, token, repoType string) (string, error) {
+	parsedURL, err := url.Parse(repoURL)
+	if err != nil {
+		return "", fmt.Errorf("解析Git仓库URL失败: %w", err)
+	}
+
+	secret := token
+	if secret == "" {
+		switch repoType {
+		case "gitee":
+			password, err := s.getConfigValue("gitee_password")
+			if err != nil {
+				return "", fmt.Errorf("获取Gitee密码失败: %w", err)
+			}
+			secret = password
+		case "github":
+			return "", fmt.Errorf("GitHub仓库必须配置访问令牌")
+		}
+	}
+
+	if secret == "" {
+		return repoURL, nil
+	}
+	parsedURL.User = url.UserPassword(username, secret)
+	return parsedURL.String(), nil
+}
+
 // createNewSparseRepository 创建新的稀疏检出仓库
 func (s *GitOptimizedService) createNewSparseRepository(repoURL, username, token, repoType string) error {
 	// 确保目录存在
@@ -528,25 +560,24 @@ func (s *GitOptimizedService) createNewSparseRepository(repoURL, username, token
 	logger.Logger.Info("稀疏检出配置设置成功", zap.String("config_file", sparseConfigFile))
 
 	// 5. 拉取数据（使用浅克隆和过滤）
+	// 直接对认证 URL 执行 fetch：凭证只出现在命令参数中，
+	// 不会写入 .git/config（remote origin 保持无凭证的 repoURL）
+	authURL, err := s.buildAuthURL(repoURL, username, token, repoType)
+	if err != nil {
+		return err
+	}
 	fetchArgs := []string{
 		"-C", s.repoPath,
 		"fetch",
 		"--depth", "1",
 		"--filter=blob:none",
-		"origin",
+		authURL,
 		"HEAD:refs/remotes/origin/HEAD",
 	}
 
-	// 设置认证信息
 	fetchCmd := exec.Command("git", fetchArgs...)
-	cmdEnv := os.Environ()
-	if token != "" {
-		cmdEnv = append(cmdEnv,
-			fmt.Sprintf("GIT_USERNAME=%s", username),
-			fmt.Sprintf("GIT_PASSWORD=%s", token),
-			"GIT_TERMINAL_PROMPT=never")
-	}
-	fetchCmd.Env = cmdEnv
+	// GIT_TERMINAL_PROMPT=never 避免凭证缺失时挂起等待交互输入
+	fetchCmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=never")
 
 	if output, err := fetchCmd.CombinedOutput(); err != nil {
 		logger.Logger.Error("拉取远程数据失败",
@@ -639,7 +670,7 @@ func (s *GitOptimizedService) initFullRepository() error {
 // createNewFullRepository 创建新的完整仓库
 func (s *GitOptimizedService) createNewFullRepository() error {
 	// 获取Git配置
-	repoURL, username, token, _, _, localPath, err := s.getCurrentGitConfig()
+	repoURL, username, token, _, repoType, localPath, err := s.getCurrentGitConfig()
 	if err != nil {
 		return fmt.Errorf("获取Git配置失败: %w", err)
 	}
@@ -661,15 +692,14 @@ func (s *GitOptimizedService) createNewFullRepository() error {
 		logger.Logger.Info("已清理现有仓库目录", zap.String("path", s.repoPath))
 	}
 
-	// 使用系统git命令进行完整克隆
-	cmd := exec.Command("git", "clone", repoURL, s.repoPath)
-
-	// 设置认证信息
-	if token != "" {
-		cmd.Env = append(os.Environ(),
-			fmt.Sprintf("GIT_USERNAME=%s", username),
-			fmt.Sprintf("GIT_PASSWORD=%s", token))
+	// 使用系统git命令进行完整克隆（凭证随 URL 传递，见 buildAuthURL 注释）
+	authURL, err := s.buildAuthURL(repoURL, username, token, repoType)
+	if err != nil {
+		return err
 	}
+	cmd := exec.Command("git", "clone", authURL, s.repoPath)
+	// GIT_TERMINAL_PROMPT=never 避免凭证缺失时挂起等待交互输入
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=never")
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {

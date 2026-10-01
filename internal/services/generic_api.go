@@ -214,13 +214,16 @@ func (s *GenericAPIService) RepositoryExists(registry, username, password, names
 	return len(tags) > 0, nil
 }
 
-// IsRepositoryNotFound 判断错误是否表示仓库不存在（404）或无权限（401/403）
+// IsRepositoryNotFound 判断错误是否表示仓库不存在（404）或无权限访问（403）。
+// 认证失败（401，凭证错误）不算仓库不存在：Basic 模式下密码错误同样
+// 报 401，无法与无权限区分，应统一归类为“检查失败”，避免把全部仓库
+// 误报为“目标仓库中不存在”。
 func (s *GenericAPIService) IsRepositoryNotFound(err error) bool {
 	if err == nil {
 		return false
 	}
 	msg := err.Error()
-	return strings.Contains(msg, "HTTP 404") || strings.Contains(msg, "HTTP 401") || strings.Contains(msg, "HTTP 403")
+	return strings.Contains(msg, "获取Tag列表失败: HTTP 404") || strings.Contains(msg, "获取Tag列表失败: HTTP 403")
 }
 
 // fetchManifestGeneric 拉取 manifest：Basic 直连优先，401 Bearer challenge 时

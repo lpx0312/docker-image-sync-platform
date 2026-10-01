@@ -537,6 +537,14 @@ func (g *GitHubAPIService) executeRequestWithRetry(req *http.Request) (*http.Res
 				zap.Int("max_retries", g.retries),
 				zap.Error(lastErr))
 			time.Sleep(g.retryWait * time.Duration(attempt))
+
+			// 首次发送后 req.Body 已被消费，必须经 GetBody 重建，
+			// 否则带 body 的请求（如 UpdateImagesFile 的 PUT）重试时会发出空 body
+			if req.GetBody != nil {
+				if body, err := req.GetBody(); err == nil {
+					req.Body = body
+				}
+			}
 		}
 
 		// 执行请求
@@ -916,6 +924,14 @@ func (g *GiteeAPIService) executeRequestWithRetry(req *http.Request) (*http.Resp
 				zap.Int("max_retries", g.retries),
 				zap.Error(lastErr))
 			time.Sleep(g.retryWait * time.Duration(attempt))
+
+			// 首次发送后 req.Body 已被消费，必须经 GetBody 重建，
+			// 否则带 body 的请求（如 UpdateImagesFile 的 PUT）重试时会发出空 body
+			if req.GetBody != nil {
+				if body, err := req.GetBody(); err == nil {
+					req.Body = body
+				}
+			}
 		}
 
 		// 执行请求

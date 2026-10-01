@@ -189,12 +189,14 @@ func (s *AcrAPIService) RepositoryExists(registry, username, password, namespace
 
 // IsRepositoryNotFound 判断 tags/list 错误是否表示仓库不存在。
 // 阿里云 ACR 对不存在的仓库可能返回 404 或 401，而非标准 404。
+// 只匹配 tags/list 阶段的错误：Token 获取阶段的 401 是凭证问题，
+// 应由调用方归类为“检查失败”，避免密码错误时把全部仓库误报为不存在。
 func (s *AcrAPIService) IsRepositoryNotFound(err error) bool {
 	if err == nil {
 		return false
 	}
 	msg := err.Error()
-	return strings.Contains(msg, "HTTP 404") || strings.Contains(msg, "HTTP 401")
+	return strings.Contains(msg, "获取Tag列表失败: HTTP 404") || strings.Contains(msg, "获取Tag列表失败: HTTP 401")
 }
 
 func (s *AcrAPIService) fetchManifest(registry, namespace, repo, tag string, username, password, authServer, dockerService string) ([]byte, string, string, int, error) {
