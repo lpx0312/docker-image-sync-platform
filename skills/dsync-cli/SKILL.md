@@ -46,6 +46,7 @@ curl -fLO https://gh.1102345.xyz/https://github.com/lpx0312/docker-image-sync-pl
   ```bash
   DSYNC_PASSWORD='<密码>' dsync login --server https://sync.sktill.top:7000 --username <用户名>
   ```
+- 登录成功即写入 `~/.config/dsync/config.json`（0600），之后无需重复登录，token 过期自动续登。
 - 验证：`dsync whoami`。改自己的密码：`dsync passwd`。
 
 ## 命令速查

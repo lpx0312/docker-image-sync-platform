@@ -138,7 +138,7 @@ dsync batch -f images.txt --acr my-ns
 先执行 `dsync acr list`，`--acr` 参数优先使用 ALIAS 列的值（不是 registry 地址）；namespace 被多个仓库共用（如 ACR 与 SWR 同名）时必须改用别名。
 
 **Q: 同步失败怎么办？**
-`dsync task status <task-id>` 查看错误信息与 GitHub Actions 链接；修复后 `dsync retry <record-id>` 重试。
+`dsync task status <task-id>` 查看错误信息与 GitHub Actions 链接；修复后 `dsync retry <record-id>` 重试——重试会立即重新触发同步（启动新的 GitHub Actions run），同任务多次重试由平台串行调度，不会重复同步。
 
 **Q: 搜索结果不全？**
 Tag 搜索依赖缓存，用 `dsync search <kw> --refresh` 强制刷新；仓库搜索依赖平台本地库，需在 Web 端对账后才会包含最新镜像。
