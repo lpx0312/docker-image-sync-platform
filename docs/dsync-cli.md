@@ -9,11 +9,13 @@
 方式一：下载预编译二进制（GitHub Actions 自动构建，见下方"发布流程"）：
 
 ```bash
-# Linux ARM64 示例，其他平台同理（linux/darwin × amd64/arm64）
+# Linux ARM64 示例，其他平台同理（linux/darwin × amd64/arm64 的 tar.gz；windows × amd64/arm64 的 zip）
 curl -LO https://github.com/lpx0312/docker-image-sync-platform/releases/latest/download/dsync-linux-arm64.tar.gz
 tar -xzf dsync-linux-arm64.tar.gz
 sudo install -m 0755 dsync-linux-arm64 /usr/local/bin/dsync
 ```
+
+Windows 示例：下载 `dsync-windows-amd64.zip` 解压，将 `dsync-windows-amd64.exe` 重命名为 `dsync.exe` 后放入 PATH。
 
 方式二：本地构建（需要 Go 1.21+）：
 

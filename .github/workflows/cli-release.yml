@@ -7,7 +7,9 @@
 #   - dsync-linux-arm64.tar.gz
 #   - dsync-darwin-amd64.tar.gz   (macOS Intel)
 #   - dsync-darwin-arm64.tar.gz   (macOS Apple Silicon)
-# 以及每个文件的 sha256 校验值。
+#   - dsync-windows-amd64.zip     (Windows x64, 内含 .exe)
+#   - dsync-windows-arm64.zip     (Windows ARM64)
+# 以及每个文件的 sha256 校验值；Windows 目标按惯例打包为 zip。
 #
 # 触发方式：
 #   - 手动触发（workflow_dispatch）或推送 cli-v* 标签：构建后覆盖发布到
@@ -52,6 +54,10 @@ jobs:
             goarch: amd64
           - goos: darwin
             goarch: arm64
+          - goos: windows
+            goarch: amd64
+          - goos: windows
+            goarch: arm64
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
@@ -76,24 +82,34 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: |
           mkdir -p dist
+          OUT="dist/dsync-${GOOS}-${GOARCH}"
+          if [ "$GOOS" = "windows" ]; then OUT="${OUT}.exe"; fi
           go build \
             -ldflags "-s -w -X main.version=${{ steps.version.outputs.version }} -X main.buildTime=${{ steps.version.outputs.build_time }}" \
             -trimpath \
-            -o "dist/dsync-${GOOS}-${GOARCH}" \
+            -o "$OUT" \
             ./cmd/dsync
 
       - name: 打包并生成校验和
         run: |
           cd dist
-          tar -czf "dsync-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz" "dsync-${{ matrix.goos }}-${{ matrix.goarch }}"
-          sha256sum "dsync-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz" > "dsync-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz.sha256"
+          NAME="dsync-${{ matrix.goos }}-${{ matrix.goarch }}"
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            zip -q "${NAME}.zip" "${NAME}.exe"
+            sha256sum "${NAME}.zip" > "${NAME}.zip.sha256"
+          else
+            tar -czf "${NAME}.tar.gz" "${NAME}"
+            sha256sum "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256"
+          fi
           ls -lh
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
           name: dsync-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/*.tar.gz*
+          path: |
+            dist/*.tar.gz*
+            dist/*.zip*
           retention-days: 14
           if-no-files-found: error
 
@@ -134,16 +150,18 @@ jobs:
           dsync --help
           \`\`\`
 
+          Windows：下载 dsync-windows-amd64.zip 解压，将 dsync-windows-amd64.exe 重命名为 dsync.exe 后放入 PATH。
+
           完整使用说明见仓库 \`docs/dsync-cli.md\`。"
 
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/*.tar.gz dist/*.sha256 dist/SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
+            gh release upload "$TAG" dist/*.tar.gz dist/*.zip dist/*.sha256 dist/SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
             gh release edit "$TAG" --latest --notes "$NOTES" --repo "$GITHUB_REPOSITORY"
           else
             gh release create "$TAG" \
               --title "dsync $TAG" \
               --notes "$NOTES" \
               --latest \
-              dist/*.tar.gz dist/*.sha256 dist/SHA256SUMS \
+              dist/*.tar.gz dist/*.zip dist/*.sha256 dist/SHA256SUMS \
               --repo "$GITHUB_REPOSITORY"
           fi

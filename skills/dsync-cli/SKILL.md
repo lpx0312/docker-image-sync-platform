@@ -26,7 +26,7 @@ description: >-
 command -v dsync
 ```
 
-没有时**必须先安装，不要直接执行 dsync**。按本机平台下载预编译包（linux/darwin × amd64/arm64，替换文件名）：
+没有时**必须先安装，不要直接执行 dsync**。按本机平台下载预编译包（linux/darwin × amd64/arm64 的 tar.gz，windows × amd64/arm64 的 zip，替换文件名）：
 
 ```bash
 # 例：linux amd64；darwin 用 dsync-darwin-amd64 / dsync-darwin-arm64，ARM 用 arm64
@@ -36,6 +36,8 @@ tar -xzf dsync-linux-amd64.tar.gz && sudo install -m 0755 dsync /usr/local/bin/d
 # GitHub 直连超时/失败时，在原 URL 前加代理前缀 https://gh.1102345.xyz/ 重试：
 curl -fLO https://gh.1102345.xyz/https://github.com/lpx0312/docker-image-sync-platform/releases/latest/download/dsync-linux-amd64.tar.gz
 ```
+
+Windows：下载 `dsync-windows-amd64.zip` 解压，把 `dsync-windows-amd64.exe` 重命名为 `dsync.exe` 放入 PATH（如 `C:/Users/<user>/bin`），PowerShell 中同样执行 `dsync <命令>`。
 
 安装后用 `dsync --version` 验证。后续命令一律写 `dsync`。
 
