@@ -95,6 +95,20 @@
 - **[技术架构](#-技术架构)** - 技术选型和架构设计
 - **[开发环境](#-方式二本地开发环境)** - 本地开发环境搭建
 
+## 🧩 作为 Claude Code 插件市场安装
+
+本仓库同时是一个 **Claude Code 插件市场**，将 `dsync` CLI 的使用能力以 Skill 形式提供给 Claude / ZCode 等 AI 客户端（定义见 `skills/dsync-cli/SKILL.md`）。
+
+在 Claude Code 中执行：
+
+```
+/plugin marketplace add lpx0312/docker-image-sync-platform
+/plugin install dsync-cli@docker-image-sync-platform
+```
+
+> 安装后，在对话中直接说"帮我同步 nginx:1.25 到国内"即可自动调用 dsync 技能。
+> CLI 二进制按 skill 内指引安装（[Releases](https://github.com/lpx0312/docker-image-sync-platform/releases/latest)，支持 linux/darwin/windows × amd64/arm64）。
+
 ## 🚀 快速开始
 
 ### 📋 前置要求

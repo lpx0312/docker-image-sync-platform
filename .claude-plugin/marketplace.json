@@ -1,0 +1,15 @@
+{
+  "name": "docker-image-sync-platform",
+  "owner": {
+    "name": "lpx0312",
+    "url": "https://github.com/lpx0312"
+  },
+  "plugins": [
+    {
+      "name": "dsync-cli",
+      "source": "./",
+      "description": "dsync CLI skill（海外镜像同步到国内仓库并获取拉取地址）",
+      "version": "0.1.0"
+    }
+  ]
+}
