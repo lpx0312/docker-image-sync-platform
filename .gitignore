@@ -105,6 +105,24 @@ coverage/
 
 # nyc test coverage
 .nyc_output
-# IDE tool runtime data
+# ===== AI Agent / 本地工具配置（不提交） =====
+.cursor/
+.claude/
+.claude-plugin.local/
+.codebuddy/
+.codex/
 .zcode/
+.zcodeignore
 .agents/
+.gemini/
+.qwen/
+.trae/
+.windsurf/
+.cline/
+.continue/
+.aider*
+.copilot/
+.kilocode/
+.roo/
+.void/
+.zed/
