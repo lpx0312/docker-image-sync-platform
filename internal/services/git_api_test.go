@@ -8,17 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"docker-image-sync-platform/internal/logger"
-
-	"go.uber.org/zap"
 )
 
-func TestMain(m *testing.M) {
-	if logger.Logger == nil {
-		logger.Logger = zap.NewNop()
-	}
-	m.Run()
-}
+// TestMain 统一定义在 testsupport_test.go（含 logger 兜底初始化）
 
 // TestGitAPIRetryRebuildsBody 验证重试时通过 GetBody 重建请求体：
 // 修复前 PUT 重试会复用已消费的 req.Body，发出空 body 导致必失败

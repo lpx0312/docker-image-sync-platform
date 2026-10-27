@@ -162,6 +162,8 @@ func runCLI(t *testing.T, cfgFile string, args ...string) (stdout string, err er
 	t.Helper()
 	cfgPath = cfgFile
 	jsonOut = false
+	// 复位命令 flag：进程内执行会残留前次值（如 retry --task），污染后续步骤
+	resetAllFlags(rootCmd)
 
 	old := os.Stdout
 	r, wr, err := os.Pipe()

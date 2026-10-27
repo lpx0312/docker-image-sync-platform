@@ -59,9 +59,36 @@ import (
 	"golang.org/x/time/rate"
 )
 
+// appServices 聚合第二阶段初始化出的全部业务服务与处理器，
+// 供 setupRouter 装配路由使用（抽取为结构体便于测试注入）。
+type appServices struct {
+	logrusLogger   *logrus.Logger
+	encryption     *services.EncryptionService
+	gitFactory     *services.GitServiceFactory
+	configService  *services.ConfigService
+	authService    *services.AuthService
+	roleService    *services.RoleService
+	syncHandler    *handlers.SyncHandler
+	imageHandler   *handlers.ImageHandler
+	configHandler  *handlers.ConfigHandler
+	authHandler    *handlers.AuthHandler
+	roleHandler    *handlers.RoleHandler
+	acrTagEncrypt  *services.EncryptionService
+}
+
 // main 是应用程序的主入口点
-// 负责初始化所有组件、设置路由、启动HTTP服务器并处理优雅关闭
 func main() {
+	if err := run(); err != nil {
+		if logger.Logger != nil {
+			logger.Logger.Fatal(err.Error())
+		} else {
+			log.Fatalf("%v", err)
+		}
+	}
+}
+
+// run 承载原 main() 的完整启动流程：基础组件 -> 业务服务 -> 路由 -> HTTP 服务
+func run() error {
 	// ========================================================================
 	// 第一阶段：基础组件初始化
 	// ========================================================================
@@ -69,21 +96,21 @@ func main() {
 	// 加载应用配置文件
 	// 从config.yaml文件中读取数据库连接、服务器端口、Git配置等信息
 	if err := config.LoadConfig("config.yaml"); err != nil {
-		log.Fatalf("加载配置失败: %v", err)
+		return fmt.Errorf("加载配置失败: %w", err)
 	}
 
 	// 初始化结构化日志系统
 	// 使用Zap库提供高性能的结构化日志记录
 	// 日志将输出到控制台和文件（logs/app.log）
 	if err := logger.InitLogger(); err != nil {
-		log.Fatalf("初始化日志失败: %v", err)
+		return fmt.Errorf("初始化日志失败: %w", err)
 	}
 	defer logger.Logger.Sync() // 确保程序退出前刷新日志缓冲区
 
 	// 初始化数据库连接
 	// 连接到MySQL数据库，使用连接池管理数据库连接
 	if err := database.InitDatabase(); err != nil {
-		logger.Logger.Fatal("初始化数据库失败", zap.Error(err))
+		return fmt.Errorf("初始化数据库失败: %w", err)
 	}
 	defer database.CloseDatabase() // 确保程序退出前关闭数据库连接
 
@@ -91,18 +118,34 @@ func main() {
 	// 根据模型定义自动创建或更新数据库表
 	// 包括：images表、sync_tasks表等
 	if err := database.AutoMigrate(); err != nil {
-		logger.Logger.Fatal("数据库表迁移失败", zap.Error(err))
+		return fmt.Errorf("数据库表迁移失败: %w", err)
 	}
 
 	// 检查并迁移加密密钥（从旧默认密钥迁移到新的 ENCRYPTION_KEY）
 	if err := database.MigrateEncryptionKeys(); err != nil {
-		logger.Logger.Fatal("加密密钥迁移失败", zap.Error(err))
+		return fmt.Errorf("加密密钥迁移失败: %w", err)
 	}
 
 	// ========================================================================
 	// 第二阶段：业务服务初始化
 	// ========================================================================
 
+	app, err := initBusinessServices()
+	if err != nil {
+		return err
+	}
+
+	// ========================================================================
+	// 第三阶段：HTTP服务器和路由配置
+	// ========================================================================
+
+	router := setupRouter(app)
+
+	return runServer(router, app.syncHandler)
+}
+
+// initBusinessServices 初始化全部业务服务与HTTP处理器（原 main() 第二阶段）
+func initBusinessServices() (*appServices, error) {
 	// 创建logrus logger用于配置服务
 	// 配置服务需要logrus.Logger，这里创建一个简单的实例
 	logrusLogger := logrus.New()
@@ -112,7 +155,7 @@ func main() {
 	// 负责敏感信息的加密解密
 	encryptionService, err := services.NewEncryptionService(logrusLogger)
 	if err != nil {
-		logger.Logger.Fatal("初始化加密服务失败", zap.Error(err))
+		return nil, fmt.Errorf("初始化加密服务失败: %w", err)
 	}
 
 	// 初始化Git服务工厂
@@ -146,10 +189,24 @@ func main() {
 	// - 定期清理过期的日志和临时文件
 	// - 定期检查镜像状态和健康度
 
-	// ========================================================================
-	// 第三阶段：HTTP服务器和路由配置
-	// ========================================================================
+	return &appServices{
+		logrusLogger:  logrusLogger,
+		encryption:    encryptionService,
+		gitFactory:    gitServiceFactory,
+		configService: configService,
+		authService:   authService,
+		roleService:   roleService,
+		syncHandler:   syncHandler,
+		imageHandler:  imageHandler,
+		configHandler: configHandler,
+		authHandler:   authHandler,
+		roleHandler:   roleHandler,
+		acrTagEncrypt: encryptionService,
+	}, nil
+}
 
+// setupRouter 创建Gin路由器并注册全部中间件与路由（原 main() 第三阶段）
+func setupRouter(app *appServices) *gin.Engine {
 	// 设置Gin框架运行模式
 	// release模式：生产环境，禁用调试信息，提高性能
 	// debug模式：开发环境，输出详细的调试信息
@@ -229,103 +286,103 @@ func main() {
 		// 认证接口（公开）
 		auth := api.Group("/auth")
 		{
-			auth.POST("/login", authHandler.Login)
+			auth.POST("/login", app.authHandler.Login)
 		}
 
 		// 需要登录的认证接口
 		authProtected := api.Group("/auth")
-		authProtected.Use(middleware.AuthRequired(authService))
+		authProtected.Use(middleware.AuthRequired(app.authService))
 		{
-			authProtected.GET("/me", authHandler.GetCurrentUser)
-			authProtected.PUT("/password", authHandler.ChangePassword)
-			authProtected.POST("/logout", authHandler.Logout)
-			authProtected.GET("/roles/options", roleHandler.ListRoleOptions)
+			authProtected.GET("/me", app.authHandler.GetCurrentUser)
+			authProtected.PUT("/password", app.authHandler.ChangePassword)
+			authProtected.POST("/logout", app.authHandler.Logout)
+			authProtected.GET("/roles/options", app.roleHandler.ListRoleOptions)
 		}
 
 		// 用户管理接口
 		authUsers := api.Group("/auth")
-		authUsers.Use(middleware.AuthRequired(authService), middleware.PermissionRequired(roleService, models.PermUsers))
+		authUsers.Use(middleware.AuthRequired(app.authService), middleware.PermissionRequired(app.roleService, models.PermUsers))
 		{
-			authUsers.GET("/login-logs", authHandler.GetLoginLogs)
-			authUsers.GET("/users", authHandler.ListUsers)
-			authUsers.POST("/users", authHandler.CreateUser)
-			authUsers.PUT("/users/:id/status", authHandler.UpdateUserStatus)
-			authUsers.PUT("/users/:id/role", authHandler.UpdateUserRole)
-			authUsers.DELETE("/users/:id", authHandler.DeleteUser)
-			authUsers.PUT("/users/:id/password", authHandler.ResetUserPassword)
+			authUsers.GET("/login-logs", app.authHandler.GetLoginLogs)
+			authUsers.GET("/users", app.authHandler.ListUsers)
+			authUsers.POST("/users", app.authHandler.CreateUser)
+			authUsers.PUT("/users/:id/status", app.authHandler.UpdateUserStatus)
+			authUsers.PUT("/users/:id/role", app.authHandler.UpdateUserRole)
+			authUsers.DELETE("/users/:id", app.authHandler.DeleteUser)
+			authUsers.PUT("/users/:id/password", app.authHandler.ResetUserPassword)
 		}
 
 		// 角色管理接口
 		authRoles := api.Group("/auth")
-		authRoles.Use(middleware.AuthRequired(authService), middleware.PermissionRequired(roleService, models.PermRoles))
+		authRoles.Use(middleware.AuthRequired(app.authService), middleware.PermissionRequired(app.roleService, models.PermRoles))
 		{
-			authRoles.GET("/permissions", roleHandler.ListPermissions)
-			authRoles.GET("/roles", roleHandler.ListRoles)
-			authRoles.POST("/roles", roleHandler.CreateRole)
-			authRoles.GET("/roles/:id", roleHandler.GetRole)
-			authRoles.PUT("/roles/:id", roleHandler.UpdateRole)
-			authRoles.DELETE("/roles/:id", roleHandler.DeleteRole)
+			authRoles.GET("/permissions", app.roleHandler.ListPermissions)
+			authRoles.GET("/roles", app.roleHandler.ListRoles)
+			authRoles.POST("/roles", app.roleHandler.CreateRole)
+			authRoles.GET("/roles/:id", app.roleHandler.GetRole)
+			authRoles.PUT("/roles/:id", app.roleHandler.UpdateRole)
+			authRoles.DELETE("/roles/:id", app.roleHandler.DeleteRole)
 		}
 
 		// 以下所有业务接口需要登录
 		protected := api.Group("")
-		protected.Use(middleware.AuthRequired(authService))
+		protected.Use(middleware.AuthRequired(app.authService))
 		{
 			syncGroup := protected.Group("/sync")
-			syncGroup.Use(middleware.PermissionRequired(roleService, models.PermSync))
+			syncGroup.Use(middleware.PermissionRequired(app.roleService, models.PermSync))
 			{
-				syncGroup.POST("/submit", middleware.SyncRateLimit(), syncHandler.SubmitSync)
-				syncGroup.POST("/batch", middleware.SyncRateLimit(), syncHandler.SubmitBatchSync)
-				syncGroup.POST("/batch/mock", middleware.SyncRateLimit(), syncHandler.SubmitMockBatchSync)
-				syncGroup.GET("/status/:taskId", syncHandler.GetSyncStatus)
-				syncGroup.GET("/batch/status/:taskId", syncHandler.GetBatchSyncStatus)
-				syncGroup.GET("/history", syncHandler.GetSyncHistory)
-				syncGroup.GET("/suggest-acr", syncHandler.SuggestAcr)
-				syncGroup.POST("/check-acr", syncHandler.CheckAcr)
+				syncGroup.POST("/submit", middleware.SyncRateLimit(), app.syncHandler.SubmitSync)
+				syncGroup.POST("/batch", middleware.SyncRateLimit(), app.syncHandler.SubmitBatchSync)
+				syncGroup.POST("/batch/mock", middleware.SyncRateLimit(), app.syncHandler.SubmitMockBatchSync)
+				syncGroup.GET("/status/:taskId", app.syncHandler.GetSyncStatus)
+				syncGroup.GET("/batch/status/:taskId", app.syncHandler.GetBatchSyncStatus)
+				syncGroup.GET("/history", app.syncHandler.GetSyncHistory)
+				syncGroup.GET("/suggest-acr", app.syncHandler.SuggestAcr)
+				syncGroup.POST("/check-acr", app.syncHandler.CheckAcr)
 			}
 
 			images := protected.Group("/images")
-			images.Use(middleware.PermissionRequiredAny(roleService, models.PermSync, models.PermImages))
+			images.Use(middleware.PermissionRequiredAny(app.roleService, models.PermSync, models.PermImages))
 			{
-				images.GET("/list", imageHandler.GetImages)
-				images.GET("/stats", imageHandler.GetImageStats)
-				images.POST("/batch-check", imageHandler.BatchCheckImages)
-				images.GET("/:id", imageHandler.GetImage)
-				images.DELETE("/:id", imageHandler.DeleteImage)
-				images.POST("/:id/retry", syncHandler.RetrySync)
-				images.POST("/:id/check", imageHandler.CheckImageExists)
+				images.GET("/list", app.imageHandler.GetImages)
+				images.GET("/stats", app.imageHandler.GetImageStats)
+				images.POST("/batch-check", app.imageHandler.BatchCheckImages)
+				images.GET("/:id", app.imageHandler.GetImage)
+				images.DELETE("/:id", app.imageHandler.DeleteImage)
+				images.POST("/:id/retry", app.syncHandler.RetrySync)
+				images.POST("/:id/check", app.imageHandler.CheckImageExists)
 			}
 
 			github := protected.Group("/github")
-			github.Use(middleware.PermissionRequired(roleService, models.PermGitHub))
+			github.Use(middleware.PermissionRequired(app.roleService, models.PermGitHub))
 			{
-			github.GET("/runs", func(c *gin.Context) {
-				page := 1
-				perPage := 10
-				if p := c.Query("page"); p != "" {
-					if parsed, err := strconv.Atoi(p); err == nil && parsed > 0 {
-						page = parsed
+				github.GET("/runs", func(c *gin.Context) {
+					page := 1
+					perPage := 10
+					if p := c.Query("page"); p != "" {
+						if parsed, err := strconv.Atoi(p); err == nil && parsed > 0 {
+							page = parsed
+						}
 					}
-				}
-				if pp := c.Query("per_page"); pp != "" {
-					if parsed, err := strconv.Atoi(pp); err == nil && parsed > 0 && parsed <= 100 {
-						perPage = parsed
+					if pp := c.Query("per_page"); pp != "" {
+						if parsed, err := strconv.Atoi(pp); err == nil && parsed > 0 && parsed <= 100 {
+							perPage = parsed
+						}
 					}
-				}
-				status := c.Query("status")
-				githubAPIService := gitServiceFactory.GetGitHubAPIService()
-				runs, err := githubAPIService.ListWorkflowRuns(page, perPage, status)
-				if err != nil {
-					logger.Logger.Error("GitHub API 调用失败", zap.Error(err))
-					c.JSON(http.StatusInternalServerError, gin.H{"error": "GitHub API 调用失败，请稍后重试"})
-					return
-				}
-				c.JSON(http.StatusOK, runs)
-			})
+					status := c.Query("status")
+					githubAPIService := app.gitFactory.GetGitHubAPIService()
+					runs, err := githubAPIService.ListWorkflowRuns(page, perPage, status)
+					if err != nil {
+						logger.Logger.Error("GitHub API 调用失败", zap.Error(err))
+						c.JSON(http.StatusInternalServerError, gin.H{"error": "GitHub API 调用失败，请稍后重试"})
+						return
+					}
+					c.JSON(http.StatusOK, runs)
+				})
 
 				github.GET("/runs/:runId", func(c *gin.Context) {
 					runID := c.Param("runId")
-					githubAPIService := gitServiceFactory.GetGitHubAPIService()
+					githubAPIService := app.gitFactory.GetGitHubAPIService()
 					run, err := githubAPIService.GetWorkflowRunDetails(runID)
 					if err != nil {
 						logger.Logger.Error("GitHub API 调用失败", zap.Error(err))
@@ -336,7 +393,7 @@ func main() {
 				})
 
 				github.GET("/rate-limit", func(c *gin.Context) {
-					githubAPIService := gitServiceFactory.GetGitHubAPIService()
+					githubAPIService := app.gitFactory.GetGitHubAPIService()
 					rateLimit, err := githubAPIService.CheckRateLimit()
 					if err != nil {
 						logger.Logger.Error("GitHub API 调用失败", zap.Error(err))
@@ -347,7 +404,7 @@ func main() {
 				})
 
 				github.GET("/actions-usage", func(c *gin.Context) {
-					githubAPIService := gitServiceFactory.GetGitHubAPIService()
+					githubAPIService := app.gitFactory.GetGitHubAPIService()
 					usage, err := githubAPIService.GetActionsUsage()
 					if err != nil {
 						logger.Logger.Error("GitHub API 调用失败", zap.Error(err))
@@ -359,32 +416,32 @@ func main() {
 			}
 
 			configGroup := protected.Group("/config")
-			configGroup.Use(middleware.PermissionRequired(roleService, models.PermConfig))
+			configGroup.Use(middleware.PermissionRequired(app.roleService, models.PermConfig))
 			{
-				configGroup.GET("/status", configHandler.GetConfigStatus)
-				configGroup.GET("/git-repository", configHandler.GetGitRepositoryConfig)
-				configGroup.PUT("/git-repository", configHandler.UpdateGitRepositoryConfig)
-				configGroup.GET("/git", configHandler.GetGitConfig)
-				configGroup.PUT("/git/gitee", configHandler.UpdateGiteeConfig)
-				configGroup.PUT("/git/github", configHandler.UpdateGitHubConfig)
-				configGroup.POST("/git/test", configHandler.TestGitConnection)
-				configGroup.GET("/git-optimization", configHandler.GetGitOptimizationConfig)
-				configGroup.PUT("/git-optimization", configHandler.UpdateGitOptimizationConfig)
-				configGroup.GET("/git-performance", configHandler.GetGitPerformanceMetrics)
-				configGroup.GET("/git-network-test", configHandler.TestGitNetworkQuality)
-				configGroup.POST("/git-test-operations", configHandler.TestGitOperations)
-				configGroup.GET("/aliyun-db", configHandler.GetAliyunConfig)
-				configGroup.PUT("/aliyun-db", configHandler.UpdateAliyunConfig)
-				configGroup.POST("/aliyun/test", configHandler.TestAliyunConnection)
-				configGroup.GET("/all", configHandler.GetAllConfigs)
+				configGroup.GET("/status", app.configHandler.GetConfigStatus)
+				configGroup.GET("/git-repository", app.configHandler.GetGitRepositoryConfig)
+				configGroup.PUT("/git-repository", app.configHandler.UpdateGitRepositoryConfig)
+				configGroup.GET("/git", app.configHandler.GetGitConfig)
+				configGroup.PUT("/git/gitee", app.configHandler.UpdateGiteeConfig)
+				configGroup.PUT("/git/github", app.configHandler.UpdateGitHubConfig)
+				configGroup.POST("/git/test", app.configHandler.TestGitConnection)
+				configGroup.GET("/git-optimization", app.configHandler.GetGitOptimizationConfig)
+				configGroup.PUT("/git-optimization", app.configHandler.UpdateGitOptimizationConfig)
+				configGroup.GET("/git-performance", app.configHandler.GetGitPerformanceMetrics)
+				configGroup.GET("/git-network-test", app.configHandler.TestGitNetworkQuality)
+				configGroup.POST("/git-test-operations", app.configHandler.TestGitOperations)
+				configGroup.GET("/aliyun-db", app.configHandler.GetAliyunConfig)
+				configGroup.PUT("/aliyun-db", app.configHandler.UpdateAliyunConfig)
+				configGroup.POST("/aliyun/test", app.configHandler.TestAliyunConnection)
+				configGroup.GET("/all", app.configHandler.GetAllConfigs)
 			}
 
 			// ACR配置管理
-			acrRegistryService := services.NewAcrRegistryService(database.DB, encryptionService)
+			acrRegistryService := services.NewAcrRegistryService(database.DB, app.encryption)
 			acrRegistryHandler := handlers.NewAcrRegistryHandler(acrRegistryService)
 
 			acrRegistriesRead := protected.Group("/acr-registries")
-			acrRegistriesRead.Use(middleware.PermissionRequiredAny(roleService, models.PermSync, models.PermImages, models.PermConfig))
+			acrRegistriesRead.Use(middleware.PermissionRequiredAny(app.roleService, models.PermSync, models.PermImages, models.PermConfig))
 			{
 				acrRegistriesRead.GET("", acrRegistryHandler.GetAll)
 				acrRegistriesRead.GET("/default", acrRegistryHandler.GetDefault)
@@ -393,7 +450,7 @@ func main() {
 			}
 
 			acrRegistriesWrite := protected.Group("/acr-registries")
-			acrRegistriesWrite.Use(middleware.PermissionRequired(roleService, models.PermConfig))
+			acrRegistriesWrite.Use(middleware.PermissionRequired(app.roleService, models.PermConfig))
 			{
 				acrRegistriesWrite.POST("", acrRegistryHandler.Create)
 				acrRegistriesWrite.PUT("/:id", acrRegistryHandler.Update)
@@ -403,11 +460,11 @@ func main() {
 			}
 
 			// 镜像仓库台账管理（ACR / SWR 通用，客户端按仓库类型内部分发）
-			acrRepositoryService := services.NewAcrRepositoryService(database.DB, encryptionService)
+			acrRepositoryService := services.NewAcrRepositoryService(database.DB, app.encryption)
 			acrRepositoryHandler := handlers.NewAcrRepositoryHandler(acrRepositoryService)
 
 			acrRepositories := protected.Group("/acr-repositories")
-			acrRepositories.Use(middleware.PermissionRequired(roleService, models.PermImages))
+			acrRepositories.Use(middleware.PermissionRequired(app.roleService, models.PermImages))
 			{
 				acrRepositories.GET("", acrRepositoryHandler.GetAll)
 				acrRepositories.GET("/duplicates", acrRepositoryHandler.GetDuplicates)
@@ -421,10 +478,10 @@ func main() {
 			}
 
 			// 镜像仓库 Tag 查询（ACR / SWR 通用）
-			acrTagHandler := handlers.NewAcrTagHandler(encryptionService)
+			acrTagHandler := handlers.NewAcrTagHandler(app.acrTagEncrypt)
 
 			acrTags := protected.Group("/acr-tags")
-			acrTags.Use(middleware.PermissionRequired(roleService, models.PermImages))
+			acrTags.Use(middleware.PermissionRequired(app.roleService, models.PermImages))
 			{
 				acrTags.GET("", acrTagHandler.GetTags)
 				acrTags.GET("/details", acrTagHandler.GetTagsDetails)
@@ -433,10 +490,26 @@ func main() {
 		}
 	}
 
-	// ========================================================================
-	// HTTP服务器启动和优雅关闭
-	// ========================================================================
+	return router
+}
 
+// runServer 启动HTTP服务器并阻塞等待系统信号，收到信号后优雅关闭
+func runServer(router *gin.Engine, syncHandler *handlers.SyncHandler) error {
+	// 创建信号通道，用于接收系统中断信号
+	quit := make(chan os.Signal, 1)
+
+	// 注册要监听的系统信号
+	// SIGINT: Ctrl+C中断信号
+	// SIGTERM: 终止信号（Docker stop等）
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(quit)
+
+	return serveUntilSignal(router, syncHandler, quit)
+}
+
+// serveUntilSignal 启动HTTP服务器，阻塞等待 quit 信号后执行优雅关闭。
+// 信号通道以参数注入，便于测试在不依赖真实系统信号的情况下验证关闭流程。
+func serveUntilSignal(router *gin.Engine, syncHandler *handlers.SyncHandler, quit <-chan os.Signal) error {
 	// 创建HTTP服务器实例
 	// 配置监听地址和处理器
 	srv := &http.Server{
@@ -455,18 +528,6 @@ func main() {
 			logger.Logger.Fatal("启动服务器失败", zap.Error(err))
 		}
 	}()
-
-	// ========================================================================
-	// 优雅关闭处理
-	// ========================================================================
-
-	// 创建信号通道，用于接收系统中断信号
-	quit := make(chan os.Signal, 1)
-
-	// 注册要监听的系统信号
-	// SIGINT: Ctrl+C中断信号
-	// SIGTERM: 终止信号（Docker stop等）
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	// 阻塞等待中断信号
 	<-quit
@@ -489,4 +550,5 @@ func main() {
 	syncHandler.Shutdown()
 
 	logger.Logger.Info("服务器已安全关闭")
+	return nil
 }
