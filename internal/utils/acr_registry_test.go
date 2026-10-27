@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -253,7 +254,7 @@ func TestDetectArchitecturesHTTPFallback_Success(t *testing.T) {
 	}))
 	redirectHTTPTransport(t, host)
 
-	out, err := detectArchitecturesHTTPFallback(t.Context(), parseRef(t, host+"/myrepo:tag"), 0)
+	out, err := detectArchitecturesHTTPFallback(context.Background(), parseRef(t, host+"/myrepo:tag"), 0)
 	noErr(t, err)
 	eq(t, []string{"amd64", "arm64", "ppc64le"}, out)
 }
@@ -266,7 +267,7 @@ func TestDetectArchitecturesHTTPFallback_Schema1AndErrors(t *testing.T) {
 			writeJSON(w, http.StatusOK, []byte(`{"schemaVersion":1,"architecture":"arm"}`), "")
 		}))
 		redirectHTTPTransport(t, host)
-		out, err := detectArchitecturesHTTPFallback(t.Context(), parseRef(t, host+"/repo:t"), 0)
+		out, err := detectArchitecturesHTTPFallback(context.Background(), parseRef(t, host+"/repo:t"), 0)
 		noErr(t, err)
 		eq(t, []string{"arm"}, out)
 	})
@@ -276,14 +277,14 @@ func TestDetectArchitecturesHTTPFallback_Schema1AndErrors(t *testing.T) {
 			writeJSON(w, http.StatusInternalServerError, []byte("boom"), "")
 		}))
 		redirectHTTPTransport(t, host)
-		_, err := detectArchitecturesHTTPFallback(t.Context(), parseRef(t, host+"/repo:t"), 0)
+		_, err := detectArchitecturesHTTPFallback(context.Background(), parseRef(t, host+"/repo:t"), 0)
 		errContains(t, err, "manifest HTTP 500")
 		contains(t, err.Error(), "boom")
 	})
 
 	t.Run("连接失败", func(t *testing.T) {
 		// 指向无监听的端口，连接拒绝，快速失败
-		_, err := detectArchitecturesHTTPFallback(t.Context(), parseRef(t, "127.0.0.1:1/repo:t"), 0)
+		_, err := detectArchitecturesHTTPFallback(context.Background(), parseRef(t, "127.0.0.1:1/repo:t"), 0)
 		isErr(t, err)
 	})
 
@@ -300,7 +301,7 @@ func TestDetectArchitecturesHTTPFallback_Schema1AndErrors(t *testing.T) {
 			panic(http.ErrAbortHandler) // 立即断开连接
 		}))
 		redirectHTTPTransport(t, host)
-		_, err := detectArchitecturesHTTPFallback(t.Context(), parseRef(t, host+"/repo:t"), 0)
+		_, err := detectArchitecturesHTTPFallback(context.Background(), parseRef(t, host+"/repo:t"), 0)
 		isErr(t, err)
 	})
 
@@ -319,7 +320,7 @@ func TestDetectArchitecturesHTTPFallback_Schema1AndErrors(t *testing.T) {
 		}))
 		redirectHTTPTransport(t, host)
 
-		out, err := detectArchitecturesHTTPFallback(t.Context(), parseRef(t, host+"/repo:t"), row.ID)
+		out, err := detectArchitecturesHTTPFallback(context.Background(), parseRef(t, host+"/repo:t"), row.ID)
 		noErr(t, err)
 		eq(t, []string{"amd64"}, out)
 

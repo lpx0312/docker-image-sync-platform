@@ -215,8 +215,16 @@ func TestInitLogger_LevelFiltering(t *testing.T) {
 
 func TestInitLogger_RelativeFilePath(t *testing.T) {
 	saveGlobals(t)
-	// 相对路径: 日志目录为当前目录，t.Chdir 到临时目录避免污染仓库
-	t.Chdir(tempLogDir(t))
+	// 相对路径: 日志目录为当前目录；go1.21 无 t.Chdir，手动切目录并恢复
+	dir := tempLogDir(t)
+	wd, wdErr := os.Getwd()
+	if wdErr != nil {
+		t.Fatal(wdErr)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(wd) })
 	setLogConfig(t, "info", "app.log", 100, 3, 28)
 
 	noErr(t, InitLogger())

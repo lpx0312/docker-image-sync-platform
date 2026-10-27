@@ -86,10 +86,12 @@ jobs:
       # 需同时替换 host 与 Nexus 路径前缀，公共源的 tarball 路径从包名开始
       - name: 替换 lock 中的内网 npm 源为公共源
         run: |
+          # Nexus 各仓库（proxy-npm-taobao / npm-group 等）的 tarball 路径布局一致：
+          # /repository/<repo>/<pkg>/-/<pkg>-<ver>.tgz，统一把 host+repo 段替换为目标源
           if [ "${{ github.event_name == 'workflow_dispatch' && inputs.zone == 'cn' }}" = "true" ]; then
-            sed -i 's#http://192.168.0.12/repository/proxy-npm-taobao/#https://registry.npmmirror.com/#g' package-lock.json
+            sed -i 's#http://192\.168\.0\.12/repository/[a-z-]\+/\?#https://registry.npmmirror.com/#g' package-lock.json
           else
-            sed -i 's#http://192.168.0.12/repository/proxy-npm-taobao/#https://registry.npmjs.org/#g' package-lock.json
+            sed -i 's#http://192\.168\.0\.12/repository/[a-z-]\+/\?#https://registry.npmjs.org/#g' package-lock.json
           fi
           echo "替换后残留内网地址：$(grep -c '192.168.0.12' package-lock.json || true)"
 
