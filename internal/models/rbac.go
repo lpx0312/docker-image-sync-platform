@@ -4,8 +4,12 @@ import "time"
 
 // Permission 权限定义（注册表，启动时 seed）
 type Permission struct {
-	ID          uint      `json:"id" gorm:"primaryKey"`
-	Code        string    `json:"code" gorm:"type:varchar(50);uniqueIndex;not null"`
+	ID uint `json:"id" gorm:"primaryKey"`
+	// 注意：此处必须用 unique（列级约束）而非 uniqueIndex。存量库的 code 列在
+	// information_schema 中 column_key='UNI'，若模型声明 uniqueIndex（field.Unique=false），
+	// GORM 的 MigrateColumnUnique 会误判"需要删除多余 UNIQUE 约束"，对 MySQL 生成
+	// DROP FOREIGN KEY uni_permissions_code 并以 1091 失败，导致后端启动即 FATAL。
+	Code        string    `json:"code" gorm:"type:varchar(50);unique;not null"`
 	Name        string    `json:"name" gorm:"type:varchar(100);not null"`
 	Description string    `json:"description" gorm:"type:varchar(255)"`
 	SortOrder   int       `json:"sort_order" gorm:"default:0"`
@@ -15,8 +19,9 @@ type Permission struct {
 
 // Role 角色定义
 type Role struct {
-	ID          uint         `json:"id" gorm:"primaryKey"`
-	Code        string       `json:"code" gorm:"type:varchar(50);uniqueIndex;not null"`
+	ID uint `json:"id" gorm:"primaryKey"`
+	// 同 Permission.Code：必须用 unique 而非 uniqueIndex，否则存量库迁移触发 1091。
+	Code        string       `json:"code" gorm:"type:varchar(50);unique;not null"`
 	Name        string       `json:"name" gorm:"type:varchar(100);not null"`
 	Description string       `json:"description" gorm:"type:varchar(255)"`
 	IsSystem    bool         `json:"is_system" gorm:"default:false"`

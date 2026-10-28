@@ -116,7 +116,7 @@ type ImageSyncRecord struct {
 //   - 任务历史记录和统计分析
 type SyncTask struct {
 	ID              uint       `json:"id" gorm:"primaryKey"`                                                                               // 主键ID
-	TaskID          string     `json:"task_id" gorm:"type:varchar(100);uniqueIndex;not null"`                                              // 任务唯一标识符，建立唯一索引
+	TaskID          string     `json:"task_id" gorm:"type:varchar(100);unique;not null"`                                              // 任务唯一标识符，唯一约束（勿改回 uniqueIndex，见 rbac.go 说明）
 	ImagesJSON      string     `json:"images_json" gorm:"type:text"`                                                                       // 镜像列表的JSON存储，支持复杂数据结构
 	Status          string     `json:"status" gorm:"type:enum('pending','running','completed','failed','paused','partial_success');default:'pending';index"` // 任务状态，建立索引以提高状态查询性能
 	GitHubActionURL string     `json:"github_action_url" gorm:"column:github_action_url;type:varchar(500)"`                                  // GitHub Actions工作流页面链接
@@ -165,7 +165,7 @@ type SyncTask struct {
 //   - 配置变更历史追踪
 type SystemConfig struct {
 	ID           uint           `json:"id" gorm:"primaryKey"`                                     // 主键ID
-	ConfigKey    string         `json:"config_key" gorm:"type:varchar(100);uniqueIndex;not null"` // 配置键，建立唯一索引确保键的唯一性
+	ConfigKey    string         `json:"config_key" gorm:"type:varchar(100);unique;not null"` // 配置键，唯一约束确保键的唯一性（勿改回 uniqueIndex，见 rbac.go 说明）
 	ConfigValue  string         `json:"config_value" gorm:"type:text"`                            // 配置值，支持长文本存储复杂配置
 	Description  string         `json:"description" gorm:"type:varchar(500)"`                     // 配置描述，便于理解配置用途
 	IsEncrypted  bool           `json:"is_encrypted" gorm:"default:false"`                        // 是否加密存储，用于标识敏感信息
@@ -179,7 +179,7 @@ type SystemConfig struct {
 // User 用户数据模型
 type User struct {
 	ID           uint           `json:"id" gorm:"primaryKey"`
-	Username     string         `json:"username" gorm:"type:varchar(50);uniqueIndex;not null"`
+	Username     string         `json:"username" gorm:"type:varchar(50);unique;not null"`
 	PasswordHash string         `json:"-" gorm:"type:varchar(255);not null"`
 	Email        string         `json:"email" gorm:"type:varchar(100)"`
 	RoleID       uint           `json:"role_id" gorm:"not null;index"`
