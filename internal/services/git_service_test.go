@@ -117,6 +117,23 @@ func gitSvcGitHubCfg(t *testing.T, db *gorm.DB, repoURL, localPath string) {
 	})
 }
 
+// gitSvcGiteeLocalCfg 本地 origin 专用的 gitee 配置：token/密码均为空。
+// 生产 buildAuthURL 在双空 secret 时原样返回仓库地址——本地路径不带凭证，
+// Linux 上 "user:token@/tmp/..." 会被 git 当 scp 语法解析导致克隆失败
+// （Windows 路径反斜杠使 URL opaque、凭证被静默丢弃，两种平台行为不一致）。
+func gitSvcGiteeLocalCfg(t *testing.T, db *gorm.DB, repoURL, localPath string) {
+	t.Helper()
+	gitSvcCfg(t, db, map[string]string{
+		"git_repository_type": "gitee",
+		"gitee_repo_url":      repoURL,
+		"gitee_username":      "tester",
+		"gitee_token":         "",
+		"gitee_password":      "",
+		"gitee_email":         "t@t.io",
+		"gitee_local_path":    localPath,
+	})
+}
+
 // newGitSvcEnv 建服务实例并替换全局 DB
 func newGitSvcEnv(t *testing.T) (*GitService, *gorm.DB, *EncryptionService) {
 	t.Helper()
@@ -272,7 +289,7 @@ func TestGitService_InitRepository(t *testing.T) {
 		svc, db, _ := newGitSvcEnv(t)
 		origin := gitSvcOriginMain(t)
 		local := filepath.Join(t.TempDir(), "repo")
-		gitSvcGiteeCfg(t, db, origin, local)
+		gitSvcGiteeLocalCfg(t, db, origin, local)
 
 		require.NoError(t, svc.InitRepository())
 		assert.Equal(t, local, svc.repoPath)
@@ -288,7 +305,7 @@ func TestGitService_InitRepository(t *testing.T) {
 		svc, db, _ := newGitSvcEnv(t)
 		origin := gitSvcOriginMain(t)
 		local := filepath.Join(t.TempDir(), "repo")
-		gitSvcGiteeCfg(t, db, origin, local)
+		gitSvcGiteeLocalCfg(t, db, origin, local)
 		// token 行存在但值为空 -> 走密码认证分支（本地 file origin 忽略凭证）
 		gitSvcCfg(t, db, map[string]string{"gitee_token": "", "gitee_password": "pw-123"})
 
@@ -301,7 +318,7 @@ func TestGitService_InitRepository(t *testing.T) {
 		origin := gitSvcOriginMain(t)
 		local := filepath.Join(t.TempDir(), "repo")
 		gitSvcRun(t, "", "clone", origin, local)
-		gitSvcGiteeCfg(t, db, origin, local)
+		gitSvcGiteeLocalCfg(t, db, origin, local)
 
 		require.NoError(t, svc.InitRepository())
 		assert.NotNil(t, svc.repo)
@@ -315,7 +332,7 @@ func TestGitService_InitRepository(t *testing.T) {
 		require.NoError(t, os.MkdirAll(local, 0o755))
 		// .git 是普通文件而非目录：os.Stat 成功但 PlainOpen 失败
 		require.NoError(t, os.WriteFile(filepath.Join(local, ".git"), []byte("fake"), 0o644))
-		gitSvcGiteeCfg(t, db, gitSvcOriginMain(t), local)
+		gitSvcGiteeLocalCfg(t, db, gitSvcOriginMain(t), local)
 
 		err := svc.InitRepository()
 		require.Error(t, err)
@@ -367,7 +384,7 @@ func TestGitService_InitRepository(t *testing.T) {
 
 	t.Run("URL解析失败", func(t *testing.T) {
 		svc, db, _ := newGitSvcEnv(t)
-		gitSvcGiteeCfg(t, db, "://bad-url", filepath.Join(t.TempDir(), "r"))
+		gitSvcGiteeLocalCfg(t, db, "://bad-url", filepath.Join(t.TempDir(), "r"))
 		err := svc.InitRepository()
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "解析Git仓库URL失败")
@@ -377,7 +394,7 @@ func TestGitService_InitRepository(t *testing.T) {
 		svc, db, _ := newGitSvcEnv(t)
 		blocker := filepath.Join(t.TempDir(), "blocker")
 		require.NoError(t, os.WriteFile(blocker, []byte("x"), 0o644))
-		gitSvcGiteeCfg(t, db, gitSvcOriginMain(t), filepath.Join(blocker, "repo"))
+		gitSvcGiteeLocalCfg(t, db, gitSvcOriginMain(t), filepath.Join(blocker, "repo"))
 
 		err := svc.InitRepository()
 		require.Error(t, err)
@@ -387,7 +404,7 @@ func TestGitService_InitRepository(t *testing.T) {
 	t.Run("克隆失败_远端不存在", func(t *testing.T) {
 		svc, db, _ := newGitSvcEnv(t)
 		missing := filepath.Join(t.TempDir(), "not-exist.git")
-		gitSvcGiteeCfg(t, db, missing, filepath.Join(t.TempDir(), "r"))
+		gitSvcGiteeLocalCfg(t, db, missing, filepath.Join(t.TempDir(), "r"))
 		err := svc.InitRepository()
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "克隆仓库失败")
@@ -405,7 +422,7 @@ func TestGitService_UpdateImagesFile_E2E(t *testing.T) {
 		svc, db, _ := newGitSvcEnv(t)
 		origin := gitSvcOriginMain(t)
 		local := filepath.Join(t.TempDir(), "repo")
-		gitSvcGiteeCfg(t, db, origin, local)
+		gitSvcGiteeLocalCfg(t, db, origin, local)
 
 		sha, err := svc.UpdateImagesFile(context.Background(), []string{"nginx:1.25", "redis:7"})
 		require.NoError(t, err)
@@ -427,7 +444,7 @@ func TestGitService_UpdateImagesFile_E2E(t *testing.T) {
 		svc, db, _ := newGitSvcEnv(t)
 		origin := gitSvcOriginMain(t)
 		local := filepath.Join(t.TempDir(), "repo")
-		gitSvcGiteeCfg(t, db, origin, local)
+		gitSvcGiteeLocalCfg(t, db, origin, local)
 
 		_, err := svc.UpdateImagesFile(context.Background(), []string{"a:1"})
 		require.NoError(t, err)
@@ -443,7 +460,7 @@ func TestGitService_UpdateImagesFile_E2E(t *testing.T) {
 		svc, db, _ := newGitSvcEnv(t)
 		origin := gitSvcOriginMain(t)
 		local := filepath.Join(t.TempDir(), "repo")
-		gitSvcGiteeCfg(t, db, origin, local)
+		gitSvcGiteeLocalCfg(t, db, origin, local)
 		repo, _ := gitSvcOpen(t, origin, local)
 		svc.repo, svc.repoPath = repo, local
 
@@ -481,7 +498,7 @@ func TestGitService_UpdateImagesFile_E2E(t *testing.T) {
 		svc, db, _ := newGitSvcEnv(t)
 		origin := gitSvcOrigin(t, map[string]string{"README.md": "hi\n"}, "main")
 		local := filepath.Join(t.TempDir(), "repo")
-		gitSvcGiteeCfg(t, db, origin, local)
+		gitSvcGiteeLocalCfg(t, db, origin, local)
 
 		sha, err := svc.UpdateImagesFile(context.Background(), []string{"first:1"})
 		require.NoError(t, err)
@@ -499,7 +516,7 @@ func TestGitService_UpdateImagesFile_FailureAndRecovery(t *testing.T) {
 		origin := gitSvcOriginMain(t)
 		local := filepath.Join(t.TempDir(), "repo")
 		repo, _ := gitSvcOpen(t, origin, local)
-		gitSvcGiteeCfg(t, db, origin, local)
+		gitSvcGiteeLocalCfg(t, db, origin, local)
 		svc.repo, svc.repoPath = repo, local
 		// 本地 remote 指向坏地址 → pullLatest 失败 → CleanRepository+重新克隆（用配置里的正确 origin）
 		gitSvcRun(t, local, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone.git"))
@@ -517,7 +534,7 @@ func TestGitService_UpdateImagesFile_FailureAndRecovery(t *testing.T) {
 		local := filepath.Join(t.TempDir(), "empty-repo")
 		require.NoError(t, os.MkdirAll(local, 0o755))
 		missing := filepath.Join(t.TempDir(), "missing-origin.git")
-		gitSvcGiteeCfg(t, db, missing, local)
+		gitSvcGiteeLocalCfg(t, db, missing, local)
 		svc.repo, svc.repoPath = nil, local
 
 		_, err := svc.UpdateImagesFile(context.Background(), []string{"x:1"})
@@ -537,7 +554,7 @@ func TestGitService_UpdateImagesFile_FailureAndRecovery(t *testing.T) {
 		origin := gitSvcOriginMain(t)
 		local := filepath.Join(t.TempDir(), "repo")
 		repo, _ := gitSvcOpen(t, origin, local)
-		gitSvcGiteeCfg(t, db, origin, local)
+		gitSvcGiteeLocalCfg(t, db, origin, local)
 		svc.repo = repo
 		// repoPath 指向普通文件下的子路径 → os.Create 失败
 		blocker := filepath.Join(t.TempDir(), "blocker")
@@ -555,7 +572,7 @@ func TestGitService_UpdateImagesFile_FailureAndRecovery(t *testing.T) {
 		origin := gitSvcOrigin(t, map[string]string{"README.md": "x\n"}, "main")
 		local := filepath.Join(t.TempDir(), "repo")
 		repo, _ := gitSvcOpen(t, origin, local)
-		gitSvcGiteeCfg(t, db, origin, local)
+		gitSvcGiteeLocalCfg(t, db, origin, local)
 		svc.repo = repo
 		// repoPath 指向可写的其他目录（writeImagesFile 成功，但工作区里没有 images.txt）
 		svc.repoPath = t.TempDir()
@@ -606,7 +623,7 @@ func TestGitService_PullLatest(t *testing.T) {
 		origin := gitSvcOriginMain(t)
 		local := filepath.Join(t.TempDir(), "repo")
 		repo, _ := gitSvcOpen(t, origin, local)
-		gitSvcGiteeCfg(t, db, origin, local)
+		gitSvcGiteeLocalCfg(t, db, origin, local)
 		svc.repo, svc.repoPath = repo, local
 		require.NoError(t, svc.pullLatest())
 	})
@@ -616,7 +633,7 @@ func TestGitService_PullLatest(t *testing.T) {
 		origin := gitSvcOriginMain(t)
 		local := filepath.Join(t.TempDir(), "repo")
 		repo, _ := gitSvcOpen(t, origin, local)
-		gitSvcGiteeCfg(t, db, origin, local)
+		gitSvcGiteeLocalCfg(t, db, origin, local)
 		svc.repo, svc.repoPath = repo, local
 
 		sibling := filepath.Join(t.TempDir(), "sibling")
@@ -637,7 +654,7 @@ func TestGitService_PullLatest(t *testing.T) {
 		origin := gitSvcOriginMain(t)
 		local := filepath.Join(t.TempDir(), "repo")
 		repo, _ := gitSvcOpen(t, origin, local)
-		gitSvcGiteeCfg(t, db, origin, local)
+		gitSvcGiteeLocalCfg(t, db, origin, local)
 		svc.repo, svc.repoPath = repo, local
 
 		// 远端推进
@@ -663,7 +680,7 @@ func TestGitService_PullLatest(t *testing.T) {
 		origin := gitSvcOriginMain(t)
 		local := filepath.Join(t.TempDir(), "repo")
 		repo, _ := gitSvcOpen(t, origin, local)
-		gitSvcGiteeCfg(t, db, origin, local)
+		gitSvcGiteeLocalCfg(t, db, origin, local)
 		// token 行存在但值为空 -> 密码认证分支
 		gitSvcCfg(t, db, map[string]string{"gitee_token": "", "gitee_password": "pw-123"})
 		svc.repo, svc.repoPath = repo, local
@@ -675,7 +692,7 @@ func TestGitService_PullLatest(t *testing.T) {
 		barePath := filepath.Join(t.TempDir(), "bare.git")
 		bare, err := git.PlainInit(barePath, true)
 		require.NoError(t, err)
-		gitSvcGiteeCfg(t, db, gitSvcOriginMain(t), filepath.Join(t.TempDir(), "r"))
+		gitSvcGiteeLocalCfg(t, db, gitSvcOriginMain(t), filepath.Join(t.TempDir(), "r"))
 		svc.repo = bare
 		err = svc.pullLatest()
 		require.Error(t, err)
@@ -687,7 +704,7 @@ func TestGitService_PullLatest(t *testing.T) {
 		origin := gitSvcOriginMain(t)
 		local := filepath.Join(t.TempDir(), "repo")
 		repo, _ := gitSvcOpen(t, origin, local)
-		gitSvcGiteeCfg(t, db, origin, local)
+		gitSvcGiteeLocalCfg(t, db, origin, local)
 		require.NoError(t, db.Exec("DELETE FROM system_configs").Error)
 		svc.repo = repo
 		err := svc.pullLatest()
@@ -753,7 +770,7 @@ func TestGitService_ForcePullLatest(t *testing.T) {
 		gitSvcRun(t, "", "clone", origin, local)
 		repo, err := git.PlainOpen(local)
 		require.NoError(t, err)
-		gitSvcGiteeCfg(t, db, origin, local)
+		gitSvcGiteeLocalCfg(t, db, origin, local)
 		svc.repo, svc.repoPath = repo, local
 
 		require.NoError(t, svc.forcePullLatest())
@@ -764,7 +781,7 @@ func TestGitService_ForcePullLatest(t *testing.T) {
 		origin := gitSvcOriginMain(t)
 		local := filepath.Join(t.TempDir(), "repo")
 		repo, _ := gitSvcOpen(t, origin, local)
-		gitSvcGiteeCfg(t, db, origin, local)
+		gitSvcGiteeLocalCfg(t, db, origin, local)
 		svc.repo = repo
 		gitSvcRun(t, local, "remote", "remove", "origin")
 
@@ -778,7 +795,7 @@ func TestGitService_ForcePullLatest(t *testing.T) {
 		origin := gitSvcOriginMain(t)
 		local := filepath.Join(t.TempDir(), "repo")
 		repo, _ := gitSvcOpen(t, origin, local)
-		gitSvcGiteeCfg(t, db, origin, local)
+		gitSvcGiteeLocalCfg(t, db, origin, local)
 		require.NoError(t, db.Exec("DELETE FROM system_configs").Error)
 		svc.repo = repo
 		err := svc.forcePullLatest()
@@ -791,7 +808,7 @@ func TestGitService_ForcePullLatest(t *testing.T) {
 		origin := gitSvcOriginMain(t)
 		local := filepath.Join(t.TempDir(), "repo")
 		repo, _ := gitSvcOpen(t, origin, local)
-		gitSvcGiteeCfg(t, db, origin, local)
+		gitSvcGiteeLocalCfg(t, db, origin, local)
 		svc.repo = repo
 		gitSvcRun(t, local, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone.git"))
 
@@ -806,7 +823,7 @@ func TestGitService_ForcePullLatest(t *testing.T) {
 		origin := gitSvcOrigin(t, map[string]string{"images.txt": "x\n"}, "master")
 		local := filepath.Join(t.TempDir(), "repo")
 		repo, _ := gitSvcOpen(t, origin, local)
-		gitSvcGiteeCfg(t, db, origin, local)
+		gitSvcGiteeLocalCfg(t, db, origin, local)
 		svc.repo = repo
 
 		err := svc.forcePullLatest()
@@ -820,7 +837,7 @@ func TestGitService_ForcePullLatest(t *testing.T) {
 		barePath := filepath.Join(t.TempDir(), "bare.git")
 		bare, err := git.PlainInit(barePath, true)
 		require.NoError(t, err)
-		gitSvcGiteeCfg(t, db, origin, filepath.Join(t.TempDir(), "r"))
+		gitSvcGiteeLocalCfg(t, db, origin, filepath.Join(t.TempDir(), "r"))
 		svc.repo = bare
 		_, err = bare.CreateRemote(&config.RemoteConfig{Name: "origin", URLs: []string{origin}})
 		require.NoError(t, err)
@@ -843,7 +860,7 @@ func TestGitService_CommitAndPush(t *testing.T) {
 		origin := gitSvcOriginMain(t)
 		local := filepath.Join(t.TempDir(), "repo")
 		repo, _ := gitSvcOpen(t, origin, local)
-		gitSvcGiteeCfg(t, db, origin, local)
+		gitSvcGiteeLocalCfg(t, db, origin, local)
 		svc.repo, svc.repoPath = repo, local
 
 		require.NoError(t, os.WriteFile(filepath.Join(local, "images.txt"), []byte("pushed:1\n"), 0o644))
@@ -859,7 +876,7 @@ func TestGitService_CommitAndPush(t *testing.T) {
 		origin := gitSvcOriginMain(t)
 		local := filepath.Join(t.TempDir(), "repo")
 		repo, _ := gitSvcOpen(t, origin, local)
-		gitSvcGiteeCfg(t, db, origin, local)
+		gitSvcGiteeLocalCfg(t, db, origin, local)
 		svc.repo, svc.repoPath = repo, local
 
 		sha, err := svc.commitAndPush([]string{"x"})
@@ -872,7 +889,7 @@ func TestGitService_CommitAndPush(t *testing.T) {
 		svc, db, _ := newGitSvcEnv(t)
 		bare, err := git.PlainInit(filepath.Join(t.TempDir(), "bare.git"), true)
 		require.NoError(t, err)
-		gitSvcGiteeCfg(t, db, gitSvcOriginMain(t), filepath.Join(t.TempDir(), "r"))
+		gitSvcGiteeLocalCfg(t, db, gitSvcOriginMain(t), filepath.Join(t.TempDir(), "r"))
 		svc.repo = bare
 		_, err = svc.commitAndPush([]string{"x"})
 		require.Error(t, err)
@@ -883,7 +900,7 @@ func TestGitService_CommitAndPush(t *testing.T) {
 		origin := gitSvcOrigin(t, map[string]string{"README.md": "x\n"}, "main")
 		local := filepath.Join(t.TempDir(), "repo")
 		repo, _ := gitSvcOpen(t, origin, local)
-		gitSvcGiteeCfg(t, db, origin, local)
+		gitSvcGiteeLocalCfg(t, db, origin, local)
 		svc.repo = repo
 		_, err := svc.commitAndPush([]string{"x"})
 		require.Error(t, err)
@@ -894,7 +911,7 @@ func TestGitService_CommitAndPush(t *testing.T) {
 		origin := gitSvcOriginMain(t)
 		local := filepath.Join(t.TempDir(), "repo")
 		repo, _ := gitSvcOpen(t, origin, local)
-		gitSvcGiteeCfg(t, db, origin, local)
+		gitSvcGiteeLocalCfg(t, db, origin, local)
 		require.NoError(t, db.Exec("DELETE FROM system_configs").Error)
 		svc.repo, svc.repoPath = repo, local
 		// 制造未提交更改，越过 IsClean 分支后在读取配置处失败
@@ -914,7 +931,7 @@ func TestGitService_PushWithRetry(t *testing.T) {
 		origin := gitSvcOriginMain(t)
 		local := filepath.Join(t.TempDir(), "repo")
 		repo, _ := gitSvcOpen(t, origin, local)
-		gitSvcGiteeCfg(t, db, origin, local)
+		gitSvcGiteeLocalCfg(t, db, origin, local)
 		svc.repo = repo
 		// 本地先提交一个 commit 使 push 有内容
 		require.NoError(t, os.WriteFile(filepath.Join(local, "README.md"), []byte("x\n"), 0o644))
@@ -944,7 +961,7 @@ func TestGitService_PushWithRetry(t *testing.T) {
 
 		local := filepath.Join(t.TempDir(), "repo")
 		repo, _ := gitSvcOpen(t, origin, local)
-		gitSvcGiteeCfg(t, db, origin, local)
+		gitSvcGiteeLocalCfg(t, db, origin, local)
 		svc.repo, svc.repoPath = repo, local
 
 		// 本地提交普通消息 commit（会被钩子拒绝），并保持工作区有未提交修改（触发重提交分支）
@@ -963,7 +980,7 @@ func TestGitService_PushWithRetry(t *testing.T) {
 		origin := gitSvcOriginMain(t)
 		local := filepath.Join(t.TempDir(), "repo")
 		repo, _ := gitSvcOpen(t, origin, local)
-		gitSvcGiteeCfg(t, db, origin, local)
+		gitSvcGiteeLocalCfg(t, db, origin, local)
 		svc.repo = repo
 		require.NoError(t, os.RemoveAll(origin)) // 删除远端：push/pull 均失败
 		require.NoError(t, os.WriteFile(filepath.Join(local, "README.md"), []byte("x\n"), 0o644))

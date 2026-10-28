@@ -519,10 +519,13 @@ func serveUntilSignal(router *gin.Engine, syncHandler *handlers.SyncHandler, qui
 
 	// 在独立的goroutine中启动HTTP服务器
 	// 避免阻塞主线程，以便处理优雅关闭信号
+	// mode 在启动协程外捕获：协程可能存活到进程退出后（测试场景），
+	// 直接读全局 config.AppConfig 会与测试清理的全局恢复产生数据竞争
+	mode := config.AppConfig.Server.Mode
 	go func() {
 		logger.Logger.Info("正在启动HTTP服务器",
 			zap.String("address", srv.Addr),
-			zap.String("mode", config.AppConfig.Server.Mode))
+			zap.String("mode", mode))
 
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Logger.Fatal("启动服务器失败", zap.Error(err))

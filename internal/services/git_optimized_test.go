@@ -210,7 +210,7 @@ func TestGitOptimizedService_UpdateWithFullClone_E2E(t *testing.T) {
 		withGlobalDB(t, db)
 		origin := gitSvcOriginMain(t)
 		local := filepath.Join(t.TempDir(), "full-repo")
-		gitSvcGiteeCfg(t, db, origin, local)
+		gitSvcGiteeLocalCfg(t, db, origin, local)
 
 		s := optSvc(t, GitModeFull)
 		sha, err := s.UpdateImagesFileOptimized(context.Background(), []string{"new-image:1"})
@@ -245,7 +245,7 @@ func TestGitOptimizedService_UpdateWithSparse_E2E(t *testing.T) {
 		// git init 默认分支为 master：origin 用同名分支保证 pull/push refspec 对齐
 		origin := gitSvcOrigin(t, map[string]string{"images.txt": "old-image:1"}, "master")
 		local := filepath.Join(t.TempDir(), "sparse-repo")
-		gitSvcGiteeCfg(t, db, origin, local)
+		gitSvcGiteeLocalCfg(t, db, origin, local)
 
 		s := optSvc(t, GitModeSparse)
 		s.config.EnableCache = false
@@ -280,7 +280,7 @@ func TestGitOptimizedService_UpdateWithSparse_E2E(t *testing.T) {
 		withGlobalDB(t, db)
 		origin := gitSvcOriginMain(t)
 		local := filepath.Join(t.TempDir(), "sparse-cache")
-		gitSvcGiteeCfg(t, db, origin, local)
+		gitSvcGiteeLocalCfg(t, db, origin, local)
 
 		s := optSvc(t, GitModeSparse)
 		s.config.EnableCache = true
@@ -307,7 +307,7 @@ func TestGitOptimizedService_UpdateWithSparse_E2E(t *testing.T) {
 		withGlobalDB(t, db)
 		origin := gitSvcOriginMain(t)
 		local := filepath.Join(t.TempDir(), "fallback-repo")
-		gitSvcGiteeCfg(t, db, origin, local)
+		gitSvcGiteeLocalCfg(t, db, origin, local)
 
 		s := optSvc(t, GitModeSparse)
 		s.config.EnableCache = false
@@ -333,7 +333,7 @@ func TestGitOptimizedService_UpdateWithSparse_E2E(t *testing.T) {
 		withGlobalDB(t, db)
 		missing := filepath.Join(t.TempDir(), "missing-origin.git")
 		local := filepath.Join(t.TempDir(), "both-fail")
-		gitSvcGiteeCfg(t, db, missing, local)
+		gitSvcGiteeLocalCfg(t, db, missing, local)
 
 		s := optSvc(t, GitModeSparse)
 		s.config.FallbackToFull = true
@@ -348,7 +348,7 @@ func TestGitOptimizedService_UpdateImagesFile_Wrapper(t *testing.T) {
 	withGlobalDB(t, db)
 	origin := gitSvcOriginMain(t)
 	local := filepath.Join(t.TempDir(), "wrap")
-	gitSvcGiteeCfg(t, db, origin, local)
+	gitSvcGiteeLocalCfg(t, db, origin, local)
 
 	s := optSvc(t, GitModeFull)
 	sha, err := s.UpdateImagesFile(context.Background(), []string{"wrapped:1"})

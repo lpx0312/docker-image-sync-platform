@@ -66,6 +66,9 @@ func pinNoisyEnvs(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestLoadConfig_FullYAMLFile(t *testing.T) {
+	// GitHub runner 恒有 GITHUB_ACTIONS=true；viper AutomaticEnv 会把它当作
+	// github_actions 段的值覆盖整段配置（潜在生产坑，见注释）
+	t.Setenv("GITHUB_ACTIONS", "")
 	resetConfigGlobals(t)
 	pinNoisyEnvs(t)
 
@@ -209,6 +212,9 @@ security:
 // ---------------------------------------------------------------------------
 
 func TestLoadConfig_MinimalYAMLFile_UsesDefaults(t *testing.T) {
+	// GitHub runner 恒有 GITHUB_ACTIONS=true；viper AutomaticEnv 会把它当作
+	// github_actions 段的值覆盖整段配置（潜在生产坑，见注释）
+	t.Setenv("GITHUB_ACTIONS", "")
 	resetConfigGlobals(t)
 	pinNoisyEnvs(t)
 

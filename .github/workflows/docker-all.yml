@@ -57,7 +57,8 @@ jobs:
           # package-lock.json 生成于内网 Nexus 环境，resolved 指向 192.168.0.12，
           # CI 无法访问内网；npm ci 按 resolved 拉包（registry 配置不生效），故重写之。
           # integrity 哈希不变（同一 tarball），不影响校验；本地构建不受影响。
-          sed -i 's|http://192.168.0.12/repository/proxy-npm-taobao|https://registry.npmjs.org|g' web/package-lock.json
+          # 通配 Nexus 仓库段（proxy-npm-taobao / npm-group 等），路径布局一致
+          sed -i 's#http://192\.168\.0\.12/repository/[a-z-]\+/\?#https://registry.npmjs.org/#g' web/package-lock.json
           echo "剩余内网地址: $(grep -c '192.168.0.12' web/package-lock.json || true)"
 
       - name: 计算镜像版本号
