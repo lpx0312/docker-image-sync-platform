@@ -274,35 +274,39 @@ func (s *GitService) InitRepository() error {
 		return fmt.Errorf("解析Git仓库URL失败: %w", err)
 	}
 
-	var authURL string
-	if token != "" {
-		// 使用访问令牌认证 (推荐方式)
-		encodedUsername := url.QueryEscape(username)
-		encodedToken := url.QueryEscape(token)
-		parsedURL.User = url.UserPassword(encodedUsername, encodedToken)
-		authURL = parsedURL.String()
-		logger.Logger.Info("使用访问令牌进行认证", zap.String("type", repoType))
-	} else {
-		// 对于没有Token的情况，需要根据仓库类型处理
-		if repoType == "gitee" {
-			// Gitee支持用户名密码认证，从数据库获取密码
-			password, err := s.getConfigValue("gitee_password")
-			if err != nil {
-				return fmt.Errorf("获取Gitee密码失败: %w", err)
-			}
-			// 空密码不嵌入凭证（与 GitOptimizedService.buildAuthURL 语义一致）：
-			// "user:@path" 形态会被 git 按 scp 语法解析，本地路径克隆直接失败；
-			// 真实远程下空密码认证本就失败，匿名尝试行为等价
-			if password != "" {
-				encodedUsername := url.QueryEscape(username)
-				encodedPassword := url.QueryEscape(password)
-				parsedURL.User = url.UserPassword(encodedUsername, encodedPassword)
-			}
+	// 凭证仅嵌入带 scheme 的远程 URL：
+	//  1) 无 scheme 的本地路径（POSIX）嵌入后变成 "//user:pass@/path"，
+	//     被 git 按网络仓库语法解析导致克隆失败；
+	//  2) url.URL.String() 对路径做百分号转义，含非 ASCII 的本地目录名
+	//     会被改写（中文目录名变成 %E8%AE%A4...），git 找不到该目录。
+	// 配置校验（github 必须有 token / gitee 密码可取）不因本地路径而豁免。
+	var authURL = repoURL
+	remote := parsedURL.Scheme != ""
+	switch {
+	case token != "":
+		if remote {
+			encodedUsername := url.QueryEscape(username)
+			encodedToken := url.QueryEscape(token)
+			parsedURL.User = url.UserPassword(encodedUsername, encodedToken)
 			authURL = parsedURL.String()
-			logger.Logger.Info("使用Gitee用户名密码进行认证")
-		} else {
-			return fmt.Errorf("GitHub仓库必须配置访问令牌")
 		}
+		logger.Logger.Info("使用访问令牌进行认证", zap.String("type", repoType))
+	case repoType == "gitee":
+		// Gitee 支持用户名密码认证；密码配置缺失即报错，空密码不嵌入
+		// （匿名尝试，与 GitOptimizedService.buildAuthURL 语义一致）
+		password, err := s.getConfigValue("gitee_password")
+		if err != nil {
+			return fmt.Errorf("获取Gitee密码失败: %w", err)
+		}
+		if remote && password != "" {
+			encodedUsername := url.QueryEscape(username)
+			encodedPassword := url.QueryEscape(password)
+			parsedURL.User = url.UserPassword(encodedUsername, encodedPassword)
+			authURL = parsedURL.String()
+		}
+		logger.Logger.Info("使用Gitee用户名密码进行认证")
+	default:
+		return fmt.Errorf("GitHub仓库必须配置访问令牌")
 	}
 
 	// 使用系统git命令执行克隆操作
