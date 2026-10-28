@@ -522,13 +522,16 @@ func serveUntilSignal(router *gin.Engine, syncHandler *handlers.SyncHandler, qui
 	// mode 在启动协程外捕获：协程可能存活到进程退出后（测试场景），
 	// 直接读全局 config.AppConfig 会与测试清理的全局恢复产生数据竞争
 	mode := config.AppConfig.Server.Mode
+	// logger 同理捕获为局部：测试清理会恢复全局 logger.Logger，
+	// 存活到测试结束后的协程直接读全局会产生数据竞争
+	lg := logger.Logger
 	go func() {
-		logger.Logger.Info("正在启动HTTP服务器",
+		lg.Info("正在启动HTTP服务器",
 			zap.String("address", srv.Addr),
 			zap.String("mode", mode))
 
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Logger.Fatal("启动服务器失败", zap.Error(err))
+			lg.Fatal("启动服务器失败", zap.Error(err))
 		}
 	}()
 

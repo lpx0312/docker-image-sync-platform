@@ -290,9 +290,14 @@ func (s *GitService) InitRepository() error {
 			if err != nil {
 				return fmt.Errorf("获取Gitee密码失败: %w", err)
 			}
-			encodedUsername := url.QueryEscape(username)
-			encodedPassword := url.QueryEscape(password)
-			parsedURL.User = url.UserPassword(encodedUsername, encodedPassword)
+			// 空密码不嵌入凭证（与 GitOptimizedService.buildAuthURL 语义一致）：
+			// "user:@path" 形态会被 git 按 scp 语法解析，本地路径克隆直接失败；
+			// 真实远程下空密码认证本就失败，匿名尝试行为等价
+			if password != "" {
+				encodedUsername := url.QueryEscape(username)
+				encodedPassword := url.QueryEscape(password)
+				parsedURL.User = url.UserPassword(encodedUsername, encodedPassword)
+			}
 			authURL = parsedURL.String()
 			logger.Logger.Info("使用Gitee用户名密码进行认证")
 		} else {
